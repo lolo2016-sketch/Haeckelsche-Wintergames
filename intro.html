@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zugang wird geprüft…</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; background: #000;
+    display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  #msg { color: #ddd; text-align: center; padding: 20px; }
+  video {
+    width: 100%; height: 100%; object-fit: cover;
+  }
+  #skip {
+    position: fixed; bottom: 24px; right: 24px;
+    padding: 10px 18px; border-radius: 8px; border: none;
+    background: rgba(255,255,255,0.15); color: white; font-size: 0.95rem;
+    backdrop-filter: blur(4px); cursor: pointer;
+  }
+</style>
+</head>
+<body>
+  <div id="msg">Lade…</div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getFirestore, doc, getDoc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { firebaseConfig } from "./firebase-config.js";
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const params = new URLSearchParams(location.search);
+    const token = params.get('t');
+    const msg = document.getElementById('msg');
+
+    function goOn(destination) {
+      location.href = destination;
+    }
+
+    async function start() {
+      if (!token) { msg.textContent = 'Kein gültiger Link.'; return; }
+
+      const snap = await getDoc(doc(db, 'participants', token));
+      if (!snap.exists()) { msg.textContent = 'Unbekannter Link.'; return; }
+      const data = snap.data();
+
+      // Ziel: entweder explizit gesetzt, sonst je nach Rolle
+      const destination = data.redirectTo
+        || (data.role === 'admin' ? 'admin.html' : `index.html?t=${token}`);
+
+      if (!data.videoUrl) {
+        // kein Video hinterlegt -> direkt weiter
+        goOn(destination);
+        return;
+      }
+
+      const viewsSoFar = data.videoViews || 0;
+      const canSkip = viewsSoFar >= 1; // erst ab dem zweiten Aufruf überspringbar
+
+      // Zähler hochzählen (für den nächsten Aufruf)
+      await updateDoc(doc(db, 'participants', token), { videoViews: increment(1) });
+
+      document.body.innerHTML = '';
+      const video = document.createElement('video');
+      video.src = data.videoUrl;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.muted = false;
+      document.body.appendChild(video);
+
+      const skipBtn = document.createElement('button');
+      skipBtn.id = 'skip';
+      skipBtn.textContent = 'Überspringen ▶';
+      skipBtn.style.display = 'none';
+      skipBtn.addEventListener('click', () => goOn(destination));
+      document.body.appendChild(skipBtn);
+
+      if (canSkip) {
+        // Skip-Button nach 3 Sekunden einblenden
+        setTimeout(() => { skipBtn.style.display = 'block'; }, 3000);
+      }
+      // beim allerersten Aufruf bleibt der Button unsichtbar -> Video muss komplett laufen
+
+      video.addEventListener('ended', () => goOn(destination));
+
+      // Falls Autoplay mit Ton vom Browser blockiert wird: bei Klick starten
+      video.addEventListener('click', () => video.play());
+      video.play().catch(() => {
+        skipBtn.style.display = 'block';
+        skipBtn.textContent = 'Video starten ▶';
+        video.muted = false;
+      });
+    }
+
+    start();
+  </script>
+</body>
+</html>

@@ -23,8 +23,10 @@
     const db = getFirestore(app);
     const root = document.getElementById('app');
 
-    // Basis-URL der Teilnehmer-Seite (index.html) automatisch ermitteln
+    // Basis-URLs automatisch ermitteln
     const baseUrl = location.href.replace(/admin\.html.*$/, 'index.html');
+    const adminUrl = location.href.replace(/admin\.html.*$/, 'admin.html');
+    const introUrl = location.href.replace(/admin\.html.*$/, 'intro.html');
 
     function genToken() {
       return Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6);
@@ -52,6 +54,7 @@
     function render(state, teams, participants) {
       const captains = participants.filter(p => p.role === 'captain');
       const players = participants.filter(p => p.role === 'player');
+      const admins = participants.filter(p => p.role === 'admin');
 
       let html = `<div class="card"><h2>Phase: ${state.phase}</h2>
         <button id="toMinigame" ${state.phase !== 'setup' ? 'disabled' : ''}>Minispiel-Phase starten</button>
@@ -71,6 +74,29 @@
         <input id="playerName" placeholder="Name des Spielers">
         <button id="addPlayer">Hinzufügen</button>
       </div>`;
+
+      html += `<div class="card">
+        <h2>Weiteren Admin mit Video-Intro hinzufügen</h2>
+        <p style="font-size:0.9rem;color:#555">
+          Video-Datei vorher in den Ordner <code>videos/</code> im Repo hochladen, dann hier
+          nur den relativen Pfad eintragen, z. B. <code>videos/admin2-intro.mp4</code>.
+        </p>
+        <input id="adminName" placeholder="Name">
+        <input id="adminVideo" placeholder="videos/admin2-intro.mp4" style="width:260px">
+        <button id="addAdmin">Hinzufügen</button>
+      </div>`;
+
+      html += `<h2>Admins mit Video-Intro (${admins.length})</h2>`;
+      admins.forEach(a => {
+        const introLink = `${introUrl}?t=${a.token}`;
+        html += `<div class="card token-list">
+          <strong>${a.name}</strong> (Admin)
+          <br>Video: ${a.videoUrl}
+          <br>QR-Link (spielt Video, dann Admin-Seite): <a href="${introLink}" target="_blank">${introLink}</a>
+          ${qrImg(introLink)}
+          <button class="danger remove" data-token="${a.token}">Entfernen</button>
+        </div>`;
+      });
 
       html += `<h2>Kapitäne (${captains.length})</h2>`;
       captains.forEach(c => {
@@ -113,6 +139,17 @@
         if (!name) return;
         const token = genToken();
         await setDoc(doc(db, 'participants', token), { name, role: 'player', teamId: null });
+        loadAll();
+      });
+
+      document.getElementById('addAdmin').addEventListener('click', async () => {
+        const name = document.getElementById('adminName').value.trim();
+        const videoUrl = document.getElementById('adminVideo').value.trim();
+        if (!name || !videoUrl) return;
+        const token = genToken();
+        await setDoc(doc(db, 'participants', token), {
+          name, role: 'admin', videoUrl, redirectTo: 'admin.html'
+        });
         loadAll();
       });
 
