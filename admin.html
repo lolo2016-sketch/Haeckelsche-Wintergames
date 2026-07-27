@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin – Team-Draft</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Admin-Steuerung</h1>
+  <p style="color:#b91c1c"><strong>Hinweis:</strong> Diese Seite ist nicht durch ein echtes Passwort geschützt – gib den Link nur an dich selbst weiter (siehe ANLEITUNG.md).</p>
+  <div id="app">Lade…</div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import {
+      getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc,
+      collection, getDocs
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { firebaseConfig } from "./firebase-config.js";
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const root = document.getElementById('app');
+
+    // Basis-URL der Teilnehmer-Seite (index.html) automatisch ermitteln
+    const baseUrl = location.href.replace(/admin\.html.*$/, 'index.html');
+
+    function genToken() {
+      return Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6);
+    }
+
+    async function loadAll() {
+      const stateSnap = await getDoc(doc(db, 'state', 'current'));
+      const state = stateSnap.exists() ? stateSnap.data() : { phase: 'setup' };
+
+      const teamsSnap = await getDocs(collection(db, 'teams'));
+      const teams = {};
+      teamsSnap.forEach(d => teams[d.id] = { id: d.id, ...d.data() });
+
+      const partsSnap = await getDocs(collection(db, 'participants'));
+      const participants = [];
+      partsSnap.forEach(d => participants.push({ token: d.id, ...d.data() }));
+
+      render(state, teams, participants);
+    }
+
+    function qrImg(url, size = 140) {
+      return `<img src="https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(url)}" width="${size}" height="${size}">`;
+    }
+
+    function render(state, teams, participants) {
+      const captains = participants.filter(p => p.role === 'captain');
+      const players = participants.filter(p => p.role === 'player');
+
+      let html = `<div class="card"><h2>Phase: ${state.phase}</h2>
+        <button id="toMinigame" ${state.phase !== 'setup' ? 'disabled' : ''}>Minispiel-Phase starten</button>
+        <button id="toDraft" ${state.phase !== 'minigame' ? 'disabled' : ''}>Draft starten (Reihenfolge nach Score)</button>
+        <button class="danger" id="resetAll">Alles zurücksetzen</button>
+      </div>`;
+
+      html += `<div class="card">
+        <h2>Kapitän hinzufügen</h2>
+        <input id="captainName" placeholder="Name des Kapitäns">
+        <input id="teamName" placeholder="Teamname">
+        <button id="addCaptain">Hinzufügen</button>
+      </div>`;
+
+      html += `<div class="card">
+        <h2>Spieler hinzufügen</h2>
+        <input id="playerName" placeholder="Name des Spielers">
+        <button id="addPlayer">Hinzufügen</button>
+      </div>`;
+
+      html += `<h2>Kapitäne (${captains.length})</h2>`;
+      captains.forEach(c => {
+        const link = `${baseUrl}?t=${c.token}`;
+        html += `<div class="card token-list">
+          <strong>${c.name}</strong> — Team: ${teams[Object.keys(teams).find(id => teams[id].captainToken === c.token)]?.name ?? '?'}
+          ${c.minigameScore != null ? `<br>Score: ${c.minigameScore}` : ''}
+          <br><a href="${link}" target="_blank">${link}</a>
+          ${qrImg(link)}
+          <button class="danger remove" data-token="${c.token}">Entfernen</button>
+        </div>`;
+      });
+
+      html += `<h2>Spieler (${players.length})</h2>`;
+      players.forEach(p => {
+        const link = `${baseUrl}?t=${p.token}`;
+        html += `<div class="card token-list">
+          <strong>${p.name}</strong> ${p.teamId ? `— im Team: ${teams[p.teamId]?.name ?? '?'}` : '— auf der Bank'}
+          <br><a href="${link}" target="_blank">${link}</a>
+          ${qrImg(link)}
+          <button class="danger remove" data-token="${p.token}">Entfernen</button>
+        </div>`;
+      });
+
+      root.innerHTML = html;
+
+      document.getElementById('addCaptain').addEventListener('click', async () => {
+        const name = document.getElementById('captainName').value.trim();
+        const teamName = document.getElementById('teamName').value.trim();
+        if (!name || !teamName) return;
+        const token = genToken();
+        const teamId = 'team_' + genToken();
+        await setDoc(doc(db, 'teams', teamId), { name: teamName, captainToken: token });
+        await setDoc(doc(db, 'participants', token), { name, role: 'captain', teamId: null, minigameScore: null });
+        loadAll();
+      });
+
+      document.getElementById('addPlayer').addEventListener('click', async () => {
+        const name = document.getElementById('playerName').value.trim();
+        if (!name) return;
+        const token = genToken();
+        await setDoc(doc(db, 'participants', token), { name, role: 'player', teamId: null });
+        loadAll();
+      });
+
+      document.querySelectorAll('.remove').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          await deleteDoc(doc(db, 'participants', btn.dataset.token));
+          loadAll();
+        });
+      });
+
+      document.getElementById('toMinigame').addEventListener('click', async () => {
+        await setDoc(doc(db, 'state', 'current'), { phase: 'minigame' });
+        loadAll();
+      });
+
+      document.getElementById('toDraft').addEventListener('click', async () => {
+        const ranked = captains
+          .slice()
+          .sort((a, b) => (b.minigameScore ?? -Infinity) - (a.minigameScore ?? -Infinity));
+        const pickOrder = ranked.map(c => Object.keys(teams).find(id => teams[id].captainToken === c.token));
+        await setDoc(doc(db, 'state', 'current'), { phase: 'draft', pickOrder, turnIndex: 0 });
+        loadAll();
+      });
+
+      document.getElementById('resetAll').addEventListener('click', async () => {
+        if (!confirm('Wirklich ALLE Teilnehmer, Teams und den Status löschen?')) return;
+        for (const p of participants) await deleteDoc(doc(db, 'participants', p.token));
+        for (const t of Object.values(teams)) await deleteDoc(doc(db, 'teams', t.id));
+        await setDoc(doc(db, 'state', 'current'), { phase: 'setup' });
+        loadAll();
+      });
+    }
+
+    loadAll();
+  </script>
+</body>
+</html>

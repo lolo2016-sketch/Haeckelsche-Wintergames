@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Team-Draft</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">Lade…</div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import {
+      getFirestore, doc, getDoc, updateDoc, collection, getDocs, query, where
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { firebaseConfig } from "./firebase-config.js";
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const params = new URLSearchParams(location.search);
+    const token = params.get('t');
+    const root = document.getElementById('app');
+
+    async function load() {
+      if (!token) {
+        root.innerHTML = '<div class="card"><p>Kein gültiger Link. Bitte den persönlichen Link bzw. QR-Code benutzen.</p></div>';
+        return;
+      }
+      const pSnap = await getDoc(doc(db, 'participants', token));
+      if (!pSnap.exists()) {
+        root.innerHTML = '<div class="card"><p>Unbekannter Link. Bitte beim Organisator melden.</p></div>';
+        return;
+      }
+      const me = pSnap.data();
+
+      const stateSnap = await getDoc(doc(db, 'state', 'current'));
+      const state = stateSnap.exists() ? stateSnap.data() : { phase: 'setup' };
+
+      const teamsSnap = await getDocs(collection(db, 'teams'));
+      const teams = {};
+      teamsSnap.forEach(d => teams[d.id] = d.data());
+
+      const playersSnap = await getDocs(query(collection(db, 'participants'), where('role', '==', 'player')));
+      const players = [];
+      playersSnap.forEach(d => players.push({ token: d.id, ...d.data() }));
+
+      render(me, state, teams, players);
+    }
+
+    function myTeamId(teams) {
+      return Object.keys(teams).find(id => teams[id].captainToken === token) || null;
+    }
+
+    function render(me, state, teams, players) {
+      let html = `<h1>Hallo ${escapeHtml(me.name)}</h1><p>Rolle: ${me.role === 'captain' ? 'Kapitän/in' : 'Spieler/in'}</p>`;
+
+      if (state.phase === 'setup') {
+        html += `<div class="card"><p>Die Veranstaltung hat noch nicht begonnen. Bitte warten, bis es losgeht.</p></div>`;
+      }
+
+      else if (state.phase === 'minigame') {
+        if (me.role === 'captain') {
+          html += `<div class="card">
+            <h2>Minispiel</h2>
+            <p>(Das eigentliche Spiel wird hier später eingebaut. Bis dahin: Score manuell eintragen.)</p>
+            <input type="number" id="scoreInput" placeholder="Score" value="${me.minigameScore ?? ''}">
+            <button id="saveScore">Score speichern</button>
+            ${me.minigameScore != null ? `<p>Gespeicherter Score: <strong>${me.minigameScore}</strong></p>` : ''}
+          </div>`;
+        } else {
+          html += `<div class="card"><p>Die Kapitäne treten gerade im Minispiel gegeneinander an. Bitte warten.</p></div>`;
+        }
+      }
+
+      else if (state.phase === 'draft') {
+        const teamId = me.role === 'captain' ? myTeamId(teams) : me.teamId;
+        const currentTeamId = state.pickOrder ? state.pickOrder[state.turnIndex] : null;
+        const isMyTurn = me.role === 'captain' && teamId === currentTeamId;
+
+        html += `<div class="card">
+          <h2>Draft läuft</h2>
+          <p>Am Zug: <span class="turn-badge">${teams[currentTeamId]?.name ?? '?'}</span></p>
+        </div>`;
+
+        html += '<h3>Teams</h3>';
+        for (const [id, t] of Object.entries(teams)) {
+          const members = players.filter(p => p.teamId === id).map(p => p.name).join(', ') || '—';
+          html += `<div class="card"><strong>${escapeHtml(t.name)}</strong><br>${escapeHtml(members)}</div>`;
+        }
+
+        const bench = players.filter(p => !p.teamId);
+        html += '<h3>Bank</h3><div class="card">';
+        if (isMyTurn) {
+          html += bench.length
+            ? bench.map(p => `<button class="pick" data-token="${p.token}">${escapeHtml(p.name)}</button>`).join('')
+            : '<p>Bank ist leer.</p>';
+        } else {
+          html += `<p>${bench.map(p => escapeHtml(p.name)).join(', ') || 'Bank ist leer.'}</p>`;
+        }
+        html += '</div>';
+      }
+
+      else if (state.phase === 'done') {
+        html += '<div class="card"><h2>Teams stehen fest! 🎉</h2></div>';
+        for (const [id, t] of Object.entries(teams)) {
+          const members = players.filter(p => p.teamId === id).map(p => p.name).join(', ') || '—';
+          html += `<div class="card"><strong>${escapeHtml(t.name)}</strong><br>${escapeHtml(members)}</div>`;
+        }
+      }
+
+      html += '<button class="secondary" id="refresh">Neu laden</button>';
+      root.innerHTML = html;
+
+      document.getElementById('refresh')?.addEventListener('click', load);
+
+      document.getElementById('saveScore')?.addEventListener('click', async () => {
+        const val = Number(document.getElementById('scoreInput').value);
+        if (Number.isNaN(val)) return;
+        await updateDoc(doc(db, 'participants', token), { minigameScore: val });
+        load();
+      });
+
+      document.querySelectorAll('.pick').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          const playerToken = btn.dataset.token;
+          const captainsTeamId = myTeamId(teams);
+          await updateDoc(doc(db, 'participants', playerToken), { teamId: captainsTeamId });
+
+          const stateSnap = await getDoc(doc(db, 'state', 'current'));
+          const s = stateSnap.data();
+          const remainingBench = players.filter(p => !p.teamId && p.token !== playerToken).length;
+
+          if (remainingBench > 0) {
+            const nextIndex = (s.turnIndex + 1) % s.pickOrder.length;
+            await updateDoc(doc(db, 'state', 'current'), { turnIndex: nextIndex });
+          } else {
+            await updateDoc(doc(db, 'state', 'current'), { phase: 'done' });
+          }
+          load();
+        });
+      });
+    }
+
+    function escapeHtml(str) {
+      return String(str ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+
+    load();
+  </script>
+</body>
+</html>
