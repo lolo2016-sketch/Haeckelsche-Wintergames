@@ -12,13 +12,28 @@ const HAIR = 0x4a2f1b;
 const SKIN = 0xf0c4a0;
 
 // Halle (Meter): x von -12 bis 12, z von -9 (hinten, Bänke) bis 9 (vorne, Basketballkorb)
-const DOOR = new THREE.Vector3(16.5, 0, -3.2);   // vor dem Eingangstor im Schnee
-const PER_ROW = 18;
-const SEAT_X0 = -8.6, SEAT_DX = 0.82;
-const rowZ = r => -6.3 - r * 0.8;
+const DOOR = new THREE.Vector3(18.5, 0, -3.2);   // vor dem Eingangstor im Schnee
+// Tribüne im Halbkreis um die Kapitäne: Mittelpunkt ARC, Reihe r hat Radius rowR(r) und Höhe rowH(r)
+const ARC = new THREE.Vector3(-1.6, 0, 0.5);
+const ARC_SPAN = Math.PI / 2;        // halber Öffnungswinkel: genau ein Halbkreis
+// Eine Reihe mit BENCH_SEATS Plätzen (Standard 15, in admin.html einstellbar), gleichmäßig verteilt.
+// Kommen doch mehr, entsteht automatisch eine zweite, höhere Reihe dahinter.
+let BENCH_SEATS = 15;
+const rowR = r => 6.0 + r * 1.1;
 const rowH = r => 0.45 + r * 0.42;
-const FRONT_OF_BENCH_Z = -5.0;
-const CAP_Z = -1.9;
+const seatsInRow = r => BENCH_SEATS + r * 4;
+const CAP_Z = ARC.z + 0.8;
+// Sitzplatz Nr. i (0 = erster Ankömmling, ganz links, am weitesten vom Eingang)
+function seatAt(i) {
+  let r = 0, k = i;
+  while (k >= seatsInRow(r)) { k -= seatsInRow(r); r++; }
+  const n = seatsInRow(r);
+  const phi = -ARC_SPAN + k * (2 * ARC_SPAN / (n - 1));
+  const R = rowR(r);
+  return { r, k, phi, R, x: ARC.x + R * Math.sin(phi), z: ARC.z - R * Math.cos(phi), yaw: -phi,
+    fx: ARC.x + (R - 1.1) * Math.sin(phi), fz: ARC.z - (R - 1.1) * Math.cos(phi) };
+}
+function rowsFor(n) { let r = 0, cap = 0; while (cap < n) { cap += seatsInRow(r); r++; } return Math.max(1, r); }
 const WALK_SPEED = 3.0;
 
 export function webglAvailable() {
@@ -90,6 +105,34 @@ function labelTexture(text, captain) {
   });
 }
 
+// Sprechblase: weißer Kasten mit Spitze nach unten, Text umgebrochen (max. 4 Zeilen)
+function bubbleTexture(text) {
+  const W = 512, PAD = 26, LH = 52;
+  const meas = document.createElement('canvas').getContext('2d');
+  meas.font = '600 44px -apple-system, Segoe UI, Roboto, sans-serif';
+  const words = String(text).split(/\s+/), lines = [];
+  let line = '';
+  for (const w of words) {
+    const t = line ? line + ' ' + w : w;
+    if (meas.measureText(t).width > W - 2 * PAD && line) { lines.push(line); line = w; } else line = t;
+  }
+  if (line) lines.push(line);
+  if (lines.length > 4) { lines.length = 4; lines[3] = lines[3].replace(/.{0,2}$/, '') + '…'; }
+  const textW = Math.min(W - 2 * PAD, Math.max(...lines.map(l => meas.measureText(l).width)));
+  const bw = textW + 2 * PAD, bh = lines.length * LH + 2 * PAD - 10, H = bh + 28;
+  const tex = canvasTex(W, H, (g) => {
+    const x = (W - bw) / 2;
+    g.fillStyle = 'rgba(0,0,0,.18)';
+    g.beginPath(); g.roundRect(x + 3, 5, bw, bh, 26); g.fill();
+    g.fillStyle = '#ffffff';
+    g.beginPath(); g.roundRect(x, 2, bw, bh, 26); g.fill();
+    g.beginPath(); g.moveTo(W / 2 - 16, bh); g.lineTo(W / 2, bh + 24); g.lineTo(W / 2 + 16, bh); g.closePath(); g.fill();
+    g.fillStyle = '#0f172a'; g.font = meas.font; g.textAlign = 'center'; g.textBaseline = 'top';
+    lines.forEach((l, i) => g.fillText(l, W / 2, 2 + PAD - 4 + i * LH));
+  });
+  return { tex, aspect: H / W };
+}
+
 function haloTexture() {
   return canvasTex(128, 128, (g) => {
     const gr = g.createRadialGradient(64, 64, 10, 64, 64, 62);
@@ -103,20 +146,27 @@ function buildBenches(scene, rows) {
   const plank = new THREE.MeshLambertMaterial({ color: 0xc08446 });
   const dark = new THREE.MeshLambertMaterial({ color: 0x6b4423 });
   const step = new THREE.MeshLambertMaterial({ color: 0x94a3b8 });
-  const len = PER_ROW * SEAT_DX + 0.6;
-  const cx = SEAT_X0 + (PER_ROW - 1) * SEAT_DX / 2;
+  let i0 = 0;
   for (let r = 0; r < rows; r++) {
-    const seat = new THREE.Mesh(new THREE.BoxGeometry(len, 0.06, 0.34), plank);
-    seat.position.set(cx, rowH(r), rowZ(r)); group.add(seat);
-    for (let k = 0; k <= 6; k++) {
-      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.45, 0.28), dark);
-      leg.position.set(cx - len / 2 + 0.2 + k * (len - 0.4) / 6, rowH(r) - 0.24, rowZ(r)); group.add(leg);
+    const n = seatsInRow(r), R = rowR(r);
+    const segW = R * (2 * ARC_SPAN / (n - 1)) + 0.04;
+    for (let k = 0; k < n; k++) {
+      const st = seatAt(i0 + k);
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(segW, 0.06, 0.36), plank);
+      seat.position.set(st.x, rowH(r), st.z); seat.rotation.y = st.yaw; group.add(seat);
+      if (k % 3 === 0 || k === n - 1) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.45, 0.3), dark);
+        leg.position.set(st.x, rowH(r) - 0.24, st.z); leg.rotation.y = st.yaw; group.add(leg);
+      }
+      if (r > 0) {
+        const h = r * 0.42;
+        const bx = new THREE.Mesh(new THREE.BoxGeometry(segW + 0.05, h, 1.0), step);
+        const rr = R - 0.25;
+        bx.position.set(ARC.x + rr * Math.sin(st.phi), h / 2, ARC.z - rr * Math.cos(st.phi));
+        bx.rotation.y = st.yaw; group.add(bx);
+      }
     }
-    if (r > 0) {
-      const h = r * 0.42;
-      const st = new THREE.Mesh(new THREE.BoxGeometry(len, h, 0.8), step);
-      st.position.set(cx, h / 2, rowZ(r) + 0.2); group.add(st);
-    }
+    i0 += n;
   }
   scene.add(group);
   return group;
@@ -209,8 +259,12 @@ function makeCharacter(p, captain) {
 
   const blob = new THREE.Mesh(geo.blob, mat.blob); blob.rotation.x = -Math.PI / 2; root.add(blob);
 
+  // Sprechblase (wird über setBubble gefüllt)
+  const bubble = new THREE.Sprite(new THREE.SpriteMaterial({ depthWrite: false, transparent: true }));
+  bubble.center.set(0.5, 0); bubble.position.y = 2.36; bubble.visible = false; bubble.renderOrder = 11; root.add(bubble);
+
   return {
-    token: p.token, captain, root, body, shirt, legs, arms, head, label, halo, arrow, blob,
+    token: p.token, captain, root, body, shirt, legs, arms, head, label, halo, arrow, blob, bubble, bubbleText: null,
     sit: 0, walkPhase: 0, walkAmt: 0, yaw: 0, actions: [], cur: null, data: p
   };
 }
@@ -299,14 +353,12 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
       .sort((a, b) => (a.arrivedAt ?? 0) - (b.arrivedAt ?? 0) || String(a.name).localeCompare(String(b.name), 'de'));
     const cols = data.columns;
     const C = Math.max(1, cols.length);
-    const benchMid = SEAT_X0 + (PER_ROW - 1) * SEAT_DX / 2;
-    const capX = j => benchMid + (j - (C - 1) / 2) * Math.min(1.8, 12 / C);
+    const capX = j => ARC.x + (j - (C - 1) / 2) * Math.min(1.6, 9 / C);
     const colOf = {};
     cols.forEach((c, j) => { colOf[c.teamId] = j; });
     const teamCount = {};
     players.forEach((p, i) => {
-      const r = Math.floor(i / PER_ROW), k = i % PER_ROW;
-      const seat = { x: SEAT_X0 + k * SEAT_DX, z: rowZ(r), r };
+      const seat = seatAt(i), r = seat.r;
       if (p.teamId != null && p.teamId in colOf) {
         const j = colOf[p.teamId];
         const n = (teamCount[p.teamId] = (teamCount[p.teamId] ?? -1) + 1);
@@ -314,14 +366,14 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
         res[p.token] = { kind: 'team', pos: new THREE.Vector3(capX(j) + (c - 1) * 0.55, 0, CAP_Z + 0.95 + q * 0.7), yaw: Math.PI,
           color: cols[j].color, seat };
       } else {
-        res[p.token] = { kind: 'seat', pos: new THREE.Vector3(seat.x, rowH(r) + 0.05 - 0.86, seat.z), yaw: 0,
-          front: new THREE.Vector3(seat.x, 0, FRONT_OF_BENCH_Z), color: BENCH_SHIRT, seat };
+        res[p.token] = { kind: 'seat', pos: new THREE.Vector3(seat.x, rowH(r) + 0.05 - 0.86, seat.z), yaw: seat.yaw,
+          front: new THREE.Vector3(seat.fx, 0, seat.fz), color: BENCH_SHIRT, seat };
       }
     });
     cols.forEach((c, j) => {
       res[c.captainToken] = { kind: 'captain', pos: new THREE.Vector3(capX(j), 0, CAP_Z), yaw: Math.PI, color: c.color };
     });
-    const rows = Math.max(1, Math.ceil(players.length / PER_ROW));
+    const rows = rowsFor(players.length);
     return { res, rows };
   }
 
@@ -330,15 +382,18 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
     ch.actions = []; ch.cur = null;
     if (fromDoor) {
       ch.root.position.copy(DOOR); ch.sit = 0; ch.yaw = -Math.PI / 2;
-      ch.actions.push({ type: 'walk', to: new THREE.Vector3(DOOR.x - 1.5, 0, DOOR.z) });
+      ch.actions.push({ type: 'walk', to: new THREE.Vector3(DOOR.x - 2.5, 0, DOOR.z) });
+      ch.actions.push({ type: 'walk', to: new THREE.Vector3(ARC.x + 9.5, 0, ARC.z + 4.5) });
+      ch.actions.push({ type: 'walk', to: new THREE.Vector3(ARC.x + 2.5, 0, ARC.z + 3.2) });
     } else if (ch.sit > 0.5 || ch.root.position.y > 0.01) {
-      // aufstehen: nach vorne von der Bank
-      const p = ch.root.position;
-      ch.actions.push({ type: 'stand', at: new THREE.Vector3(p.x, 0, FRONT_OF_BENCH_Z) });
+      // aufstehen: nach vorne von der Bank (zur Mitte hin)
+      const f = ch.target?.front ?? ch.prevFront;
+      ch.actions.push({ type: 'stand', at: f ? f.clone() : new THREE.Vector3(ch.root.position.x, 0, ch.root.position.z + 1) });
     }
     if (t.kind === 'seat') {
+      ch.prevFront = t.front;
       ch.actions.push({ type: 'walk', to: t.front });
-      ch.actions.push({ type: 'turn', to: 0 });
+      ch.actions.push({ type: 'turn', to: t.yaw });
       ch.actions.push({ type: 'sit', at: t.pos });
     } else {
       ch.actions.push({ type: 'walk', to: new THREE.Vector3(t.pos.x, 0, t.pos.z + (t.kind === 'team' ? 0 : 0)) });
@@ -358,6 +413,8 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
   let first = true;
   function update(newData) {
     data = newData;
+    const seats = Math.max(4, Math.min(40, Number(data.benchSeats) || 15));
+    if (seats !== BENCH_SEATS) { BENCH_SEATS = seats; benchRows = -1; }
     const { res, rows } = targets();
     if (rows !== benchRows) {
       if (benches) scene.remove(benches);
@@ -376,7 +433,6 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
         if (first || p.token === meToken) placeDirect(ch, t);
         else routeTo(ch, t, true);                // Neuankömmling läuft durch die Tür herein
       } else if (ch.target.kind !== t.kind || ch.target.pos.distanceTo(t.pos) > 0.05) {
-        ch.target = t;
         routeTo(ch, t, false);                    // z. B. gewählt: läuft von der Bank zum Team
       }
       ch.target = t;
@@ -395,7 +451,10 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
   function eyeOf(ch) {
     if (!ch) return null;
     const p = ch.root.position;
-    if (ch.target?.kind === 'seat') return new THREE.Vector3(p.x, p.y + 0.86 + 1.08, p.z - 0.3);
+    if (ch.target?.kind === 'seat') {
+      const y = ch.target.yaw;
+      return new THREE.Vector3(p.x - Math.sin(y) * 0.3, p.y + 0.86 + 1.08, p.z - Math.cos(y) * 0.3);
+    }
     return new THREE.Vector3(p.x, 1.68, p.z + Math.cos(ch.yaw) * 0.08);
   }
   function setView(v) {
@@ -454,9 +513,9 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
       camera.lookAt(camLookTarget);
     } else {
       // Übersicht: von vorne über die Kapitäne auf die Bank
-      const center = new THREE.Vector3(SEAT_X0 + (PER_ROW - 1) * SEAT_DX / 2, 0.7, -4.6);
-      const r = 8.2;
-      camera.position.set(center.x + Math.sin(look.yaw) * r, 4.4, center.z + Math.cos(look.yaw) * r);
+      const center = new THREE.Vector3(ARC.x, 0.6, ARC.z - 2.6);
+      const r = 12.5;
+      camera.position.set(center.x + Math.sin(look.yaw) * r, 7.2, center.z + Math.cos(look.yaw) * r);
       camLookTarget.copy(center);
       camera.lookAt(center);
     }
@@ -515,7 +574,9 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
       const pk = pickableSet.has(ch.token) && ch.target?.kind === 'seat' && !ch.cur;
       ch.halo.visible = pk;
       if (pk) { const s = 0.85 + Math.sin(time * 5) * 0.15; ch.halo.scale.set(s, s, 1); }
-      ch.label.visible = camera.position.distanceTo(ch.label.getWorldPosition(_v)) > 2.6;
+      const camDist = camera.position.distanceTo(ch.label.getWorldPosition(_v));
+      ch.label.visible = camDist > 2.6;
+      ch.bubble.visible = !!ch.bubbleText && camDist > 1.4;
       // Nachbarn in der Nähe schauen zu einem herüber
       let headYaw = 0;
       if (mode === 'first' && ch.token !== meToken && !ch.cur) {
@@ -538,5 +599,17 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
     renderer.dispose(); el.remove();
   }
 
-  return { update, playEntrance, setView, getView: () => mode, dispose };
+  // Sprechblase über einer Person setzen (null = ausblenden)
+  function setBubble(token, text) {
+    const ch = chars[token];
+    if (!ch || ch.bubbleText === (text || null)) return;
+    ch.bubbleText = text || null;
+    if (ch.bubble.material.map) ch.bubble.material.map.dispose();
+    if (!text) { ch.bubble.material.map = null; return; }
+    const { tex, aspect } = bubbleTexture(text);
+    ch.bubble.material.map = tex; ch.bubble.material.needsUpdate = true;
+    ch.bubble.scale.set(2.6, 2.6 * aspect, 1);
+  }
+
+  return { update, playEntrance, setView, getView: () => mode, setBubble, dispose };
 }
