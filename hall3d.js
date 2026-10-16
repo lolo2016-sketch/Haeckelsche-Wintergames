@@ -4,6 +4,7 @@
 // Die eigene Figur läuft in der Third-Person-Ansicht ein, danach sieht man die Halle aus ihren Augen
 // und kann sich durch Wischen umschauen.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js';
+import { buildWinterWorld } from './winter.js';
 
 export const TEAM_COLORS = [0xe11d48, 0x2563eb, 0x16a34a, 0xf59e0b, 0x9333ea, 0x0891b2, 0xea580c, 0xdb2777];
 const BENCH_SHIRT = 0xe2e8f0;
@@ -11,7 +12,7 @@ const HAIR = 0x4a2f1b;
 const SKIN = 0xf0c4a0;
 
 // Halle (Meter): x von -12 bis 12, z von -9 (hinten, Bänke) bis 9 (vorne, Basketballkorb)
-const DOOR = new THREE.Vector3(11.3, 0, -3.2);
+const DOOR = new THREE.Vector3(16.5, 0, -3.2);   // vor dem Eingangstor im Schnee
 const PER_ROW = 18;
 const SEAT_X0 = -8.6, SEAT_DX = 0.82;
 const rowZ = r => -6.3 - r * 0.8;
@@ -95,98 +96,6 @@ function haloTexture() {
     gr.addColorStop(0, 'rgba(253,224,71,.95)'); gr.addColorStop(1, 'rgba(253,224,71,0)');
     g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
   });
-}
-
-// ---------- Halle ----------
-function buildGym(scene) {
-  const W = 24, D = 18, H = 7;
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshLambertMaterial({ map: floorTexture() }));
-  floor.rotation.x = -Math.PI / 2;
-  scene.add(floor);
-
-  const wallMat = new THREE.MeshLambertMaterial({ color: 0xe5e7eb });
-  const addWall = (w, h, pos, rotY) => {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), wallMat);
-    m.position.copy(pos); m.rotation.y = rotY; scene.add(m); return m;
-  };
-  addWall(W, H, new THREE.Vector3(0, H / 2, -D / 2), 0);              // hinten
-  addWall(W, H, new THREE.Vector3(0, H / 2, D / 2), Math.PI);          // vorne
-  addWall(D, H, new THREE.Vector3(-W / 2, H / 2, 0), Math.PI / 2);     // links
-  addWall(D, H, new THREE.Vector3(W / 2, H / 2, 0), -Math.PI / 2);     // rechts (Tür)
-  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshLambertMaterial({ color: 0xcbd5e1 }));
-  ceil.rotation.x = Math.PI / 2; ceil.position.y = H; scene.add(ceil);
-
-  // blaue Prallschutzmatten unten an den Wänden
-  const matMat = new THREE.MeshLambertMaterial({ color: 0x1e40af });
-  const mats = [
-    [W, new THREE.Vector3(0, 0.9, -D / 2 + 0.03), 0],
-    [W, new THREE.Vector3(0, 0.9, D / 2 - 0.03), Math.PI],
-    [D, new THREE.Vector3(-W / 2 + 0.03, 0.9, 0), Math.PI / 2]
-  ];
-  for (const [w, p, r] of mats) {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, 1.8), matMat);
-    m.position.copy(p); m.rotation.y = r; scene.add(m);
-  }
-  // rechte Wand: Matten links und rechts der Tür
-  for (const [z0, z1] of [[-9, -4.4], [-2.0, 9]]) {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(z1 - z0, 1.8), matMat);
-    m.position.set(W / 2 - 0.03, 0.9, (z0 + z1) / 2); m.rotation.y = -Math.PI / 2; scene.add(m);
-  }
-
-  // Tür (rechte Wand)
-  const frameMat = new THREE.MeshLambertMaterial({ color: 0x64748b });
-  for (const dz of [-1.2, 1.2]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.14, 2.6, 0.14), frameMat);
-    post.position.set(W / 2 - 0.07, 1.3, DOOR.z + dz); scene.add(post);
-  }
-  const lintel = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 2.54), frameMat);
-  lintel.position.set(W / 2 - 0.07, 2.6, DOOR.z); scene.add(lintel);
-  const opening = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 2.45), new THREE.MeshBasicMaterial({ color: 0x0f172a }));
-  opening.position.set(W / 2 - 0.12, 1.22, DOOR.z); opening.rotation.y = -Math.PI / 2; scene.add(opening);
-  const exitSign = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.25, 0.7), new THREE.MeshBasicMaterial({ color: 0x16a34a }));
-  exitSign.position.set(W / 2 - 0.1, 2.95, DOOR.z); scene.add(exitSign);
-
-  // Sprossenwand links
-  const wood = new THREE.MeshLambertMaterial({ color: 0xb7793c });
-  for (let s = 0; s < 4; s++) {
-    const z0 = -6 + s * 3.2;
-    for (const dz of [0, 1.0]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 3.2, 0.1), wood);
-      post.position.set(-W / 2 + 0.2, 1.6, z0 + dz); scene.add(post);
-    }
-    for (let k = 0; k < 13; k++) {
-      const rung = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.0, 6), wood);
-      rung.rotation.x = Math.PI / 2; rung.position.set(-W / 2 + 0.2, 0.25 + k * 0.24, z0 + 0.5); scene.add(rung);
-    }
-  }
-
-  // Fenster oben links
-  const winMat = new THREE.MeshBasicMaterial({ color: 0xbfdbfe });
-  for (let k = 0; k < 6; k++) {
-    const win = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 1.3), winMat);
-    win.position.set(-W / 2 + 0.02, 5.2, -7.5 + k * 3); win.rotation.y = Math.PI / 2; scene.add(win);
-  }
-
-  // Basketballkorb vorne
-  const board = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.05, 0.05), new THREE.MeshLambertMaterial({ color: 0xffffff }));
-  board.position.set(0, 3.55, D / 2 - 1.2); scene.add(board);
-  const square = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.45), new THREE.MeshBasicMaterial({ color: 0xdc2626 }));
-  square.position.set(0, 3.4, D / 2 - 1.23); square.rotation.y = Math.PI; scene.add(square);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.23, 0.02, 8, 24), new THREE.MeshLambertMaterial({ color: 0xea580c }));
-  ring.rotation.x = Math.PI / 2; ring.position.set(0, 3.05, D / 2 - 1.5); scene.add(ring);
-  const pole = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 1.1), new THREE.MeshLambertMaterial({ color: 0x475569 }));
-  pole.position.set(0, 3.55, D / 2 - 0.65); scene.add(pole);
-
-  // Deckenlampen
-  const lampMat = new THREE.MeshBasicMaterial({ color: 0xfffbeb });
-  for (let i = -2; i <= 2; i++) for (let j = -1; j <= 1; j++) {
-    const lamp = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.08, 0.5), lampMat);
-    lamp.position.set(i * 4.6, H - 0.1, j * 5.5); scene.add(lamp);
-  }
-
-  scene.add(new THREE.HemisphereLight(0xffffff, 0xb08050, 1.6));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-  sun.position.set(-4, 10, 6); scene.add(sun);
 }
 
 function buildBenches(scene, rows) {
@@ -319,6 +228,7 @@ function applyPose(ch) {
   ch.blob.position.y = -ch.root.position.y + 0.012;
 }
 
+const _v = new THREE.Vector3();
 const angDiff = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
 
 // Aktionen: walk(Ziel), turn(Winkel), sit(Sitzpunkt), stand
@@ -369,10 +279,8 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
   renderer.domElement.style.cssText = 'display:block;width:100%;height:100%;border-radius:14px;touch-action:none';
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xdbe4ee);
-  scene.fog = new THREE.Fog(0xdbe4ee, 18, 40);
-  const camera = new THREE.PerspectiveCamera(68, 1, 0.05, 80);
-  buildGym(scene);
+  const camera = new THREE.PerspectiveCamera(68, 1, 0.05, 500);
+  const world = buildWinterWorld(scene, floorTexture());
   let benches = null, benchRows = 0;
 
   const chars = {};          // token -> Figur
@@ -487,7 +395,7 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
   function eyeOf(ch) {
     if (!ch) return null;
     const p = ch.root.position;
-    if (ch.target?.kind === 'seat') return new THREE.Vector3(p.x, p.y + 0.86 + 1.0, p.z - 0.12);
+    if (ch.target?.kind === 'seat') return new THREE.Vector3(p.x, p.y + 0.86 + 1.08, p.z - 0.3);
     return new THREE.Vector3(p.x, 1.68, p.z + Math.cos(ch.yaw) * 0.08);
   }
   function setView(v) {
@@ -562,7 +470,7 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
     if (!drag || (mode !== 'first' && mode !== 'overview')) return;
     const w = el.clientWidth || 1;
     const dx = (e.clientX - drag.sx) / w, dy = (e.clientY - drag.sy) / w;
-    const maxYaw = mode === 'first' ? 1.9 : 0.9;
+    const maxYaw = mode === 'first' ? 1.3 : 0.9;
     look.yaw = Math.max(-maxYaw, Math.min(maxYaw, drag.yaw + dx * 2.6));
     if (mode === 'first') look.pitch = Math.max(-0.6, Math.min(0.35, drag.pitch + dy * 1.6));
   });
@@ -607,10 +515,19 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
       const pk = pickableSet.has(ch.token) && ch.target?.kind === 'seat' && !ch.cur;
       ch.halo.visible = pk;
       if (pk) { const s = 0.85 + Math.sin(time * 5) * 0.15; ch.halo.scale.set(s, s, 1); }
-      ch.label.visible = camera.position.distanceTo(ch.root.position) > 2.0;
+      ch.label.visible = camera.position.distanceTo(ch.label.getWorldPosition(_v)) > 2.6;
+      // Nachbarn in der Nähe schauen zu einem herüber
+      let headYaw = 0;
+      if (mode === 'first' && ch.token !== meToken && !ch.cur) {
+        const hp = ch.head.getWorldPosition(_v);
+        const dx = camera.position.x - hp.x, dz = camera.position.z - hp.z;
+        if (dx * dx + dz * dz < 9) headYaw = Math.max(-1.3, Math.min(1.3, angDiff(ch.yaw, Math.atan2(dx, dz))));
+      }
+      ch.head.rotation.y += (headYaw - ch.head.rotation.y) * Math.min(1, dt * 4);
       ch.arrow.visible = ch.token === turnCaptain;
       if (ch.arrow.visible) { ch.arrow.position.y = 2.6 + Math.sin(time * 4) * 0.08; ch.arrow.rotation.y += dt * 2; }
     }
+    world.update(dt, time);
     updateCamera(dt);
     renderer.render(scene, camera);
   }
