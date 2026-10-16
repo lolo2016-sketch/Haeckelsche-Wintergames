@@ -3,11 +3,35 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Team-Draft</title>
+<title>Haeckelsche Wintergames</title>
 <link rel="stylesheet" href="style.css">
+<style>
+  body { padding-bottom: 96px; }
+  .hello { display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:8px; }
+  .hello h1 { margin:0; font-size:1.25rem; }
+  .hello span { color:#555; font-size:.9rem; }
+  .banner { background:#1e293b; color:#f8fafc; border-radius:12px; padding:12px 14px; margin:0 0 12px; line-height:1.4; }
+  .banner strong { color:#fde047; }
+  .banner.myturn { background:#facc15; color:#422006; font-weight:600; }
+  .banner.myturn strong { color:#422006; }
+  .hall-tools { display:flex; justify-content:space-between; align-items:center; margin-top:8px; gap:8px; flex-wrap:wrap; }
+  .hall-tools small { color:#666; }
+  .tabbar { position:fixed; left:0; right:0; bottom:0; display:flex; justify-content:center; gap:6px;
+    background:rgba(255,255,255,.96); border-top:1px solid #e5e7eb; padding:8px 8px calc(8px + env(safe-area-inset-bottom)); z-index:500; }
+  .tabbar button { flex:1; max-width:180px; margin:0; background:transparent; color:#475569; padding:8px 4px;
+    display:flex; flex-direction:column; align-items:center; gap:2px; font-size:.8rem; font-weight:600; }
+  .tabbar button span { font-size:1.4rem; line-height:1; }
+  .tabbar button.active { background:#eef2ff; color:#1d4ed8; }
+  .tabbar button:hover { background:#f1f5f9; }
+  .tabbar .dot { width:8px; height:8px; border-radius:50%; background:#ef4444; position:absolute; margin-left:22px; }
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:900; padding:16px; }
+  .modal { background:#fff; border-radius:14px; padding:18px; max-width:320px; width:100%; text-align:center; }
+  .modal img { height:110px; display:block; margin:0 auto 8px; }
+</style>
 </head>
 <body>
   <div id="app">Lade…</div>
+  <nav class="tabbar" id="tabbar" style="display:none"></nav>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -16,57 +40,284 @@
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
     import { playSnake, playReplay } from "./minigame.js";
+    import { createHall, TEAM_COLORS } from "./hall.js";
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
     const params = new URLSearchParams(location.search);
-    const token = params.get('t');
+    const DEMO = params.get('demo') === '1';
+    const token = DEMO ? 'demo-cap-1' : params.get('t');
     const root = document.getElementById('app');
+    const tabbar = document.getElementById('tabbar');
 
+    let tab = 'hall';
+    let S = null;          // aktueller Datenstand
+    let hall = null;       // Hallen-Szene (bleibt bestehen, damit Figuren laufen können)
+    let hallWrap = null;
+    let picking = false;
+    let demoIntroDone = false;
+    const INTRO_KEY = 'haeckelsche-hall-intro-' + token;
+
+    // ---------- Daten ----------
+    async function fetchAll() {
+      const pSnap = await getDoc(doc(db, 'participants', token));
+      if (!pSnap.exists()) return null;
+      const me = { token, ...pSnap.data() };
+      const stateSnap = await getDoc(doc(db, 'state', 'current'));
+      const state = stateSnap.exists() ? stateSnap.data() : { phase: 'setup' };
+      const teams = {};
+      (await getDocs(collection(db, 'teams'))).forEach(d => teams[d.id] = { id: d.id, ...d.data() });
+      const players = [], captains = [];
+      (await getDocs(query(collection(db, 'participants'), where('role', '==', 'player'))))
+        .forEach(d => players.push({ token: d.id, ...d.data() }));
+      (await getDocs(query(collection(db, 'participants'), where('role', '==', 'captain'))))
+        .forEach(d => captains.push({ token: d.id, ...d.data() }));
+      return { me, state, teams, players, captains };
+    }
+
+    // Reihenfolge der Kapitäne in der Halle: Wahlreihenfolge, sonst alphabetisch
+    function columns(s) {
+      let ids = s.state.pickOrder?.filter(id => s.teams[id]) ?? [];
+      const rest = Object.values(s.teams).filter(t => !ids.includes(t.id))
+        .sort((a, b) => capName(s, a).localeCompare(capName(s, b), 'de')).map(t => t.id);
+      ids = [...ids, ...rest];
+      return ids.map((id, j) => ({ teamId: id, captainToken: s.teams[id].captainToken, color: TEAM_COLORS[j % TEAM_COLORS.length] }));
+    }
+    const capName = (s, t) => s.captains.find(c => c.token === t.captainToken)?.name ?? '';
+    const myTeamId = s => Object.keys(s.teams).find(id => s.teams[id].captainToken === s.me.token) || null;
+    const turnTeamId = s => s.state.phase === 'draft' && s.state.pickOrder ? s.state.pickOrder[s.state.turnIndex] : null;
+    const isMyTurn = s => s.me.role === 'captain' && turnTeamId(s) === myTeamId(s) && !!myTeamId(s);
+
+    // ---------- Demo-Modus (index.html?demo=1): Beispiel-Leute, nichts wird gespeichert ----------
+    function demoData() {
+      const names = ['Anna', 'Ben', 'Clara', 'David', 'Emil', 'Fiona', 'Greta', 'Hannes', 'Ida', 'Jonas',
+        'Klara', 'Leon', 'Mia', 'Noah', 'Olga', 'Paul', 'Rosa', 'Sam', 'Tom', 'Uli'];
+      const players = names.map((n, i) => ({ token: 'demo-p-' + i, name: n, role: 'player', teamId: null,
+        photoUrl: i % 3 === 0 ? 'faces/face' + (1 + (i % 2)) + '.png' : null }));
+      const capNames = ['Lorenz', 'Max', 'Sophie', 'Felix'];
+      const teamNames = ['Eisbären', 'Schneeeulen', 'Pinguine', 'Polarfüchse'];
+      const captains = capNames.map((n, i) => ({ token: 'demo-cap-' + (i + 1), name: n, role: 'captain',
+        minigamePlayed: true, minigameScore: [17, 12, 9, 5][i], photoUrl: i < 2 ? 'faces/face' + (i + 1) + '.png' : null }));
+      const teams = {};
+      captains.forEach((c, i) => { teams['demo-t' + i] = { id: 'demo-t' + i, name: teamNames[i], captainToken: c.token }; });
+      players[3].teamId = 'demo-t1'; players[7].teamId = 'demo-t2';
+      return { me: captains[0], state: { phase: 'draft', pickOrder: Object.keys(teams), turnIndex: 0 }, teams, players, captains, demo: true };
+    }
+
+    // ---------- Laden ----------
     async function load() {
+      if (DEMO) {
+        S = S ?? demoData();
+        renderTabbar(); renderTab();
+        return;
+      }
       if (!token) {
         root.innerHTML = '<div class="card"><p>Kein gültiger Link. Bitte den persönlichen Link bzw. QR-Code benutzen.</p></div>';
         return;
       }
-      const pSnap = await getDoc(doc(db, 'participants', token));
-      if (!pSnap.exists()) {
+      const s = await fetchAll();
+      if (!s) {
         root.innerHTML = '<div class="card"><p>Unbekannter Link. Bitte beim Organisator melden.</p></div>';
         return;
       }
-      const me = pSnap.data();
-
-      const stateSnap = await getDoc(doc(db, 'state', 'current'));
-      const state = stateSnap.exists() ? stateSnap.data() : { phase: 'setup' };
-
-      const teamsSnap = await getDocs(collection(db, 'teams'));
-      const teams = {};
-      teamsSnap.forEach(d => teams[d.id] = d.data());
-
-      const playersSnap = await getDocs(query(collection(db, 'participants'), where('role', '==', 'player')));
-      const players = [];
-      playersSnap.forEach(d => players.push({ token: d.id, ...d.data() }));
-
-      const capSnap = await getDocs(query(collection(db, 'participants'), where('role', '==', 'captain')));
-      const captains = [];
-      capSnap.forEach(d => captains.push({ token: d.id, ...d.data() }));
-
-      render(me, state, teams, players, captains);
+      S = s;
+      renderTabbar();
+      renderTab();
     }
 
-    function myTeamId(teams) {
-      return Object.keys(teams).find(id => teams[id].captainToken === token) || null;
+    // Während Minispiel und Draft alle 8 Sekunden still nachladen, damit Wahlen der anderen sichtbar werden
+    setInterval(async () => {
+      if (!S || DEMO || picking || document.hidden) return;
+      if (!['minigame', 'draft'].includes(S.state.phase)) return;
+      const s = await fetchAll().catch(() => null);
+      if (!s) return;
+      const phaseChanged = s.state.phase !== S.state.phase;
+      S = s;
+      if (tab === 'hall' && hall && !phaseChanged) { renderBanner(); updateHall(); }
+      else renderTab();
+    }, 8000);
+
+    // ---------- Tabs ----------
+    function tabsFor(s) {
+      const t = [{ id: 'hall', icon: '🏟️', label: 'Halle' }];
+      if (s.me.role === 'captain') t.push({ id: 'game', icon: '🎮', label: 'Minispiel' });
+      t.push({ id: 'board', icon: '🏆', label: 'Leaderboard' });
+      return t;
+    }
+    function renderTabbar() {
+      tabbar.style.display = 'flex';
+      const needsPlay = S.me.role === 'captain' && S.state.phase === 'minigame' && !S.me.minigamePlayed;
+      tabbar.innerHTML = tabsFor(S).map(t => `<button data-tab="${t.id}" class="${t.id === tab ? 'active' : ''}">
+          <span>${t.icon}</span>${t.label}${t.id === 'game' && needsPlay ? '<i class="dot"></i>' : ''}</button>`).join('');
+      tabbar.querySelectorAll('button').forEach(b => b.onclick = () => {
+        tab = b.dataset.tab; renderTabbar(); renderTab(); window.scrollTo(0, 0);
+      });
     }
 
-    function leaderboardHtml(captains, teams) {
-      const done = captains.filter(c => c.minigamePlayed)
-        .sort((a, b) => (b.minigameScore ?? 0) - (a.minigameScore ?? 0));
-      const waiting = captains.filter(c => !c.minigamePlayed);
+    function header() {
+      const role = S.me.role === 'captain' ? 'Kapitän/in' : 'Spieler/in';
+      return `${DEMO ? '<div class="banner" style="background:#7c3aed">🧪 Demo-Modus mit Beispiel-Leuten, nichts wird gespeichert. Du spielst reihum alle Kapitäne.</div>' : ''}
+        <div class="hello"><h1>Hallo ${escapeHtml(S.me.name)}</h1><span>${role}</span></div>`;
+    }
+
+    function renderTab() {
+      hall = null; hallWrap = null;
+      if (tab === 'hall') return renderHallTab();
+      if (tab === 'game') return renderGameTab();
+      return renderBoardTab();
+    }
+
+    // ---------- Halle ----------
+    function bannerHtml() {
+      const s = S, ph = s.state.phase, me = s.me;
+      if (ph === 'setup') return `<div class="banner">Alle trudeln ein … Gleich geht's los! 🏁</div>`;
+      if (ph === 'minigame') {
+        if (me.role === 'captain' && !me.minigamePlayed)
+          return `<div class="banner myturn">Kapitäne spielen um die Wahlreihenfolge. <strong>Starte dein Minispiel</strong> im Tab 🎮 unten.</div>`;
+        const done = s.captains.filter(c => c.minigamePlayed).length;
+        return `<div class="banner">Die Kapitäne spielen um die Wahlreihenfolge: <strong>${done} von ${s.captains.length}</strong> fertig. Schau im 🏆 Leaderboard zu!</div>`;
+      }
+      if (ph === 'draft') {
+        if (isMyTurn(s)) return `<div class="banner myturn">Du bist dran! Tippe auf einen Spieler auf der Bank.</div>`;
+        const t = s.teams[turnTeamId(s)];
+        const mine = me.role === 'player' && me.teamId ? ` Du bist bei <strong>${escapeHtml(s.teams[me.teamId]?.name)}</strong>. 🎉` : '';
+        return `<div class="banner">Am Zug: <strong>${escapeHtml(capName(s, t ?? {}))}</strong> (${escapeHtml(t?.name ?? '?')}).${mine}</div>`;
+      }
+      const myT = me.role === 'player' ? s.teams[me.teamId] : s.teams[myTeamId(s)];
+      return `<div class="banner">Die Teams stehen fest! 🎉${myT ? ` Dein Team: <strong>${escapeHtml(myT.name)}</strong>` : ''}</div>`;
+    }
+    function renderBanner() {
+      const b = document.getElementById('banner');
+      if (b) b.innerHTML = bannerHtml();
+    }
+
+    function hallData() {
+      return {
+        players: S.players, captains: S.captains, columns: columns(S), turnTeamId: turnTeamId(S)
+      };
+    }
+    function updateHall() {
+      return hall.update(hallData(), { pickable: isMyTurn(S) });
+    }
+
+    function renderHallTab() {
+      root.innerHTML = `${header()}<div id="banner">${bannerHtml()}</div><div id="hallWrap"></div>
+        <div class="hall-tools"><small>Tippe auf „Neu laden“, falls sich nichts tut.</small>
+          <span><button class="secondary" id="replayIntro">▶ Einlauf</button><button class="secondary" id="refresh">Neu laden</button></span></div>`;
+      hallWrap = document.getElementById('hallWrap');
+      hall = createHall(hallWrap, { meToken: token, onPlayerTap: askPick });
+      updateHall();
+      let seen = false;
+      if (DEMO) seen = demoIntroDone;
+      else try { seen = localStorage.getItem(INTRO_KEY) === '1'; } catch (e) {}
+      if (!seen) {
+        hall.playIntro();
+        demoIntroDone = true;
+        if (!DEMO) try { localStorage.setItem(INTRO_KEY, '1'); } catch (e) {}
+      }
+      document.getElementById('replayIntro').onclick = () => hall.playIntro();
+      document.getElementById('refresh').onclick = load;
+    }
+
+    // ---------- Wählen ----------
+    function askPick(player) {
+      if (!isMyTurn(S) || picking) return;
+      const bg = document.createElement('div');
+      bg.className = 'modal-bg';
+      bg.innerHTML = `<div class="modal">
+        ${player.photoUrl ? `<img src="${escapeHtml(player.photoUrl)}" alt="" onerror="this.remove()">` : ''}
+        <h2 style="margin:0 0 6px">${escapeHtml(player.name)} wählen?</h2>
+        <p style="margin:0 0 12px;color:#555">Das lässt sich nicht rückgängig machen.</p>
+        <button class="secondary" data-a="no">Abbrechen</button><button data-a="yes">Ja, ins Team!</button></div>`;
+      document.body.appendChild(bg);
+      bg.querySelector('[data-a=no]').onclick = () => bg.remove();
+      bg.onclick = e => { if (e.target === bg) bg.remove(); };
+      bg.querySelector('[data-a=yes]').onclick = async () => { bg.remove(); await pick(player); };
+    }
+
+    async function pick(player) {
+      if (DEMO) {
+        const teamId = myTeamId(S);
+        await hall.movePlayerToTeam(player.token, teamId);
+        player = S.players.find(p => p.token === player.token); player.teamId = teamId;
+        const left = S.players.filter(p => !p.teamId).length;
+        if (!left) S.state.phase = 'done';
+        else {
+          // im Demo-Modus spielt man reihum alle Kapitäne selbst
+          S.state.turnIndex = (S.state.turnIndex + 1) % S.state.pickOrder.length;
+          const capTok = S.teams[S.state.pickOrder[S.state.turnIndex]].captainToken;
+          S.me = S.captains.find(c => c.token === capTok);
+        }
+        return renderTab();
+      }
+      picking = true;
+      try {
+        // frischen Stand holen: ist der Spieler noch frei und bin ich wirklich dran?
+        const fresh = await fetchAll();
+        S = fresh;
+        const still = fresh.players.find(p => p.token === player.token);
+        if (!isMyTurn(fresh) || !still || still.teamId) {
+          alert('Das hat sich gerade geändert, bitte nochmal schauen.');
+          return renderTab();
+        }
+        const teamId = myTeamId(fresh);
+        await updateDoc(doc(db, 'participants', player.token), { teamId });
+        const remaining = fresh.players.filter(p => !p.teamId && p.token !== player.token).length;
+        if (remaining > 0) {
+          await updateDoc(doc(db, 'state', 'current'), { turnIndex: (fresh.state.turnIndex + 1) % fresh.state.pickOrder.length });
+        } else {
+          await updateDoc(doc(db, 'state', 'current'), { phase: 'done' });
+        }
+        if (hall) await hall.movePlayerToTeam(player.token, teamId);
+      } finally {
+        picking = false;
+      }
+      await load();
+    }
+
+    // ---------- Minispiel (nur Kapitäne) ----------
+    function renderGameTab() {
+      const s = S, ph = s.state.phase;
+      let h = header();
+      if (ph === 'setup') {
+        h += `<div class="card"><h2>Minispiel: Snake 🐍</h2><p>Das Minispiel wird freigeschaltet, sobald es losgeht.</p></div>`;
+      } else if (DEMO || (ph === 'minigame' && !s.me.minigamePlayed)) {
+        h += `<div class="card"><h2>Minispiel: Snake 🐍</h2>
+          <p>Sammle so viele Gesichter wie möglich – wer die meisten hat, darf zuerst wählen.
+          Erst kommt ein kurzes Tutorial mit Übungsrunde, danach hast du <strong>einen</strong> echten Versuch.</p>
+          <button id="playSnake">Minispiel starten</button></div>`;
+      } else if (s.me.minigamePlayed) {
+        h += `<div class="card"><h2>Dein Ergebnis: ${s.me.minigameScore} 🍎</h2>
+          <p>${ph === 'minigame' ? 'Warte, bis alle Kapitäne gespielt haben.' : 'Das Minispiel ist vorbei.'}</p>
+          ${s.me.snakeReplay ? '<button class="secondary" id="watchMe">▶ Meinen Versuch ansehen</button>' : ''}</div>`;
+      } else {
+        h += `<div class="card"><p>Das Minispiel ist vorbei.</p></div>`;
+      }
+      root.innerHTML = h;
+      document.getElementById('playSnake')?.addEventListener('click', () => {
+        if (DEMO) return playSnake({ testMode: true, onFinish() {}, onClose: renderTab });
+        playSnake({
+          onFinish: async ({ score, replay }) => {
+            await updateDoc(doc(db, 'participants', token), { minigameScore: score, minigamePlayed: true, snakeReplay: replay });
+          },
+          onClose: load
+        });
+      });
+      document.getElementById('watchMe')?.addEventListener('click', () =>
+        playReplay({ name: s.me.name, score: s.me.minigameScore, replay: s.me.snakeReplay }));
+    }
+
+    // ---------- Leaderboard ----------
+    function renderBoardTab() {
+      const s = S;
+      const done = s.captains.filter(c => c.minigamePlayed).sort((a, b) => (b.minigameScore ?? 0) - (a.minigameScore ?? 0));
+      const waiting = s.captains.filter(c => !c.minigamePlayed);
       const medals = ['🥇', '🥈', '🥉'];
-      let h = '<h2>🏆 Leaderboard</h2>';
+      let h = header() + '<h2 style="margin-top:4px">🏆 Leaderboard Snake</h2>';
       if (!done.length) h += '<div class="card"><p>Noch hat kein Kapitän gespielt.</p></div>';
       done.forEach((c, i) => {
-        const team = Object.values(teams).find(t => t.captainToken === c.token);
+        const team = Object.values(s.teams).find(t => t.captainToken === c.token);
         h += `<div class="card" style="display:flex;align-items:center;gap:12px">
           <div style="font-size:1.6rem;width:36px;text-align:center">${medals[i] ?? (i + 1) + '.'}</div>
           <div style="flex:1"><strong>${escapeHtml(c.name)}</strong><br>
@@ -74,129 +325,18 @@
           ${c.snakeReplay ? `<button class="watch" data-token="${c.token}">▶ Ansehen</button>` : ''}
         </div>`;
       });
-      if (waiting.length) {
-        h += `<p style="color:#555">Noch nicht gespielt: ${waiting.map(c => escapeHtml(c.name)).join(', ')}</p>`;
-      }
-      return h;
-    }
-
-    function render(me, state, teams, players, captains) {
-      let html = `<h1>Hallo ${escapeHtml(me.name)}</h1><p>Rolle: ${me.role === 'captain' ? 'Kapitän/in' : 'Spieler/in'}</p>`;
-
-      if (state.phase === 'setup') {
-        html += `<div class="card"><p>Die Veranstaltung hat noch nicht begonnen. Bitte warten, bis es losgeht.</p></div>`;
-      }
-
-      else if (state.phase === 'minigame') {
-        if (me.role === 'captain' && !me.minigamePlayed) {
-          html += `<div class="card">
-            <h2>Minispiel: Snake 🐍</h2>
-            <p>Sammle so viele Äpfel wie möglich – wer die meisten hat, darf zuerst wählen.
-            Erst kommt ein kurzes Tutorial mit Übungsrunde, danach hast du <strong>einen</strong> echten Versuch.</p>
-            <button id="playSnake">Spielen</button>
-          </div>`;
-        } else if (me.role === 'captain') {
-          html += `<div class="card"><h2>Dein Ergebnis: ${me.minigameScore} 🍎</h2>
-            <p>Warte, bis alle Kapitäne gespielt haben.</p></div>`;
-        } else {
-          html += `<div class="card"><p>Die Kapitäne treten gerade im Minispiel gegeneinander an. Schau dir im Leaderboard an, wie sie sich schlagen!</p></div>`;
-        }
-        html += leaderboardHtml(captains, teams);
-      }
-
-      else if (state.phase === 'draft') {
-        const teamId = me.role === 'captain' ? myTeamId(teams) : me.teamId;
-        const currentTeamId = state.pickOrder ? state.pickOrder[state.turnIndex] : null;
-        const isMyTurn = me.role === 'captain' && teamId === currentTeamId;
-
-        html += `<div class="card">
-          <h2>Draft läuft</h2>
-          <p>Am Zug: <span class="turn-badge">${teams[currentTeamId]?.name ?? '?'}</span></p>
-        </div>`;
-
-        html += '<h3>Teams</h3>';
-        for (const [id, t] of Object.entries(teams)) {
-          const members = players.filter(p => p.teamId === id).map(p => p.name).join(', ') || '—';
-          html += `<div class="card"><strong>${escapeHtml(t.name)}</strong><br>${escapeHtml(members)}</div>`;
-        }
-
-        const bench = players.filter(p => !p.teamId);
-        html += '<h3>Bank</h3><div class="card">';
-        if (isMyTurn) {
-          html += bench.length
-            ? bench.map(p => `<button class="pick" data-token="${p.token}">${escapeHtml(p.name)}</button>`).join('')
-            : '<p>Bank ist leer.</p>';
-        } else {
-          html += `<p>${bench.map(p => escapeHtml(p.name)).join(', ') || 'Bank ist leer.'}</p>`;
-        }
-        html += '</div>';
-      }
-
-      else if (state.phase === 'done') {
-        html += '<div class="card"><h2>Teams stehen fest! 🎉</h2></div>';
-        for (const [id, t] of Object.entries(teams)) {
-          const members = players.filter(p => p.teamId === id).map(p => p.name).join(', ') || '—';
-          html += `<div class="card"><strong>${escapeHtml(t.name)}</strong><br>${escapeHtml(members)}</div>`;
-        }
-      }
-
-      // Leaderboard auch während und nach dem Draft ansehen
-      if (state.phase === 'draft' || state.phase === 'done') {
-        html += `<details style="margin-top:20px"><summary style="cursor:pointer;font-weight:600">🏆 Leaderboard Minispiel</summary>
-          ${leaderboardHtml(captains, teams)}</details>`;
-      }
-
-      html += '<button class="secondary" id="refresh">Neu laden</button>';
-      root.innerHTML = html;
-
-      document.getElementById('refresh')?.addEventListener('click', load);
-
-      document.getElementById('playSnake')?.addEventListener('click', () => {
-        playSnake({
-          onFinish: async ({ score, replay }) => {
-            await updateDoc(doc(db, 'participants', token), {
-              minigameScore: score,
-              minigamePlayed: true,
-              snakeReplay: replay
-            });
-          },
-          onClose: load
-        });
-      });
-
-      document.querySelectorAll('.watch').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const c = captains.find(x => x.token === btn.dataset.token);
-          if (c) playReplay({ name: c.name, score: c.minigameScore, replay: c.snakeReplay });
-        });
-      });
-
-      document.querySelectorAll('.pick').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          btn.disabled = true;
-          const playerToken = btn.dataset.token;
-          const captainsTeamId = myTeamId(teams);
-          await updateDoc(doc(db, 'participants', playerToken), { teamId: captainsTeamId });
-
-          const stateSnap = await getDoc(doc(db, 'state', 'current'));
-          const s = stateSnap.data();
-          const remainingBench = players.filter(p => !p.teamId && p.token !== playerToken).length;
-
-          if (remainingBench > 0) {
-            const nextIndex = (s.turnIndex + 1) % s.pickOrder.length;
-            await updateDoc(doc(db, 'state', 'current'), { turnIndex: nextIndex });
-          } else {
-            await updateDoc(doc(db, 'state', 'current'), { phase: 'done' });
-          }
-          load();
-        });
-      });
+      if (waiting.length) h += `<p style="color:#555">Noch nicht gespielt: ${waiting.map(c => escapeHtml(c.name)).join(', ')}</p>`;
+      h += '<button class="secondary" id="refresh">Neu laden</button>';
+      root.innerHTML = h;
+      document.getElementById('refresh').onclick = load;
+      document.querySelectorAll('.watch').forEach(btn => btn.addEventListener('click', () => {
+        const c = s.captains.find(x => x.token === btn.dataset.token);
+        if (c) playReplay({ name: c.name, score: c.minigameScore, replay: c.snakeReplay });
+      }));
     }
 
     function escapeHtml(str) {
-      return String(str ?? '').replace(/[&<>"']/g, c => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-      }[c]));
+      return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
 
     load();
