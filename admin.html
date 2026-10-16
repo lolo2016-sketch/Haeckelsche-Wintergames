@@ -77,6 +77,15 @@
         <button id="toMinigame" ${state.phase !== 'setup' ? 'disabled' : ''}>Minispiel-Phase starten</button>
         <button id="toDraft" ${state.phase !== 'minigame' ? 'disabled' : ''}>Draft starten (Reihenfolge nach Score)</button>
         <button class="danger" id="resetAll">Alles zurücksetzen</button>
+        <div style="margin-top:10px">
+          <label>Plätze auf der Bank: <input id="benchSeats" type="number" min="4" max="40" value="${state.benchSeats ?? 15}" style="width:70px"></label>
+          <button class="secondary" id="saveSeats">Speichern</button>
+          <span style="color:#666;font-size:.85rem">Am besten = Anzahl Spieler (ohne Kapitäne). Vor dem Event festlegen.</span>
+        </div>
+        <div style="margin-top:10px">
+          <span>💬 Chat: <span id="chatCount">…</span> Nachrichten</span>
+          <button class="danger" id="clearChat">Chat leeren</button>
+        </div>
       </div>`;
 
       html += `<div class="card">
@@ -220,7 +229,7 @@
       });
 
       document.getElementById('toMinigame').addEventListener('click', async () => {
-        await setDoc(doc(db, 'state', 'current'), { phase: 'minigame' });
+        await setDoc(doc(db, 'state', 'current'), { phase: 'minigame', benchSeats: state.benchSeats ?? 15 });
         loadAll();
       });
 
@@ -229,7 +238,22 @@
           .slice()
           .sort((a, b) => (b.minigameScore ?? -Infinity) - (a.minigameScore ?? -Infinity));
         const pickOrder = ranked.map(c => Object.keys(teams).find(id => teams[id].captainToken === c.token));
-        await setDoc(doc(db, 'state', 'current'), { phase: 'draft', pickOrder, turnIndex: 0 });
+        await setDoc(doc(db, 'state', 'current'), { phase: 'draft', pickOrder, turnIndex: 0, benchSeats: state.benchSeats ?? 15 });
+        loadAll();
+      });
+
+      document.getElementById('saveSeats').addEventListener('click', async () => {
+        const n = Math.max(4, Math.min(40, Number(document.getElementById('benchSeats').value) || 15));
+        await setDoc(doc(db, 'state', 'current'), { ...state, benchSeats: n });
+        loadAll();
+      });
+      getDocs(collection(db, 'chat')).then(snap => {
+        const el = document.getElementById('chatCount'); if (el) el.textContent = snap.size;
+      }).catch(() => {});
+      document.getElementById('clearChat').addEventListener('click', async () => {
+        if (!confirm('Alle Chat-Nachrichten löschen?')) return;
+        const snap = await getDocs(collection(db, 'chat'));
+        for (const d of snap.docs) await deleteDoc(d.ref);
         loadAll();
       });
 
@@ -237,7 +261,8 @@
         if (!confirm('Wirklich ALLE Teilnehmer, Teams und den Status löschen?')) return;
         for (const p of participants) await deleteDoc(doc(db, 'participants', p.token));
         for (const t of Object.values(teams)) await deleteDoc(doc(db, 'teams', t.id));
-        await setDoc(doc(db, 'state', 'current'), { phase: 'setup' });
+        await setDoc(doc(db, 'state', 'current'), { phase: 'setup', benchSeats: state.benchSeats ?? 15 });
+        for (const d of (await getDocs(collection(db, 'chat'))).docs) await deleteDoc(d.ref);
         loadAll();
       });
     }

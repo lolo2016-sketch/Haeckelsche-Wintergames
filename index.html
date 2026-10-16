@@ -28,6 +28,19 @@
   .tabbar button.active { background:#eef2ff; color:#1d4ed8; }
   .tabbar button:hover { background:#f1f5f9; }
   .tabbar .dot { width:9px; height:9px; border-radius:50%; background:#ef4444; position:absolute; top:6px; right:calc(50% - 20px); }
+  .chatbar { display:flex; gap:6px; margin-top:8px; }
+  .chatbar input { flex:1; margin:0; min-width:0; }
+  .chatbar button { margin:0; white-space:nowrap; }
+  .chatlog { background:#fff; border-radius:12px; margin-top:8px; padding:8px 12px; max-height:240px; overflow-y:auto;
+    box-shadow:0 1px 3px rgba(0,0,0,.08); font-size:.92rem; }
+  .chatlog .m { padding:4px 0; border-bottom:1px solid #f1f5f9; word-wrap:break-word; }
+  .chatlog .m:last-child { border-bottom:none; }
+  .chatlog .m b { color:#1d4ed8; }
+  .chatlog .m.mine b { color:#16a34a; }
+  .chatlog .t { color:#94a3b8; font-size:.75rem; margin-left:4px; }
+  .badge { background:#ef4444; color:#fff; border-radius:999px; padding:1px 7px; font-size:.75rem; margin-left:4px; }
+  .msgs5 { text-align:left; margin:8px 0 12px; }
+  .msgs5 div { background:#f1f5f9; border-radius:12px; padding:6px 10px; margin:4px 0; }
   .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:900; padding:16px; }
   .modal { background:#fff; border-radius:14px; padding:18px; max-width:320px; width:100%; text-align:center; }
   .modal img { height:110px; display:block; margin:0 auto 8px; }
@@ -40,7 +53,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import {
-      getFirestore, doc, getDoc, updateDoc, collection, onSnapshot
+      getFirestore, doc, getDoc, updateDoc, collection, onSnapshot, addDoc, query, orderBy, limit
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
     import { playSnake, playReplay } from "./minigame.js";
@@ -61,6 +74,12 @@
     let hall = null;         // 3D- oder 2D-Halle
     let hall3dMod = null;    // wird nur geladen, wenn der Browser 3D kann
     let picking = false;
+    // ---------- Chat ----------
+    // Regel: Über dem Kopf steht immer die neueste Nachricht einer Person (bleibt stehen, bis sie etwas Neues schreibt).
+    // Die letzten 5 Nachrichten pro Person sieht man durch Antippen der Figur, alles im Chatverlauf.
+    const MAX_LEN = 120, MIN_GAP_MS = 3000;
+    let messages = [];          // neueste zuerst, max. 100
+    let chatOpen = false, unread = 0, lastSent = 0;
     let entranceDone = false;
 
     // ---------- Live-Daten aus Firebase ----------
@@ -77,6 +96,12 @@
         snap.docChanges().forEach(c => { if (c.type === 'removed') delete teams[c.doc.id]; else teams[c.doc.id] = { id: c.doc.id, ...c.doc.data() }; });
         ready.t = true; changed();
       }, err => showError(err));
+      onSnapshot(query(collection(db, 'chat'), orderBy('at', 'desc'), limit(100)), snap => {
+        const before = messages.length ? messages[0].at : Date.now();
+        messages = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const fresh = messages.filter(m => m.at > before && m.token !== token).length;
+        onMessages(fresh);
+      }, () => {});
       onSnapshot(doc(db, 'state', 'current'), snap => {
         state = snap.exists() ? snap.data() : { phase: 'setup' };
         ready.s = true; changed();
@@ -191,7 +216,7 @@
     }
     function hallData3d() {
       const cols = columns(S).map(c => ({ ...c, color: [0xe11d48, 0x2563eb, 0x16a34a, 0xf59e0b, 0x9333ea, 0x0891b2, 0xea580c, 0xdb2777][c.j % 8] }));
-      return { people: present(), columns: cols, turnTeamId: turnTeamId(S), pickable: isMyTurn(S) };
+      return { people: present(), columns: cols, turnTeamId: turnTeamId(S), pickable: isMyTurn(S), benchSeats: S.state.benchSeats };
     }
     function hallData2d() {
       const p = present();
@@ -209,11 +234,14 @@
         <div class="hall-tools">
           <button class="secondary" id="viewBtn" style="display:none"></button>
           <button class="secondary" id="replayIntro">▶ Einlauf</button>
-        </div>`;
+        </div>${chatHtml()}`;
+      wireChat();
       const wrap = document.getElementById('hallWrap');
       const tapToken = t => {
         const p = S.players.find(x => x.token === t);
-        if (p && !p.teamId && isMyTurn(S)) askPick(p);
+        if (p && !p.teamId && isMyTurn(S)) return askPick(p);
+        const any = p ?? S.captains.find(x => x.token === t);
+        if (any) showPersonMessages(any);
       };
 
       // 3D, wenn möglich, sonst die einfache 2D-Halle
@@ -228,6 +256,7 @@
         hall = hall3dMod.createHall3D(wrap, { meToken: token, onPersonTap: tapToken });
         hall.is3d = true;
         updateHall();
+        refreshBubbles();
         const hint = document.createElement('div');
         hint.className = 'hall-hint'; hint.textContent = '👆 Wischen zum Umschauen';
         wrap.appendChild(hint);
@@ -256,6 +285,79 @@
       markEntrance();
       await hall.playEntrance();
       setBtn?.();
+    }
+
+    // ---------- Chat-Funktionen ----------
+    function onMessages(freshCount) {
+      if (!chatOpen && freshCount) unread += freshCount;
+      refreshBubbles();
+      renderChatLog();
+    }
+    function refreshBubbles() {
+      if (!hall?.setBubble || !S) return;
+      const newest = {};
+      for (const m of messages) if (!newest[m.token]) newest[m.token] = m;
+      for (const p of [...S.players, ...S.captains]) {
+        const m = newest[p.token];
+        hall.setBubble(p.token, m ? m.text : null);
+      }
+    }
+    setInterval(refreshBubbles, 2000);
+
+    function chatHtml() {
+      return `<form class="chatbar" id="chatForm" autocomplete="off">
+          <input id="chatIn" maxlength="${MAX_LEN}" placeholder="Nachricht an alle …" enterkeyhint="send">
+          <button type="submit">Senden</button>
+          <button type="button" class="secondary" id="chatToggle">💬 ${chatOpen ? 'Zu' : 'Chat'}${!chatOpen && unread ? `<span class="badge">${unread}</span>` : ''}</button>
+        </form><div class="chatlog" id="chatLog" style="display:${chatOpen ? 'block' : 'none'}"></div>`;
+    }
+    function fmtTime(at) { const d = new Date(at); return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }); }
+    function renderChatLog() {
+      const log = document.getElementById('chatLog');
+      const tg = document.getElementById('chatToggle');
+      if (tg) tg.innerHTML = `💬 ${chatOpen ? 'Zu' : 'Chat'}${!chatOpen && unread ? `<span class="badge">${unread}</span>` : ''}`;
+      if (!log || !chatOpen) return;
+      const list = messages.slice(0, 40).reverse();
+      log.innerHTML = list.length ? list.map(m => `<div class="m${m.token === token ? ' mine' : ''}"><b>${escapeHtml(m.name)}</b>
+          <span class="t">${fmtTime(m.at)}</span><br>${escapeHtml(m.text)}</div>`).join('')
+        : '<div class="m" style="color:#94a3b8">Noch keine Nachrichten. Sag Hallo! 👋</div>';
+      log.scrollTop = log.scrollHeight;
+    }
+    function wireChat() {
+      document.getElementById('chatToggle').onclick = () => {
+        chatOpen = !chatOpen; if (chatOpen) unread = 0;
+        document.getElementById('chatLog').style.display = chatOpen ? 'block' : 'none';
+        renderChatLog();
+      };
+      document.getElementById('chatForm').onsubmit = async e => {
+        e.preventDefault();
+        const inp = document.getElementById('chatIn');
+        const text = inp.value.trim().slice(0, MAX_LEN);
+        if (!text) return;
+        if (Date.now() - lastSent < MIN_GAP_MS) { inp.placeholder = 'Kurz warten …'; return; }
+        lastSent = Date.now();
+        inp.value = ''; inp.placeholder = 'Nachricht an alle …';
+        const msg = { token, name: S.me.name, text, at: Date.now() };
+        if (DEMO) { messages.unshift({ id: 'd' + msg.at, ...msg }); onMessages(0); return; }
+        try { await addDoc(collection(db, 'chat'), msg); }
+        catch (err) { inp.value = text; alert('Senden fehlgeschlagen: ' + err.message); }
+      };
+      renderChatLog();
+    }
+    // Antippen einer Figur (wenn gerade nicht gewählt wird): ihre letzten 5 Nachrichten
+    function showPersonMessages(p) {
+      const mine = messages.filter(m => m.token === p.token).slice(0, 5);
+      const bg = document.createElement('div');
+      bg.className = 'modal-bg';
+      bg.innerHTML = `<div class="modal">
+        ${p.photoUrl ? `<img src="${escapeHtml(p.photoUrl)}" alt="" onerror="this.remove()">` : ''}
+        <h2 style="margin:0 0 4px">${escapeHtml(p.name)}</h2>
+        <div style="color:#64748b;font-size:.9rem">${p.role === 'captain' ? 'Kapitän/in' : p.teamId ? 'Team ' + escapeHtml(S.teams[p.teamId]?.name ?? '') : 'Auf der Bank'}</div>
+        <div class="msgs5">${mine.length ? mine.map(m => `<div>${escapeHtml(m.text)} <span style="color:#94a3b8;font-size:.75rem">${fmtTime(m.at)}</span></div>`).join('')
+          : '<div style="background:none;color:#94a3b8;text-align:center">Hat noch nichts geschrieben.</div>'}</div>
+        <button data-a="ok">Schließen</button></div>`;
+      document.body.appendChild(bg);
+      bg.onclick = e => { if (e.target === bg || e.target.dataset.a === 'ok') bg.remove(); };
     }
 
     // ---------- Wählen ----------
@@ -390,6 +492,20 @@
         }, 9000);
       }
     }
+    function demoChatter() {
+      const lines = ['Hallo zusammen! 👋', 'Wer hat die Musik mitgebracht? 🎶', 'Ich will ins Team von Lorenz!',
+        'Kalt hier draußen 🥶', 'Hat jemand den Springer gesehen?? 😮', 'Wann geht es los?', 'Wir gewinnen eh 💪',
+        'Schöner Schneemann ⛄', 'Bitte wählt mich zuerst 🙏', 'Biathlon kann ich auch!'];
+      let k = 0;
+      setInterval(() => {
+        if (!S) return;
+        const pool = [...S.players, ...S.captains].filter(p => p.token !== token && p.arrivedAt);
+        const p = pool[Math.floor(Math.random() * pool.length)];
+        if (!p) return;
+        messages.unshift({ id: 'd' + Date.now(), token: p.token, name: p.name, text: lines[k++ % lines.length], at: Date.now() });
+        onMessages(1);
+      }, 3500);
+    }
     function demoPick(player) {
       const teamId = turnTeamId(S);
       const players = S.players.map(p => p.token === player.token ? { ...p, teamId } : p);
@@ -403,7 +519,7 @@
       return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
 
-    if (DEMO) demoStart();
+    if (DEMO) { demoStart(); demoChatter(); }
     else if (!token) root.innerHTML = '<div class="card"><p>Kein gültiger Link. Bitte den persönlichen Link bzw. QR-Code benutzen.</p></div>';
     else subscribe();
   </script>
