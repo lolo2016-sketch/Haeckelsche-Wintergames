@@ -2,101 +2,103 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Zugang wird geprüft…</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Haeckelsche Wintergames</title>
 <style>
   * { box-sizing: border-box; }
-  html, body {
-    margin: 0; padding: 0; height: 100%; background: #000;
-    display: flex; align-items: center; justify-content: center;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  }
-  #msg { color: #ddd; text-align: center; padding: 20px; }
-  video {
-    width: 100%; height: 100%; object-fit: cover;
-  }
-  #skip {
-    position: fixed; bottom: 24px; right: 24px;
-    padding: 10px 18px; border-radius: 8px; border: none;
-    background: rgba(255,255,255,0.15); color: white; font-size: 0.95rem;
-    backdrop-filter: blur(4px); cursor: pointer;
-  }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  #msg { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: #cbd5e1; text-align: center; padding: 20px; }
+  .vstage { position: fixed; inset: 0; width: 100vw; height: 100dvh; background: #000; overflow: hidden; }
+  .vstage video { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #bg { object-fit: cover; filter: blur(28px) brightness(.55); transform: scale(1.15); }
+  #main { object-fit: contain; }
+  #main.fill { object-fit: cover; }
+  .vbtn { position: fixed; z-index: 5; border: none; border-radius: 999px; color: #fff; cursor: pointer;
+    background: rgba(15, 23, 42, .55); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    font-size: 1rem; font-weight: 600; padding: 12px 20px; box-shadow: 0 4px 18px rgba(0,0,0,.35); }
+  #sound { left: 50%; bottom: calc(28px + env(safe-area-inset-bottom)); transform: translateX(-50%); font-size: 1.1rem; padding: 14px 26px;
+    background: rgba(37, 99, 235, .85); animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: translateX(-50%) scale(1.06); } }
+  #skip { right: 16px; top: calc(16px + env(safe-area-inset-top)); display: none; }
+  #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity .5s; z-index: 10; }
 </style>
 </head>
 <body>
-  <div id="msg">Lade…</div>
+  <div id="msg">Lade …</div>
+  <div id="fade"></div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getFirestore, doc, getDoc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-
-    const params = new URLSearchParams(location.search);
-    const token = params.get('t');
+    const db = getFirestore(initializeApp(firebaseConfig));
+    const token = new URLSearchParams(location.search).get('t');
     const msg = document.getElementById('msg');
 
     function goOn(destination) {
-      location.href = destination;
+      document.getElementById('fade').style.opacity = '1';
+      setTimeout(() => { location.href = destination; }, 450);
     }
 
     async function start() {
       if (!token) { msg.textContent = 'Kein gültiger Link.'; return; }
-
       const snap = await getDoc(doc(db, 'participants', token));
       if (!snap.exists()) { msg.textContent = 'Unbekannter Link.'; return; }
       const data = snap.data();
 
-      // Ziel: entweder explizit gesetzt, sonst je nach Rolle
       // Admins bekommen ihren Token mit, damit admin.html ohne Passwort öffnet
-      const destination = data.role === 'admin'
-        ? `admin.html?t=${token}`
-        : (data.redirectTo || `index.html?t=${token}`);
+      const destination = data.role === 'admin' ? `admin.html?t=${token}` : (data.redirectTo || `index.html?t=${token}`);
+      if (!data.videoUrl) { location.replace(destination); return; }   // kein Video -> direkt in die Halle
 
-      if (!data.videoUrl) {
-        // kein Video hinterlegt -> direkt weiter
-        goOn(destination);
-        return;
-      }
+      const canSkip = (data.videoViews || 0) >= 1;   // erst ab dem zweiten Aufruf überspringbar
+      updateDoc(doc(db, 'participants', token), { videoViews: increment(1) }).catch(() => {});
 
-      const viewsSoFar = data.videoViews || 0;
-      const canSkip = viewsSoFar >= 1; // erst ab dem zweiten Aufruf überspringbar
+      // Vollbild: Hauptvideo vollständig, dahinter dieselbe Aufnahme unscharf als Hintergrund
+      msg.remove();
+      const stage = document.createElement('div');
+      stage.className = 'vstage';
+      stage.innerHTML = `<video id="bg" muted playsinline preload="auto"></video><video id="main" playsinline preload="auto"></video>`;
+      document.body.appendChild(stage);
+      const bg = stage.querySelector('#bg'), main = stage.querySelector('#main');
+      bg.src = main.src = data.videoUrl;
 
-      // Zähler hochzählen (für den nächsten Aufruf)
-      await updateDoc(doc(db, 'participants', token), { videoViews: increment(1) });
-
-      document.body.innerHTML = '';
-      const video = document.createElement('video');
-      video.src = data.videoUrl;
-      video.autoplay = true;
-      video.playsInline = true;
-      video.muted = false;
-      document.body.appendChild(video);
-
-      const skipBtn = document.createElement('button');
-      skipBtn.id = 'skip';
-      skipBtn.textContent = 'Überspringen ▶';
-      skipBtn.style.display = 'none';
-      skipBtn.addEventListener('click', () => goOn(destination));
-      document.body.appendChild(skipBtn);
-
-      if (canSkip) {
-        // Skip-Button nach 3 Sekunden einblenden
-        setTimeout(() => { skipBtn.style.display = 'block'; }, 3000);
-      }
-      // beim allerersten Aufruf bleibt der Button unsichtbar -> Video muss komplett laufen
-
-      video.addEventListener('ended', () => goOn(destination));
-
-      // Falls Autoplay mit Ton vom Browser blockiert wird: bei Klick starten
-      video.addEventListener('click', () => video.play());
-      video.play().catch(() => {
-        skipBtn.style.display = 'block';
-        skipBtn.textContent = 'Video starten ▶';
-        video.muted = false;
+      // Hochkant-Video auf Hochkant-Handy (oder Quer auf Quer): ganz ausfüllen
+      main.addEventListener('loadedmetadata', () => {
+        const vr = main.videoWidth / main.videoHeight, sr = innerWidth / innerHeight;
+        const similar = Math.abs(Math.log(vr / sr)) < 0.35;
+        main.classList.toggle('fill', similar);
+        bg.style.display = similar ? 'none' : '';
       });
+      main.addEventListener('timeupdate', () => { if (Math.abs(bg.currentTime - main.currentTime) > 0.3) bg.currentTime = main.currentTime; });
+      main.addEventListener('ended', () => goOn(destination));
+
+      const skip = document.createElement('button');
+      skip.id = 'skip'; skip.className = 'vbtn'; skip.textContent = 'Überspringen ▶';
+      skip.onclick = () => goOn(destination);
+      document.body.appendChild(skip);
+      if (canSkip) setTimeout(() => { skip.style.display = 'block'; }, 3000);
+
+      // Sofort abspielen: erst mit Ton versuchen; blockiert der Browser das, stumm starten + "Ton an"
+      bg.play().catch(() => {});
+      try {
+        main.muted = false;
+        await main.play();
+      } catch (e) {
+        main.muted = true;
+        try { await main.play(); } catch (e2) {}
+        const sound = document.createElement('button');
+        sound.id = 'sound'; sound.className = 'vbtn'; sound.textContent = '🔊 Ton an';
+        const unmute = () => { main.muted = false; main.play().catch(() => {}); sound.remove(); };
+        sound.onclick = e => { e.stopPropagation(); unmute(); };
+        stage.addEventListener('click', unmute, { once: true });   // auch Tippen aufs Video schaltet den Ton an
+        document.body.appendChild(sound);
+      }
     }
 
     start();

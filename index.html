@@ -2,57 +2,89 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Haeckelsche Wintergames</title>
 <link rel="stylesheet" href="style.css">
 <style>
-  body { padding-bottom: 96px; }
-  .hello { display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:8px; }
-  .hello h1 { margin:0; font-size:1.25rem; }
-  .hello span { color:#555; font-size:.9rem; }
-  .banner { background:#1e293b; color:#f8fafc; border-radius:12px; padding:12px 14px; margin:0 0 12px; line-height:1.4; }
+  /* Vollbild: die Halle ist der Hintergrund, alles andere schwebt halbdurchsichtig darüber */
+  html, body { margin:0; padding:0; max-width:none; width:100%; height:100%; overflow:hidden; background:#0b1220; overscroll-behavior:none; }
+  :root { --st: env(safe-area-inset-top, 0px); --sb: env(safe-area-inset-bottom, 0px); }
+  #stage { position:fixed; inset:0; width:100vw; height:100dvh; background:#dbe8f6; }
+  #stage.flat { overflow:auto; padding:calc(110px + var(--st)) 10px calc(170px + var(--sb)); }
+  .glass { background:rgba(15,23,42,.58); color:#f8fafc; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    border:1px solid rgba(255,255,255,.14); box-shadow:0 4px 18px rgba(0,0,0,.18); }
+  .hud { position:fixed; z-index:20; pointer-events:none; }
+  .hud > * { pointer-events:auto; }
+  #top { top:calc(8px + var(--st)); left:8px; right:8px; display:flex; flex-direction:column; gap:6px; align-items:flex-start; }
+  .chip { border-radius:999px; padding:5px 12px; font-size:.82rem; font-weight:600; }
+  .chip.demo { background:rgba(124,58,237,.82); }
+  .banner { border-radius:14px; padding:8px 12px; font-size:.9rem; line-height:1.35; max-width:560px; }
   .banner strong { color:#fde047; }
-  .banner.myturn { background:#facc15; color:#422006; font-weight:600; }
+  .banner.myturn { background:rgba(250,204,21,.92); color:#422006; font-weight:600; }
   .banner.myturn strong { color:#422006; }
-  .banner.demo { background:#7c3aed; }
-  #hallWrap { width:100%; height:min(68vh, 640px); border-radius:14px; background:#eef4fb; box-shadow:0 2px 10px rgba(0,0,0,.15); }
-  #hallWrap.flat { height:auto; background:none; box-shadow:none; }
-  .hall-hint { position:absolute; left:50%; bottom:12px; transform:translateX(-50%); background:rgba(15,23,42,.7); color:#fff;
-    padding:6px 12px; border-radius:999px; font-size:.85rem; pointer-events:none; white-space:nowrap; transition:opacity .6s; }
-  .my-msg { position:absolute; left:10px; right:10px; top:10px; background:rgba(255,255,255,.94); border-radius:12px;
-    padding:6px 10px; font-size:.88rem; box-shadow:0 2px 6px rgba(0,0,0,.15); pointer-events:none; display:none;
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .my-msg { border-radius:12px; padding:6px 10px; font-size:.85rem; display:none; max-width:min(560px, calc(100vw - 16px));
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:rgba(255,255,255,.9); color:#0f172a; }
   .my-msg b { color:#16a34a; }
-  .hall-tools { display:flex; justify-content:flex-end; align-items:center; margin-top:8px; gap:4px; flex-wrap:wrap; }
-  .tabbar { position:fixed; left:0; right:0; bottom:0; display:flex; justify-content:center; gap:6px;
-    background:rgba(255,255,255,.96); border-top:1px solid #e5e7eb; padding:8px 8px calc(8px + env(safe-area-inset-bottom)); z-index:500; }
-  .tabbar button { flex:1; max-width:180px; margin:0; background:transparent; color:#475569; padding:8px 4px; position:relative;
-    display:flex; flex-direction:column; align-items:center; gap:2px; font-size:.8rem; font-weight:600; }
-  .tabbar button span { font-size:1.4rem; line-height:1; }
-  .tabbar button.active { background:#eef2ff; color:#1d4ed8; }
-  .tabbar button:hover { background:#f1f5f9; }
-  .tabbar .dot { width:9px; height:9px; border-radius:50%; background:#ef4444; position:absolute; top:6px; right:calc(50% - 20px); }
-  .chatbar { display:flex; gap:6px; margin-top:8px; }
-  .chatbar input { flex:1; margin:0; min-width:0; }
-  .chatbar button { margin:0; white-space:nowrap; }
-  .chatlog { background:#fff; border-radius:12px; margin-top:8px; padding:8px 12px; max-height:240px; overflow-y:auto;
-    box-shadow:0 1px 3px rgba(0,0,0,.08); font-size:.92rem; }
-  .chatlog .m { padding:4px 0; border-bottom:1px solid #f1f5f9; word-wrap:break-word; }
+  #side { right:8px; top:calc(50% - 50px); display:flex; flex-direction:column; gap:8px; }
+  .round { width:48px; height:48px; border-radius:50%; font-size:1.3rem; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; margin:0; padding:0; }
+  #bottom { left:8px; right:8px; bottom:calc(8px + var(--sb)); display:flex; flex-direction:column; gap:6px; }
+  .chatlog { border-radius:14px; padding:6px 12px; max-height:34vh; overflow-y:auto; font-size:.9rem; }
+  .chatlog .m { padding:4px 0; border-bottom:1px solid rgba(255,255,255,.12); word-wrap:break-word; }
   .chatlog .m:last-child { border-bottom:none; }
-  .chatlog .m b { color:#1d4ed8; }
-  .chatlog .m.mine b { color:#16a34a; }
-  .chatlog .t { color:#94a3b8; font-size:.75rem; margin-left:4px; }
-  .badge { background:#ef4444; color:#fff; border-radius:999px; padding:1px 7px; font-size:.75rem; margin-left:4px; }
+  .chatlog .m b { color:#93c5fd; }
+  .chatlog .m.mine b { color:#86efac; }
+  .chatlog .t { color:#94a3b8; font-size:.72rem; margin-left:4px; }
+  .chatbar { display:flex; gap:6px; align-items:center; border-radius:999px; padding:4px 4px 4px 14px; }
+  .chatbar input { flex:1; min-width:0; margin:0; border:none; background:transparent; color:#fff; font-size:16px; padding:8px 0; outline:none; }
+  .chatbar input::placeholder { color:#cbd5e1; }
+  .chatbar button { margin:0; border-radius:999px; padding:8px 14px; white-space:nowrap; }
+  .chatbar .ghost { background:rgba(255,255,255,.14); }
+  .badge { background:#ef4444; color:#fff; border-radius:999px; padding:1px 7px; font-size:.72rem; margin-left:4px; }
+  .tabbar { display:flex; gap:6px; justify-content:center; }
+  .tabbar button { flex:1; max-width:170px; margin:0; border-radius:16px; padding:7px 4px; position:relative;
+    display:flex; flex-direction:column; align-items:center; gap:1px; font-size:.76rem; font-weight:600; color:#e2e8f0; }
+  .tabbar button span { font-size:1.3rem; line-height:1; }
+  .tabbar button.active { background:rgba(37,99,235,.85); color:#fff; }
+  .tabbar .dot { width:9px; height:9px; border-radius:50%; background:#ef4444; position:absolute; top:5px; right:calc(50% - 20px); }
+  #panel { position:fixed; z-index:30; left:8px; right:8px; top:calc(8px + var(--st)); bottom:calc(76px + var(--sb));
+    max-width:640px; margin:0 auto; overflow-y:auto; border-radius:20px; padding:14px 14px 18px;
+    background:rgba(248,250,252,.86); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+    box-shadow:0 10px 40px rgba(0,0,0,.3); color:#0f172a; }
+  #panel[hidden] { display:none; }
+  #panel .close { position:sticky; top:0; float:right; margin:0; width:36px; height:36px; border-radius:50%; padding:0;
+    background:rgba(15,23,42,.08); color:#0f172a; font-size:1.1rem; z-index:2; }
+  #panel .card { background:rgba(255,255,255,.85); }
+  .hall-hint { position:absolute; left:50%; bottom:calc(140px + var(--sb)); transform:translateX(-50%); background:rgba(15,23,42,.7); color:#fff;
+    padding:6px 12px; border-radius:999px; font-size:.85rem; pointer-events:none; white-space:nowrap; transition:opacity .6s; z-index:5; }
+  #app:empty { display:none; }
+  #app { position:fixed; z-index:40; left:12px; right:12px; top:30%; max-width:420px; margin:0 auto; }
   .msgs5 { text-align:left; margin:8px 0 12px; }
   .msgs5 div { background:#f1f5f9; border-radius:12px; padding:6px 10px; margin:4px 0; }
   .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:900; padding:16px; }
-  .modal { background:#fff; border-radius:14px; padding:18px; max-width:320px; width:100%; text-align:center; }
+  .modal { background:#fff; border-radius:14px; padding:18px; max-width:320px; width:100%; text-align:center; color:#0f172a; }
   .modal img { height:110px; display:block; margin:0 auto 8px; }
 </style>
 </head>
 <body>
-  <div id="app">Lade…</div>
-  <nav class="tabbar" id="tabbar" style="display:none"></nav>
+  <div id="stage"></div>
+  <div id="top" class="hud"></div>
+  <div id="side" class="hud"></div>
+  <div id="bottom" class="hud" style="display:none">
+    <div class="chatlog glass" id="chatLog" style="display:none"></div>
+    <form class="chatbar glass" id="chatForm" autocomplete="off">
+      <input id="chatIn" maxlength="120" placeholder="Nachricht an alle …" enterkeyhint="send">
+      <button type="submit">Senden</button>
+      <button type="button" class="ghost" id="chatToggle">💬</button>
+    </form>
+    <nav class="tabbar" id="tabbar"></nav>
+  </div>
+  <div id="panel" hidden><button class="close" id="panelClose" aria-label="Schließen">✕</button><div id="panelBody"></div></div>
+  <div id="app"><div class="card"><p>Lade …</p></div></div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -144,8 +176,8 @@
       renderTimer = setTimeout(() => {
         if (picking) return;
         renderTabbar();
-        if (phaseChanged || tab !== 'hall' || !hall) renderTab();
-        else { renderBanner(); updateHall(); }
+        renderBanner(); updateHall();
+        if (tab !== 'hall' || phaseChanged) renderTab();
       }, 120);
     }
 
@@ -170,32 +202,46 @@
       return t;
     }
     function renderTabbar() {
-      tabbar.style.display = 'flex';
       const needsPlay = S.me.role === 'captain' && S.state.phase === 'minigame' && !playedActive(S.me);
-      tabbar.innerHTML = tabsFor(S).map(t => `<button data-tab="${t.id}" class="${t.id === tab ? 'active' : ''}">
+      tabbar.innerHTML = tabsFor(S).map(t => `<button data-tab="${t.id}" class="glass ${t.id === tab ? 'active' : ''}">
           <span>${t.icon}</span>${t.label}${t.id === 'game' && needsPlay ? '<i class="dot"></i>' : ''}</button>`).join('');
       tabbar.querySelectorAll('button').forEach(b => b.onclick = () => {
-        if (tab === b.dataset.tab) return;
-        tab = b.dataset.tab; renderTabbar(); renderTab(); window.scrollTo(0, 0);
+        tab = tab === b.dataset.tab ? 'hall' : b.dataset.tab;   // nochmal tippen = zurück zur Halle
+        renderTabbar(); renderTab();
       });
     }
 
-    function header() {
+    // Oben schwebend: Name/Rolle, Hinweis-Banner, eigene letzte Nachricht
+    function renderTop() {
       const role = S.me.role === 'captain' ? 'Kapitän/in' : 'Spieler/in';
-      const demo = DEMO ? `<div class="banner demo">🧪 Demo-Modus, nichts wird gespeichert. ${DEMO === 'captain'
-        ? 'Du wählst reihum für alle Kapitäne.' : 'Alle paar Sekunden kommt jemand Neues herein.'}</div>` : '';
-      return `${demo}<div class="hello"><h1>Hallo ${escapeHtml(S.me.name)}</h1><span>${role}</span></div>`;
+      const demo = DEMO ? `<div class="chip glass demo">🧪 Demo · nichts wird gespeichert</div>` : '';
+      document.getElementById('top').innerHTML = `${demo}<div class="chip glass">👋 ${escapeHtml(S.me.name)} · ${role}</div>
+        <div id="banner">${bannerHtml()}</div><div class="my-msg" id="myMsg"></div>`;
+      refreshBubbles();
     }
+    const header = () => '';
 
+    // Die Halle bleibt immer im Hintergrund; Minispiel und Leaderboard öffnen sich als Fenster darüber
     function renderTab() {
-      if (hall) { hall.dispose?.(); hall = null; }
-      if (tab === 'hall') return renderHallTab();
-      if (tab === 'game') return renderGameTab();
-      return renderBoardTab();
+      document.getElementById('app').innerHTML = '';
+      document.getElementById('bottom').style.display = '';
+      ensureHall();
+      renderTop();
+      const panel = document.getElementById('panel');
+      const chat = [document.getElementById('chatForm'), document.getElementById('chatLog')];
+      if (tab === 'hall') {
+        panel.hidden = true;
+        chat[0].style.display = ''; chat[1].style.display = chatOpen ? '' : 'none';
+        return;
+      }
+      panel.hidden = false;
+      chat.forEach(c => { c.style.display = 'none'; });
+      if (tab === 'game') renderGameTab(); else renderBoardTab();
     }
 
     // ---------- Halle ----------
-    function bannerHtml() {
+    function bannerHtml() { return glassBanner(bannerHtmlRaw()); }
+    function bannerHtmlRaw() {
       const s = S, ph = s.state.phase, me = s.me;
       if (ph === 'setup') {
         const n = s.players.filter(p => p.arrivedAt).length;
@@ -217,6 +263,8 @@
       return `<div class="banner">Die Teams stehen fest! 🎉${myT ? ` Dein Team: <strong>${escapeHtml(myT.name)}</strong>` : ''}</div>`;
     }
     function renderBanner() { const b = document.getElementById('banner'); if (b) b.innerHTML = bannerHtml(); }
+    // Banner-Klassen: halbdurchsichtig über der Halle
+    const glassBanner = html => html.replace('class="banner"', 'class="banner glass"').replace('class="banner myturn"', 'class="banner glass myturn"');
 
     // Wer ist schon in der Halle? (angekommen, oder man selbst)
     function present() {
@@ -237,14 +285,14 @@
       else hall.update(hallData2d(), { pickable: isMyTurn(S) });
     }
 
-    async function renderHallTab() {
-      root.innerHTML = `${header()}<div id="banner">${bannerHtml()}</div><div id="hallWrap"></div>
-        <div class="hall-tools">
-          <button class="secondary" id="viewBtn" style="display:none"></button>
-          ${DEMO ? '<button class="secondary" id="replayIntro">▶ Einlauf (Demo)</button>' : ''}
-        </div>${chatHtml()}`;
-      wireChat();
-      const wrap = document.getElementById('hallWrap');
+    let hallStarting = false;
+    async function ensureHall() {
+      if (hall || hallStarting) return;
+      hallStarting = true;
+      const wrap = document.getElementById('stage');
+      const side = document.getElementById('side');
+      side.innerHTML = `<button class="round glass" id="viewBtn" style="display:none" title="Ansicht wechseln"></button>
+        ${DEMO ? '<button class="round glass" id="replayIntro" title="Einlauf nochmal">▶</button>' : ''}`;
       const tapToken = t => {
         const p = S.players.find(x => x.token === t);
         if (p && !p.teamId && isMyTurn(S)) return askPick(p);
@@ -258,15 +306,11 @@
         hall3dMod ??= await import('./hall3d.js');
         use3d = hall3dMod.webglAvailable();
       } catch (e) { use3d = false; }
-      if (tab !== 'hall' || document.getElementById('hallWrap') !== wrap) return;
 
       if (use3d) {
         hall = hall3dMod.createHall3D(wrap, { meToken: token, onPersonTap: tapToken });
         hall.is3d = true;
         updateHall();
-        const my = document.createElement('div');
-        my.className = 'my-msg'; my.id = 'myMsg';
-        wrap.appendChild(my);
         refreshBubbles();
         const hint = document.createElement('div');
         hint.className = 'hall-hint'; hint.textContent = '👆 Wischen zum Umschauen';
@@ -275,7 +319,8 @@
         const vb = document.getElementById('viewBtn');
         const setBtn = () => {
           const v = hall.getView();
-          vb.textContent = v === 'orbit' ? '🧍 Ich-Sicht' : '🎥 Rundumblick';
+          vb.textContent = v === 'orbit' ? '🧍' : '🎥';
+          vb.title = v === 'orbit' ? 'Ich-Sicht' : 'Rundumblick';
           hint.textContent = v === 'orbit' ? '👆 Wischen = drehen · 2 Finger = Zoom' : '👆 Wischen zum Umschauen';
         };
         vb.style.display = ''; setBtn();
@@ -295,6 +340,7 @@
         const rb = document.getElementById('replayIntro');
         if (rb) rb.onclick = () => hall.playIntro();
       }
+      hallStarting = false;
     }
     async function runEntrance(setBtn) {
       needsEntrance = false;
@@ -325,7 +371,7 @@
     }
     setInterval(refreshBubbles, 2000);
 
-    function chatHtml() {
+    function chatHtmlUnused() {
       return `<form class="chatbar" id="chatForm" autocomplete="off">
           <input id="chatIn" maxlength="${MAX_LEN}" placeholder="Nachricht an alle …" enterkeyhint="send">
           <button type="submit">Senden</button>
@@ -336,7 +382,7 @@
     function renderChatLog() {
       const log = document.getElementById('chatLog');
       const tg = document.getElementById('chatToggle');
-      if (tg) tg.innerHTML = `💬 ${chatOpen ? 'Zu' : 'Chat'}${!chatOpen && unread ? `<span class="badge">${unread}</span>` : ''}`;
+      if (tg) tg.innerHTML = `${chatOpen ? '✕' : '💬'}${!chatOpen && unread ? `<span class="badge">${unread}</span>` : ''}`;
       if (!log || !chatOpen) return;
       const list = messages.slice(0, 40).reverse();
       log.innerHTML = list.length ? list.map(m => `<div class="m${m.token === token ? ' mine' : ''}"><b>${escapeHtml(m.name)}</b>
@@ -347,7 +393,7 @@
     function wireChat() {
       document.getElementById('chatToggle').onclick = () => {
         chatOpen = !chatOpen; if (chatOpen) unread = 0;
-        document.getElementById('chatLog').style.display = chatOpen ? 'block' : 'none';
+        document.getElementById('chatLog').style.display = chatOpen && tab === 'hall' ? '' : 'none';
         renderChatLog();
       };
       document.getElementById('chatForm').onsubmit = async e => {
@@ -438,7 +484,7 @@
       },
       biathlon: {
         name: 'Biathlon-Sprint ⛷️',
-        info: 'Fahre über die Hindernisse ins Ziel – die schnellste Zeit darf zuerst wählen. Tipp: Nicht jeder Weg führt nach rechts … 😉',
+        info: 'Fahre über die Hindernisse ins Ziel – die schnellste Zeit darf zuerst wählen.',
         played: c => !!c.biathlon?.played,
         rank: c => biathlonRank(c.biathlon),
         label: c => formatBiathlon(c.biathlon),
@@ -475,7 +521,7 @@
       } else {
         h += `<div class="card"><p>Das Minispiel ist vorbei.</p></div>`;
       }
-      root.innerHTML = h;
+      document.getElementById('panelBody').innerHTML = h;
       document.querySelectorAll('.playGame').forEach(btn => btn.addEventListener('click', () =>
         GAMES[btn.dataset.g].play(!!DEMO, () => {})));
       document.getElementById('watchMe')?.addEventListener('click', () => G.watch(s.me));
@@ -504,7 +550,7 @@
     }
     function renderBoardTab() {
       const order = [activeGame(), ...Object.keys(GAMES).filter(k => k !== activeGame())];
-      root.innerHTML = header() + order.map(boardSection).join('');
+      document.getElementById('panelBody').innerHTML = order.map(boardSection).join('');
       document.querySelectorAll('.watch').forEach(btn => btn.addEventListener('click', () => {
         const c = S.captains.find(x => x.token === btn.dataset.token);
         if (c) GAMES[btn.dataset.g].watch(c);
@@ -602,6 +648,13 @@
       return String(str ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
 
+    document.getElementById('panelClose').onclick = () => { tab = 'hall'; renderTabbar(); renderTab(); };
+    wireChat();
+    // Android: beim ersten Antippen echten Vollbildmodus anfordern (iPhone erlaubt das nur für Videos)
+    document.addEventListener('pointerdown', () => {
+      const el = document.documentElement;
+      if (!document.fullscreenElement && el.requestFullscreen && matchMedia('(pointer: coarse)').matches) el.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+    }, { once: true });
     if (DEMO) { demoStart(); demoChatter(); }
     else if (!token) root.innerHTML = '<div class="card"><p>Kein gültiger Link. Bitte den persönlichen Link bzw. QR-Code benutzen.</p></div>';
     else subscribe();
