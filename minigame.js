@@ -2,7 +2,7 @@
 import { createGame, step, speedFor, drawGame, loadFaces, DIR } from './snake.js';
 
 // Fotos der Veranstalter (in den Ordner "faces" im Repo hochladen)
-export const FACE_URLS = ['faces/face1.jpg', 'faces/face2.jpg'];
+export const FACE_URLS = ['faces/face1.png', 'faces/face2.png'];
 
 const CSS = `
 .sg-overlay *{box-sizing:border-box}
