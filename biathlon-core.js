@@ -27,10 +27,10 @@ export const TYPES = {
   mound:  { w: 1.4, name: 'Schneehaufen', tip: 'Drüberspringen' },
   hurdle: { w: 0.35, name: 'Hürde', tip: 'Drüberspringen' },
   stairs: { w: 5.5, name: 'Eisblock-Treppe', tip: 'Stufe für Stufe hochspringen' },
-  gap:    { w: 3.4, name: 'Gletscherspalte', tip: 'Mit Anlauf drüberspringen' },
+  gap:    { w: 4.3, name: 'Gletscherspalte', tip: 'Mit Anlauf drüberspringen' },
   ball:   { w: 0.9, name: 'Schneeball', tip: 'Rollt auf dich zu – rechtzeitig springen' },
   branch: { w: 2.2, name: 'Limbo-Banner', tip: 'Mit ▼ hinlegen und drunter durchgleiten' },
-  range:  { w: 3.2, name: 'Schießstand', tip: '5 Schießbahnen – 1 Sekunde anhalten, sonst Strafrunde +5 s' }
+  range:  { w: 6.5, name: 'Schießstand', tip: '5 Schießbahnen – 1 Sekunde anhalten, sonst Strafrunde +5 s' }
 };
 
 // Eigene Bilder für Hindernisse: Datei in den Ordner "biathlon/" laden, dann ersetzt sie den Platzhalter.
@@ -50,6 +50,8 @@ function lay(seq, dir, firstAt) {
   let d = firstAt;                        // Abstand vom Start
   seq.forEach((type, i) => {
     const w = TYPES[type].w;
+    if (type === 'range') d += 5;     // genug Platz zum Erkennen und Abbremsen
+    if (type === 'gap') d += 2;       // Anlauf für den weiten Sprung
     const x0 = dir > 0 ? d : -d - w, x1 = x0 + w;
     out.push({ id: (dir > 0 ? 'f' : 'b') + i, type, dir, x0, x1 });
     const extra = type === 'gap' || type === 'range' || type === 'stairs' ? 3 : 0;

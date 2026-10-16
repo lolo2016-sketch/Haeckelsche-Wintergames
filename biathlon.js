@@ -58,7 +58,7 @@ function setupCanvas(canvas, wrap) {
 
 const TUTORIAL_PAGES = [
   { t: 'Biathlon-Sprint ⛷️', h: `<p><b>◀ ▶</b> fahren, <b>▲</b> springen, <b>▼</b> hinlegen – du rutschst dabei weiter und kannst gleichzeitig fahren.</p><p>Auf Schnee gleitest du weiter, wenn du loslässt. Gegenrichtung = bremsen.</p>` },
-  { t: 'Hindernisse', h: `<p>Berührst du ein Hindernis, <b>stürzt</b> du und brauchst <b>2 Sekunden</b> zum Aufstehen.</p><p>Im Training gibt es Schneehaufen und Hürden. Im echten Lauf warten noch andere Hindernisse, die du selbst herausfinden musst. 😏</p>` },
+  { t: 'Hindernisse', h: `<p>Berührst du ein Hindernis, <b>stürzt</b> du und brauchst <b>2 Sekunden</b> zum Aufstehen.</p><p>Im Training gibt es Schneehaufen und Hürden. Im echten Lauf warten noch andere Hindernisse, die du selbst herausfinden musst.</p>` },
   { t: 'Wertung', h: `<p>Überwinde alle Hindernisse bis ins Ziel. <b>Gewertet wird deine Zeit</b> – je schneller, desto weiter oben im Leaderboard und desto früher darfst du wählen.</p>` },
   { t: 'Training', h: `<p>Übe so oft du willst, danach startest du deinen <b>einen echten Versuch</b>.</p>` }
 ];
@@ -149,12 +149,9 @@ export function playBiathlon({ onFinish, onClose, testMode = false, photoUrl = n
     official = true; modeEl.textContent = 'ECHTER VERSUCH';
     newRun('main'); mask = 0;
     recording = { level: 'main', inputs: [], last: -1 };
-    const seq = [
-      ['<div class="bg-rpo small" style="font-size:2rem">Ready Player:</div>', 4000],
-      ['<div class="bg-rpo small">Ready Player:</div><div class="bg-rpo big">One</div>', 800],
-      ['<div class="bg-rpo small">Ready Player:</div><div class="bg-rpo big">Two</div>', 800],
-      ['<div class="bg-rpo small">Ready Player:</div><div class="bg-rpo big">Three</div>', 0]
-    ];
+    // "Ready Player:" bleibt die ganze Zeit oben stehen, darunter wechseln One (4 s), Two, Three
+    const rp = n => `<div class="bg-rpo small" style="font-size:2rem">Ready Player:</div><div class="bg-rpo big">${n}</div>`;
+    const seq = [[rp('One'), 4000], [rp('Two'), 900], [rp('Three'), 0]];
     let i = 0;
     const next = () => {
       const [html, ms] = seq[i++];
