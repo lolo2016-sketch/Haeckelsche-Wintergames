@@ -18,6 +18,7 @@
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
     import { playSnake, playReplay } from "./minigame.js";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon, biathlonRank } from "./biathlon.js";
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
@@ -28,7 +29,12 @@
     const adminUrl = location.href.replace(/admin\.html.*$/, 'admin.html');
     const introUrl = location.href.replace(/admin\.html.*$/, 'intro.html');
 
-    let lastTest = null; // letzter Testversuch (nur im Browser, wird nicht gespeichert)
+    let lastTest = null; // letzter Snake-Testversuch (nur im Browser, wird nicht gespeichert)
+    let lastBiathlon = null; // letzter Biathlon-Testlauf
+    const GAME_NAMES = { snake: 'Snake 🐍', biathlon: 'Biathlon-Sprint ⛷️' };
+    // Rangwert fürs aktive Spiel: kleiner = besser (ohne Ergebnis ganz hinten)
+    const rankFor = (game, c) => game === 'biathlon' ? biathlonRank(c.biathlon)
+      : (c.minigamePlayed ? -(c.minigameScore ?? 0) : Infinity);
     let lastAdded = null; // zuletzt angelegte Person -> QR-Code oben anzeigen
 
     // ----- Dateien aus dem GitHub-Repo (für die Auswahllisten Bild/Video) -----
@@ -126,8 +132,13 @@
       const admins = participants.filter(p => p.role === 'admin');
 
       let html = `<div class="card"><h2>Phase: ${state.phase}</h2>
+        <div style="margin:4px 0 8px">
+          <label>Minispiel, das über die Wahlreihenfolge entscheidet:
+            <select id="activeGame">${Object.entries(GAME_NAMES).map(([k, n]) => `<option value="${k}" ${(state.activeGame || 'snake') === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
+          </label>
+        </div>
         <button id="toMinigame" ${state.phase !== 'setup' ? 'disabled' : ''}>Minispiel-Phase starten</button>
-        <button id="toDraft" ${state.phase !== 'minigame' ? 'disabled' : ''}>Draft starten (Reihenfolge nach Score)</button>
+        <button id="toDraft" ${state.phase !== 'minigame' ? 'disabled' : ''}>Draft starten (Reihenfolge nach ${GAME_NAMES[state.activeGame || 'snake']})</button>
         <button class="danger" id="resetAll">Alles zurücksetzen</button>
         <div style="margin-top:10px">
           <label>Plätze auf der Bank: <input id="benchSeats" type="number" min="4" max="40" value="${state.benchSeats ?? 15}" style="width:70px"></label>
@@ -149,6 +160,8 @@
         <h2>🎮 Minispiele testen</h2>
         <p style="font-size:0.9rem;color:#555">Zum Ausprobieren. Es wird nichts gespeichert und die Phase bleibt unverändert.</p>
         <button id="testSnake">Snake ausprobieren</button>
+        <button id="testBiathlon">Biathlon-Sprint ausprobieren</button>
+        <button class="secondary" id="testBiathlonReplay" ${lastBiathlon ? '' : 'disabled'}>Letzten Biathlon-Test als Wiedergabe</button>
         <a href="${baseUrl}?demo" target="_blank"><button class="secondary" type="button">🏟️ Demo: als Spieler einlaufen</button></a>
         <a href="${baseUrl}?demo=kapitaen" target="_blank"><button class="secondary" type="button">🏟️ Demo: als Kapitän wählen</button></a>
         <button class="secondary" id="testReplay" ${lastTest ? '' : 'disabled'}>Letzten Test als Wiedergabe ansehen</button>
@@ -215,7 +228,8 @@
         const link = `${introUrl}?t=${c.token}`;
         html += `<div class="card token-list">
           <strong>${c.name}</strong> — Team: ${teams[Object.keys(teams).find(id => teams[id].captainToken === c.token)]?.name ?? '?'}
-          ${c.minigamePlayed ? `<br>Snake-Score: ${c.minigameScore} 🍎 <button class="secondary resetTry" data-token="${c.token}">Versuch zurücksetzen</button>` : '<br>Hat noch nicht gespielt'}
+          ${c.minigamePlayed ? `<br>Snake: ${c.minigameScore} 🍎 <button class="secondary resetTry" data-game="snake" data-token="${c.token}">Snake zurücksetzen</button>` : '<br>Snake: noch nicht gespielt'}
+          ${c.biathlon?.played ? `<br>Biathlon: ${formatBiathlon(c.biathlon)} <button class="secondary resetTry" data-game="biathlon" data-token="${c.token}">Biathlon zurücksetzen</button>` : '<br>Biathlon: noch nicht gespielt'}
           <br><a href="${link}" target="_blank">${link}</a>
           ${mediaFields(c)}
           ${qrImg(link)}
@@ -311,8 +325,8 @@
       document.querySelectorAll('.resetTry').forEach(btn => {
         btn.addEventListener('click', async () => {
           if (!confirm('Versuch dieses Kapitäns löschen? Er/sie darf dann nochmal spielen.')) return;
-          await updateDoc(doc(db, 'participants', btn.dataset.token),
-            { minigamePlayed: false, minigameScore: null, snakeReplay: null });
+          await updateDoc(doc(db, 'participants', btn.dataset.token), btn.dataset.game === 'biathlon'
+            ? { biathlon: null } : { minigamePlayed: false, minigameScore: null, snakeReplay: null });
           loadAll();
         });
       });
@@ -324,17 +338,28 @@
         });
       });
 
+      document.getElementById('activeGame').addEventListener('change', async e => {
+        await setDoc(doc(db, 'state', 'current'), { ...state, activeGame: e.target.value });
+        loadAll();
+      });
+      document.getElementById('testBiathlon').addEventListener('click', () => {
+        playBiathlon({ testMode: true, photoUrl: 'faces/face1.png', onFinish: r => { lastBiathlon = r; },
+          onClose: () => render(state, teams, participants) });
+      });
+      document.getElementById('testBiathlonReplay').addEventListener('click', () => {
+        if (lastBiathlon) playBiathlonReplay({ name: 'Testlauf', result: lastBiathlon, photoUrl: 'faces/face1.png' });
+      });
+
       document.getElementById('toMinigame').addEventListener('click', async () => {
-        await setDoc(doc(db, 'state', 'current'), { phase: 'minigame', benchSeats: state.benchSeats ?? 15 });
+        await setDoc(doc(db, 'state', 'current'), { phase: 'minigame', benchSeats: state.benchSeats ?? 15, activeGame: state.activeGame || 'snake' });
         loadAll();
       });
 
       document.getElementById('toDraft').addEventListener('click', async () => {
-        const ranked = captains
-          .slice()
-          .sort((a, b) => (b.minigameScore ?? -Infinity) - (a.minigameScore ?? -Infinity));
-        const pickOrder = ranked.map(c => Object.keys(teams).find(id => teams[id].captainToken === c.token));
-        await setDoc(doc(db, 'state', 'current'), { phase: 'draft', pickOrder, turnIndex: 0, benchSeats: state.benchSeats ?? 15 });
+        const game = state.activeGame || 'snake';
+        const ranked = captains.slice().sort((a, b) => rankFor(game, a) - rankFor(game, b));
+        const pickOrder = ranked.map(c => Object.keys(teams).find(id => teams[id].captainToken === c.token)).filter(Boolean);
+        await setDoc(doc(db, 'state', 'current'), { phase: 'draft', pickOrder, turnIndex: 0, benchSeats: state.benchSeats ?? 15, activeGame: game });
         loadAll();
       });
 
@@ -357,7 +382,7 @@
         if (!confirm('Wirklich ALLE Teilnehmer, Teams und den Status löschen?')) return;
         for (const p of participants) await deleteDoc(doc(db, 'participants', p.token));
         for (const t of Object.values(teams)) await deleteDoc(doc(db, 'teams', t.id));
-        await setDoc(doc(db, 'state', 'current'), { phase: 'setup', benchSeats: state.benchSeats ?? 15 });
+        await setDoc(doc(db, 'state', 'current'), { phase: 'setup', benchSeats: state.benchSeats ?? 15, activeGame: state.activeGame || 'snake' });
         for (const d of (await getDocs(collection(db, 'chat'))).docs) await deleteDoc(d.ref);
         loadAll();
       });

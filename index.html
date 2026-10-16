@@ -61,6 +61,7 @@
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
     import { playSnake, playReplay } from "./minigame.js";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon, biathlonRank } from "./biathlon.js";
     import { createHall, TEAM_COLORS as TEAM_COLORS_CSS } from "./hall.js";
 
     const app = initializeApp(firebaseConfig);
@@ -170,7 +171,7 @@
     }
     function renderTabbar() {
       tabbar.style.display = 'flex';
-      const needsPlay = S.me.role === 'captain' && S.state.phase === 'minigame' && !S.me.minigamePlayed;
+      const needsPlay = S.me.role === 'captain' && S.state.phase === 'minigame' && !playedActive(S.me);
       tabbar.innerHTML = tabsFor(S).map(t => `<button data-tab="${t.id}" class="${t.id === tab ? 'active' : ''}">
           <span>${t.icon}</span>${t.label}${t.id === 'game' && needsPlay ? '<i class="dot"></i>' : ''}</button>`).join('');
       tabbar.querySelectorAll('button').forEach(b => b.onclick = () => {
@@ -201,9 +202,9 @@
         return `<div class="banner">Willkommen in der Halle! <strong>${n}</strong> Spieler sitzen schon auf der Bank. Gleich geht's los. 🏁</div>`;
       }
       if (ph === 'minigame') {
-        if (me.role === 'captain' && !me.minigamePlayed)
+        if (me.role === 'captain' && !playedActive(me))
           return `<div class="banner myturn">Kapitäne spielen um die Wahlreihenfolge. <strong>Starte dein Minispiel</strong> im Tab 🎮 unten.</div>`;
-        const done = s.captains.filter(c => c.minigamePlayed).length;
+        const done = s.captains.filter(playedActive).length;
         return `<div class="banner">Die Kapitäne spielen um die Wahlreihenfolge: <strong>${done} von ${s.captains.length}</strong> fertig. Schau im 🏆 Leaderboard zu!</div>`;
       }
       if (ph === 'draft') {
@@ -418,60 +419,95 @@
       // Die Live-Updates zeichnen die Halle neu; der Spieler läuft dabei zu seinem Team.
     }
 
-    // ---------- Minispiel (nur Kapitäne) ----------
+    // ---------- Minispiele: Snake und Biathlon-Sprint ----------
+    // Welches Spiel über die Wahlreihenfolge entscheidet, legt der Admin fest (state.activeGame).
+    const GAMES = {
+      snake: {
+        name: 'Snake 🐍',
+        info: 'Sammle so viele Gesichter wie möglich – wer die meisten hat, darf zuerst wählen.',
+        played: c => !!c.minigamePlayed,
+        rank: c => c.minigamePlayed ? -(c.minigameScore ?? 0) : Infinity,
+        label: c => `${c.minigameScore} 🍎`,
+        canWatch: c => !!c.snakeReplay,
+        watch: c => playReplay({ name: c.name, score: c.minigameScore, replay: c.snakeReplay }),
+        play: (test, onDone) => playSnake({
+          testMode: test, onClose: onDone,
+          onFinish: test ? () => {} : async ({ score, replay }) =>
+            updateDoc(doc(db, 'participants', token), { minigameScore: score, minigamePlayed: true, snakeReplay: replay })
+        })
+      },
+      biathlon: {
+        name: 'Biathlon-Sprint ⛷️',
+        info: 'Fahre über die Hindernisse ins Ziel – die schnellste Zeit darf zuerst wählen. Tipp: Nicht jeder Weg führt nach rechts … 😉',
+        played: c => !!c.biathlon?.played,
+        rank: c => biathlonRank(c.biathlon),
+        label: c => formatBiathlon(c.biathlon),
+        canWatch: c => !!c.biathlon?.replay,
+        watch: c => playBiathlonReplay({ name: c.name, result: c.biathlon, photoUrl: c.photoUrl }),
+        play: (test, onDone) => playBiathlon({
+          testMode: test, photoUrl: S.me.photoUrl, onClose: onDone,
+          onFinish: test ? () => {} : async result => updateDoc(doc(db, 'participants', token), { biathlon: result })
+        })
+      }
+    };
+    const activeGame = () => GAMES[S?.state.activeGame] ? S.state.activeGame : 'snake';
+    const playedActive = c => GAMES[activeGame()].played(c);
+
+    // ---------- Minispiel-Tab (nur Kapitäne) ----------
     function renderGameTab() {
-      const s = S, ph = s.state.phase;
+      const s = S, ph = s.state.phase, gk = activeGame(), G = GAMES[gk];
       let h = header();
-      if (ph === 'setup' && !DEMO) {
-        h += `<div class="card"><h2>Minispiel: Snake 🐍</h2><p>Das Minispiel wird freigeschaltet, sobald es losgeht.</p></div>`;
-      } else if (DEMO || (ph === 'minigame' && !s.me.minigamePlayed)) {
-        h += `<div class="card"><h2>Minispiel: Snake 🐍</h2>
-          <p>Sammle so viele Gesichter wie möglich – wer die meisten hat, darf zuerst wählen.
-          Erst kommt ein kurzes Tutorial mit Übungsrunde, danach hast du <strong>einen</strong> echten Versuch.</p>
-          <button id="playSnake">Minispiel starten</button></div>`;
-      } else if (s.me.minigamePlayed) {
-        h += `<div class="card"><h2>Dein Ergebnis: ${s.me.minigameScore} 🍎</h2>
+      if (DEMO) {
+        // Demo: beide Spiele zum Ausprobieren (nichts wird gespeichert)
+        for (const [k, g] of Object.entries(GAMES)) {
+          h += `<div class="card"><h2>${g.name}</h2><p>${g.info}</p><button class="playGame" data-g="${k}">Ausprobieren</button></div>`;
+        }
+      } else if (ph === 'setup') {
+        h += `<div class="card"><h2>Minispiel: ${G.name}</h2><p>Das Minispiel wird freigeschaltet, sobald es losgeht.</p></div>`;
+      } else if (ph === 'minigame' && !G.played(s.me)) {
+        h += `<div class="card"><h2>Minispiel: ${G.name}</h2><p>${G.info}</p>
+          <p>Erst kommt ein kurzes Tutorial mit Übungsrunde, danach hast du <strong>einen</strong> echten Versuch.</p>
+          <button class="playGame" data-g="${gk}">Minispiel starten</button></div>`;
+      } else if (G.played(s.me)) {
+        h += `<div class="card"><h2>Dein Ergebnis (${G.name}): ${G.label(s.me)}</h2>
           <p>${ph === 'minigame' ? 'Warte, bis alle Kapitäne gespielt haben.' : 'Das Minispiel ist vorbei.'}</p>
-          ${s.me.snakeReplay ? '<button class="secondary" id="watchMe">▶ Meinen Versuch ansehen</button>' : ''}</div>`;
+          ${G.canWatch(s.me) ? '<button class="secondary" id="watchMe">▶ Meinen Versuch ansehen</button>' : ''}</div>`;
       } else {
         h += `<div class="card"><p>Das Minispiel ist vorbei.</p></div>`;
       }
       root.innerHTML = h;
-      document.getElementById('playSnake')?.addEventListener('click', () => {
-        if (DEMO) return playSnake({ testMode: true, onFinish() {}, onClose() {} });
-        playSnake({
-          onFinish: async ({ score, replay }) => {
-            await updateDoc(doc(db, 'participants', token), { minigameScore: score, minigamePlayed: true, snakeReplay: replay });
-          },
-          onClose() {}
-        });
-      });
-      document.getElementById('watchMe')?.addEventListener('click', () =>
-        playReplay({ name: s.me.name, score: s.me.minigameScore, replay: s.me.snakeReplay }));
+      document.querySelectorAll('.playGame').forEach(btn => btn.addEventListener('click', () =>
+        GAMES[btn.dataset.g].play(!!DEMO, () => {})));
+      document.getElementById('watchMe')?.addEventListener('click', () => G.watch(s.me));
     }
 
-    // ---------- Leaderboard ----------
-    function renderBoardTab() {
-      const s = S;
-      const done = s.captains.filter(c => c.minigamePlayed).sort((a, b) => (b.minigameScore ?? 0) - (a.minigameScore ?? 0));
-      const waiting = s.captains.filter(c => !c.minigamePlayed);
+    // ---------- Leaderboard: aktives Spiel oben, das andere darunter ----------
+    function boardSection(gk) {
+      const s = S, G = GAMES[gk];
+      const done = s.captains.filter(G.played).sort((a, b) => G.rank(a) - G.rank(b));
+      const waiting = s.captains.filter(c => !G.played(c));
+      if (gk !== activeGame() && !done.length) return '';
       const medals = ['🥇', '🥈', '🥉'];
-      let h = header() + '<h2 style="margin-top:4px">🏆 Leaderboard Snake</h2>';
+      let h = `<h2 style="margin-top:4px">🏆 ${G.name}${gk === activeGame() ? ' <span style="font-size:.75rem;color:#16a34a">entscheidet die Wahl</span>' : ''}</h2>`;
       if (!done.length) h += '<div class="card"><p>Noch hat kein Kapitän gespielt.</p></div>';
       done.forEach((c, i) => {
         const team = Object.values(s.teams).find(t => t.captainToken === c.token);
         h += `<div class="card" style="display:flex;align-items:center;gap:12px">
           <div style="font-size:1.6rem;width:36px;text-align:center">${medals[i] ?? (i + 1) + '.'}</div>
           <div style="flex:1"><strong>${escapeHtml(c.name)}</strong><br>
-            <span style="color:#555;font-size:.9rem">${escapeHtml(team?.name ?? '')} · ${c.minigameScore} 🍎</span></div>
-          ${c.snakeReplay ? `<button class="watch" data-token="${c.token}">▶ Ansehen</button>` : ''}
+            <span style="color:#555;font-size:.9rem">${escapeHtml(team?.name ?? '')} · ${escapeHtml(G.label(c))}</span></div>
+          ${G.canWatch(c) ? `<button class="watch" data-g="${gk}" data-token="${c.token}">▶ Ansehen</button>` : ''}
         </div>`;
       });
-      if (waiting.length) h += `<p style="color:#555">Noch nicht gespielt: ${waiting.map(c => escapeHtml(c.name)).join(', ')}</p>`;
-      root.innerHTML = h;
+      if (waiting.length && gk === activeGame()) h += `<p style="color:#555">Noch nicht gespielt: ${waiting.map(c => escapeHtml(c.name)).join(', ')}</p>`;
+      return h;
+    }
+    function renderBoardTab() {
+      const order = [activeGame(), ...Object.keys(GAMES).filter(k => k !== activeGame())];
+      root.innerHTML = header() + order.map(boardSection).join('');
       document.querySelectorAll('.watch').forEach(btn => btn.addEventListener('click', () => {
-        const c = s.captains.find(x => x.token === btn.dataset.token);
-        if (c) playReplay({ name: c.name, score: c.minigameScore, replay: c.snakeReplay });
+        const c = S.captains.find(x => x.token === btn.dataset.token);
+        if (c) GAMES[btn.dataset.g].watch(c);
       }));
     }
 
