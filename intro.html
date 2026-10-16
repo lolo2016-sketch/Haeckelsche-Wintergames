@@ -50,8 +50,10 @@
       const data = snap.data();
 
       // Ziel: entweder explizit gesetzt, sonst je nach Rolle
-      const destination = data.redirectTo
-        || (data.role === 'admin' ? 'admin.html' : `index.html?t=${token}`);
+      // Admins bekommen ihren Token mit, damit admin.html ohne Passwort öffnet
+      const destination = data.role === 'admin'
+        ? `admin.html?t=${token}`
+        : (data.redirectTo || `index.html?t=${token}`);
 
       if (!data.videoUrl) {
         // kein Video hinterlegt -> direkt weiter

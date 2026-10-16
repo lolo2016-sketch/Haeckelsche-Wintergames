@@ -8,7 +8,6 @@
 </head>
 <body>
   <h1>Admin-Steuerung</h1>
-  <p style="color:#b91c1c"><strong>Hinweis:</strong> Diese Seite ist nicht durch ein echtes Passwort geschützt – gib den Link nur an dich selbst weiter (siehe ANLEITUNG.md).</p>
   <div id="app">Lade…</div>
 
   <script type="module">
@@ -213,7 +212,50 @@
       });
     }
 
-    loadAll();
+    // ===== Zugangsschutz =====
+    // Prüfsumme von "haeckelsche:" + Passwort (klein geschrieben). Das Passwort selbst steht nirgends im Code.
+    const PW_HASH = 'da5ec80671995a0d15f75891fcef4c8c90c3665d0c48269a108659917660d18d';
+    const OK_KEY = 'haeckelsche-admin-ok';
+
+    async function sha256(text) {
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+      return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    function remember() { try { localStorage.setItem(OK_KEY, PW_HASH); } catch (e) {} }
+    function remembered() { try { return localStorage.getItem(OK_KEY) === PW_HASH; } catch (e) { return false; } }
+
+    async function gate() {
+      if (remembered()) return loadAll();
+
+      // Über den QR-Code eines Admins (intro.html → admin.html?t=…): kein Passwort nötig
+      const t = new URLSearchParams(location.search).get('t');
+      if (t) {
+        const snap = await getDoc(doc(db, 'participants', t));
+        if (snap.exists() && snap.data().role === 'admin') {
+          remember();
+          history.replaceState(null, '', location.pathname); // Token aus der Adresszeile entfernen
+          return loadAll();
+        }
+      }
+
+      root.innerHTML = `<div class="card" style="max-width:360px">
+        <h2>🔒 Admin-Bereich</h2>
+        <p>Bitte Passwort eingeben.</p>
+        <form id="pwForm">
+          <input id="pw" type="password" autocomplete="current-password" placeholder="Passwort" style="width:100%">
+          <button type="submit" style="margin-top:8px">Öffnen</button>
+          <p id="pwErr" style="color:#b91c1c;display:none">Falsches Passwort.</p>
+        </form></div>`;
+      document.getElementById('pw').focus();
+      document.getElementById('pwForm').addEventListener('submit', async e => {
+        e.preventDefault();
+        const val = document.getElementById('pw').value.trim().toLowerCase();
+        if (await sha256('haeckelsche:' + val) === PW_HASH) { remember(); loadAll(); }
+        else document.getElementById('pwErr').style.display = 'block';
+      });
+    }
+
+    gate();
   </script>
 </body>
 </html>
