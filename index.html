@@ -19,6 +19,10 @@
   #hallWrap.flat { height:auto; background:none; box-shadow:none; }
   .hall-hint { position:absolute; left:50%; bottom:12px; transform:translateX(-50%); background:rgba(15,23,42,.7); color:#fff;
     padding:6px 12px; border-radius:999px; font-size:.85rem; pointer-events:none; white-space:nowrap; transition:opacity .6s; }
+  .my-msg { position:absolute; left:10px; right:10px; top:10px; background:rgba(255,255,255,.94); border-radius:12px;
+    padding:6px 10px; font-size:.88rem; box-shadow:0 2px 6px rgba(0,0,0,.15); pointer-events:none; display:none;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .my-msg b { color:#16a34a; }
   .hall-tools { display:flex; justify-content:flex-end; align-items:center; margin-top:8px; gap:4px; flex-wrap:wrap; }
   .tabbar { position:fixed; left:0; right:0; bottom:0; display:flex; justify-content:center; gap:6px;
     background:rgba(255,255,255,.96); border-top:1px solid #e5e7eb; padding:8px 8px calc(8px + env(safe-area-inset-bottom)); z-index:500; }
@@ -53,7 +57,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import {
-      getFirestore, doc, getDoc, updateDoc, collection, onSnapshot, addDoc, query, orderBy, limit
+      getFirestore, doc, getDoc, getDocs, updateDoc, collection, onSnapshot, addDoc, query, orderBy, limit
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
     import { playSnake, playReplay } from "./minigame.js";
@@ -64,10 +68,9 @@
 
     const params = new URLSearchParams(location.search);
     const DEMO = params.has('demo') ? (params.get('demo') === 'kapitaen' ? 'captain' : 'player') : null;
-    const token = DEMO ? 'demo-me' : params.get('t');
+    let token = DEMO ? 'demo-me' : params.get('t');
     const root = document.getElementById('app');
     const tabbar = document.getElementById('tabbar');
-    const ENTRANCE_KEY = 'haeckelsche-entrance-' + token;
 
     let tab = 'hall';
     let S = null;            // aktueller Datenstand
@@ -80,7 +83,9 @@
     const MAX_LEN = 120, MIN_GAP_MS = 3000;
     let messages = [];          // neueste zuerst, max. 100
     let chatOpen = false, unread = 0, lastSent = 0;
-    let entranceDone = false;
+    // Einlauf genau einmal: beim allerersten Öffnen des eigenen Links (dann wird arrivedAt gespeichert).
+    // Danach sitzt man immer direkt auf seinem Platz, auch auf anderen Geräten.
+    let needsEntrance = false;
 
     // ---------- Live-Daten aus Firebase ----------
     function subscribe() {
@@ -126,7 +131,9 @@
       S = s;
       if (firstTime) {
         // Ankunft speichern: bestimmt den Sitzplatz (der Erste sitzt ganz links)
+        if (DEMO) needsEntrance = true;
         if (!DEMO && !S.me.arrivedAt && S.me.role !== 'admin') {
+          needsEntrance = true;
           S.me.arrivedAt = Date.now();
           updateDoc(doc(db, 'participants', token), { arrivedAt: S.me.arrivedAt }).catch(() => {});
         }
@@ -233,7 +240,7 @@
       root.innerHTML = `${header()}<div id="banner">${bannerHtml()}</div><div id="hallWrap"></div>
         <div class="hall-tools">
           <button class="secondary" id="viewBtn" style="display:none"></button>
-          <button class="secondary" id="replayIntro">▶ Einlauf</button>
+          ${DEMO ? '<button class="secondary" id="replayIntro">▶ Einlauf (Demo)</button>' : ''}
         </div>${chatHtml()}`;
       wireChat();
       const wrap = document.getElementById('hallWrap');
@@ -256,33 +263,40 @@
         hall = hall3dMod.createHall3D(wrap, { meToken: token, onPersonTap: tapToken });
         hall.is3d = true;
         updateHall();
+        const my = document.createElement('div');
+        my.className = 'my-msg'; my.id = 'myMsg';
+        wrap.appendChild(my);
         refreshBubbles();
         const hint = document.createElement('div');
         hint.className = 'hall-hint'; hint.textContent = '👆 Wischen zum Umschauen';
         wrap.appendChild(hint);
         setTimeout(() => { hint.style.opacity = '0'; }, 5000);
         const vb = document.getElementById('viewBtn');
-        const setBtn = () => { vb.textContent = hall.getView() === 'overview' ? '🧍 Meine Sicht' : '👁 Übersicht'; };
+        const setBtn = () => {
+          const v = hall.getView();
+          vb.textContent = v === 'orbit' ? '🧍 Ich-Sicht' : '🎥 Rundumblick';
+          hint.textContent = v === 'orbit' ? '👆 Wischen = drehen · 2 Finger = Zoom' : '👆 Wischen zum Umschauen';
+        };
         vb.style.display = ''; setBtn();
-        vb.onclick = () => { hall.setView(hall.getView() === 'overview' ? 'first' : 'overview'); setBtn(); };
-        const seen = DEMO ? entranceDone : (() => { try { return localStorage.getItem(ENTRANCE_KEY) === '1'; } catch (e) { return false; } })();
-        if (!seen) runEntrance(setBtn);
-        document.getElementById('replayIntro').onclick = () => runEntrance(setBtn);
+        vb.onclick = () => {
+          if (['follow', 'toEyes'].includes(hall.getView())) return;   // während des Einlaufs nicht umschalten
+          hall.setView(hall.getView() === 'orbit' ? 'first' : 'orbit'); setBtn();
+          hint.style.opacity = '1'; clearTimeout(hint._t); hint._t = setTimeout(() => { hint.style.opacity = '0'; }, 4000);
+        };
+        if (needsEntrance) runEntrance(setBtn);
+        const rb = document.getElementById('replayIntro');
+        if (rb) rb.onclick = () => runEntrance(setBtn);
       } else {
         wrap.classList.add('flat');
         hall = createHall(wrap, { meToken: token, onPlayerTap: p => tapToken(p.token) });
         updateHall();
-        const seen = DEMO ? entranceDone : (() => { try { return localStorage.getItem(ENTRANCE_KEY) === '1'; } catch (e) { return false; } })();
-        if (!seen) { hall.playIntro(); markEntrance(); }
-        document.getElementById('replayIntro').onclick = () => hall.playIntro();
+        if (needsEntrance) { hall.playIntro(); needsEntrance = false; }
+        const rb = document.getElementById('replayIntro');
+        if (rb) rb.onclick = () => hall.playIntro();
       }
     }
-    function markEntrance() {
-      entranceDone = true;
-      if (!DEMO) try { localStorage.setItem(ENTRANCE_KEY, '1'); } catch (e) {}
-    }
     async function runEntrance(setBtn) {
-      markEntrance();
+      needsEntrance = false;
       await hall.playEntrance();
       setBtn?.();
     }
@@ -300,6 +314,12 @@
       for (const p of [...S.players, ...S.captains]) {
         const m = newest[p.token];
         hall.setBubble(p.token, m ? m.text : null);
+      }
+      const my = document.getElementById('myMsg');
+      if (my) {
+        const m = newest[token];
+        my.style.display = m ? 'block' : 'none';
+        if (m) my.innerHTML = `💬 <b>Du:</b> ${escapeHtml(m.text)}`;
       }
     }
     setInterval(refreshBubbles, 2000);
@@ -456,7 +476,34 @@
     }
 
     // ---------- Demo-Modus: index.html?demo (Spieler) oder ?demo=kapitaen ----------
-    function demoStart() {
+    // Zeigt die in admin.html angelegten Personen mit ihren Fotos/Frisuren (nur lesen, nichts wird gespeichert).
+    // Sind noch keine angelegt, kommen Beispiel-Leute.
+    async function demoStart() {
+      let ps = [], ts = {};
+      try {
+        (await getDocs(collection(db, 'participants'))).forEach(d => ps.push({ token: d.id, ...d.data() }));
+        (await getDocs(collection(db, 'teams'))).forEach(d => { ts[d.id] = { id: d.id, ...d.data() }; });
+      } catch (e) { ps = []; }
+      const realPlayers = ps.filter(p => p.role === 'player');
+      const realCaps = ps.filter(p => p.role === 'captain' && Object.values(ts).some(t => t.captainToken === p.token));
+      const usable = DEMO === 'captain' ? realCaps.length > 0 && realPlayers.length > 0 : realPlayers.length > 0;
+      if (!usable) return demoSample();
+      const t0 = Date.now() - 600000;
+      const byName = (a, b) => String(a.name).localeCompare(String(b.name), 'de');
+      const players = realPlayers.sort((a, b) => (a.arrivedAt ?? 9e15) - (b.arrivedAt ?? 9e15) || byName(a, b))
+        .map((p, i) => ({ ...p, teamId: null, arrivedAt: t0 + i * 1000 }));
+      const captains = realCaps.sort(byName).map(c => ({ ...c, arrivedAt: t0, minigamePlayed: c.minigamePlayed ?? false }));
+      let me;
+      if (DEMO === 'captain') me = captains[0];
+      else { me = players[players.length - 1]; me.arrivedAt = Date.now(); }   // der Letzte läuft gerade ein
+      token = me.token;
+      const teamIds = captains.map(c => Object.values(ts).find(t => t.captainToken === c.token).id);
+      let benchSeats;
+      try { benchSeats = (await getDoc(doc(db, 'state', 'current'))).data()?.benchSeats; } catch (e) {}
+      const state = DEMO === 'captain' ? { phase: 'draft', pickOrder: teamIds, turnIndex: 0, benchSeats } : { phase: 'setup', benchSeats };
+      onData({ me, state, teams: ts, players, captains });
+    }
+    function demoSample() {
       const names = ['Anna', 'Ben', 'Clara', 'David', 'Emil', 'Fiona', 'Greta', 'Hannes', 'Ida', 'Jonas', 'Klara', 'Leon', 'Mia', 'Noah'];
       const longHair = new Set(['Anna', 'Clara', 'Fiona', 'Greta', 'Ida', 'Klara', 'Mia']);
       const t0 = Date.now() - 600000;

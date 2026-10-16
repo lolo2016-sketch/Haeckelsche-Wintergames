@@ -13,25 +13,23 @@ const SKIN = 0xf0c4a0;
 
 // Halle (Meter): x von -12 bis 12, z von -9 (hinten, Bänke) bis 9 (vorne, Basketballkorb)
 const DOOR = new THREE.Vector3(18.5, 0, -3.2);   // vor dem Eingangstor im Schnee
-// Tribüne im Halbkreis um die Kapitäne: Mittelpunkt ARC, Reihe r hat Radius rowR(r) und Höhe rowH(r)
-const ARC = new THREE.Vector3(-1.6, 0, 0.5);
-const ARC_SPAN = Math.PI / 2;        // halber Öffnungswinkel: genau ein Halbkreis
-// Eine Reihe mit BENCH_SEATS Plätzen (Standard 15, in admin.html einstellbar), gleichmäßig verteilt.
-// Kommen doch mehr, entsteht automatisch eine zweite, höhere Reihe dahinter.
+// Gerade Bank hinten, Kapitäne davor. Eine Reihe mit BENCH_SEATS Plätzen (Standard 15, in admin.html
+// einstellbar), gleichmäßig verteilt. Kommen mehr, entsteht automatisch eine zweite, höhere Reihe dahinter.
+const FIELD = new THREE.Vector3(-1.6, 0, -3.8);   // Mitte zwischen Bank und Kapitänen (Drehpunkt Rundumblick)
 let BENCH_SEATS = 15;
-const rowR = r => 6.0 + r * 1.1;
+const SEAT_DX = 0.9;
+const rowZ = r => -6.3 - r * 0.8;
 const rowH = r => 0.45 + r * 0.42;
-const seatsInRow = r => BENCH_SEATS + r * 4;
-const CAP_Z = ARC.z + 0.8;
+const seatsInRow = r => BENCH_SEATS + r * 2;
+const FRONT_Z = -5.0;
+const CAP_Z = -1.9;
 // Sitzplatz Nr. i (0 = erster Ankömmling, ganz links, am weitesten vom Eingang)
 function seatAt(i) {
   let r = 0, k = i;
   while (k >= seatsInRow(r)) { k -= seatsInRow(r); r++; }
   const n = seatsInRow(r);
-  const phi = -ARC_SPAN + k * (2 * ARC_SPAN / (n - 1));
-  const R = rowR(r);
-  return { r, k, phi, R, x: ARC.x + R * Math.sin(phi), z: ARC.z - R * Math.cos(phi), yaw: -phi,
-    fx: ARC.x + (R - 1.1) * Math.sin(phi), fz: ARC.z - (R - 1.1) * Math.cos(phi) };
+  const x = FIELD.x + (k - (n - 1) / 2) * SEAT_DX;
+  return { r, k, x, z: rowZ(r), yaw: 0, fx: x, fz: FRONT_Z };
 }
 function rowsFor(n) { let r = 0, cap = 0; while (cap < n) { cap += seatsInRow(r); r++; } return Math.max(1, r); }
 const WALK_SPEED = 3.0;
@@ -146,27 +144,19 @@ function buildBenches(scene, rows) {
   const plank = new THREE.MeshLambertMaterial({ color: 0xc08446 });
   const dark = new THREE.MeshLambertMaterial({ color: 0x6b4423 });
   const step = new THREE.MeshLambertMaterial({ color: 0x94a3b8 });
-  let i0 = 0;
   for (let r = 0; r < rows; r++) {
-    const n = seatsInRow(r), R = rowR(r);
-    const segW = R * (2 * ARC_SPAN / (n - 1)) + 0.04;
-    for (let k = 0; k < n; k++) {
-      const st = seatAt(i0 + k);
-      const seat = new THREE.Mesh(new THREE.BoxGeometry(segW, 0.06, 0.36), plank);
-      seat.position.set(st.x, rowH(r), st.z); seat.rotation.y = st.yaw; group.add(seat);
-      if (k % 3 === 0 || k === n - 1) {
-        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.45, 0.3), dark);
-        leg.position.set(st.x, rowH(r) - 0.24, st.z); leg.rotation.y = st.yaw; group.add(leg);
-      }
-      if (r > 0) {
-        const h = r * 0.42;
-        const bx = new THREE.Mesh(new THREE.BoxGeometry(segW + 0.05, h, 1.0), step);
-        const rr = R - 0.25;
-        bx.position.set(ARC.x + rr * Math.sin(st.phi), h / 2, ARC.z - rr * Math.cos(st.phi));
-        bx.rotation.y = st.yaw; group.add(bx);
-      }
+    const len = seatsInRow(r) * SEAT_DX + 0.5;
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(len, 0.06, 0.34), plank);
+    seat.position.set(FIELD.x, rowH(r), rowZ(r)); group.add(seat);
+    for (let k = 0; k <= 6; k++) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.45, 0.28), dark);
+      leg.position.set(FIELD.x - len / 2 + 0.2 + k * (len - 0.4) / 6, rowH(r) - 0.24, rowZ(r)); group.add(leg);
     }
-    i0 += n;
+    if (r > 0) {
+      const h = r * 0.42;
+      const st = new THREE.Mesh(new THREE.BoxGeometry(len, h, 0.8), step);
+      st.position.set(FIELD.x, h / 2, rowZ(r) + 0.2); group.add(st);
+    }
   }
   scene.add(group);
   return group;
@@ -339,7 +329,7 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
 
   const chars = {};          // token -> Figur
   let data = null;
-  let mode = 'overview';     // 'overview' | 'follow' | 'toEyes' | 'first'
+  let mode = 'orbit';        // 'orbit' (Rundumblick) | 'follow' (Einlauf) | 'toEyes' | 'first' (Ich-Sicht)
   let look = { yaw: 0, pitch: -0.08 };
   let lookBase = 0;
   let transition = null;
@@ -353,7 +343,7 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
       .sort((a, b) => (a.arrivedAt ?? 0) - (b.arrivedAt ?? 0) || String(a.name).localeCompare(String(b.name), 'de'));
     const cols = data.columns;
     const C = Math.max(1, cols.length);
-    const capX = j => ARC.x + (j - (C - 1) / 2) * Math.min(1.6, 9 / C);
+    const capX = j => FIELD.x + (j - (C - 1) / 2) * Math.min(1.8, 11 / C);
     const colOf = {};
     cols.forEach((c, j) => { colOf[c.teamId] = j; });
     const teamCount = {};
@@ -383,8 +373,7 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
     if (fromDoor) {
       ch.root.position.copy(DOOR); ch.sit = 0; ch.yaw = -Math.PI / 2;
       ch.actions.push({ type: 'walk', to: new THREE.Vector3(DOOR.x - 2.5, 0, DOOR.z) });
-      ch.actions.push({ type: 'walk', to: new THREE.Vector3(ARC.x + 9.5, 0, ARC.z + 4.5) });
-      ch.actions.push({ type: 'walk', to: new THREE.Vector3(ARC.x + 2.5, 0, ARC.z + 3.2) });
+      ch.actions.push({ type: 'walk', to: new THREE.Vector3(8, 0, -3.4) });
     } else if (ch.sit > 0.5 || ch.root.position.y > 0.01) {
       // aufstehen: nach vorne von der Bank (zur Mitte hin)
       const f = ch.target?.front ?? ch.prevFront;
@@ -442,7 +431,7 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
     turnCaptain = data.columns.find(c => c.teamId === data.turnTeamId)?.captainToken ?? null;
     if (first) {
       first = false;
-      if (chars[meToken]) setView('first'); else setView('overview');
+      if (chars[meToken]) setView('first'); else setView('orbit');
     }
   }
 
@@ -457,12 +446,25 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
     }
     return new THREE.Vector3(p.x, 1.68, p.z + Math.cos(ch.yaw) * 0.08);
   }
+  // Rundumblick: Kamera kreist um die Spielfeldmitte, Start hinter der eigenen Figur
+  const orbit = { yaw: 0, dist: 12, height: 6 };
+  let blending = false;
   function setView(v) {
-    if (v === 'first' && !me()) v = 'overview';
+    if (v === 'first' && !me()) v = 'orbit';
+    if (v === 'overview') v = 'orbit';
     mode = v;
-    look = { yaw: 0, pitch: v === 'first' ? -0.1 : -0.42 };
-    lookBase = v === 'first' ? (me()?.target?.yaw ?? 0) : Math.PI;
-    if (me()) me().root.visible = v !== 'first';
+    look = { yaw: 0, pitch: -0.1 };
+    lookBase = me()?.target?.yaw ?? 0;
+    blending = true;
+    if (v === 'orbit') {
+      const m = me();
+      if (m) {
+        const d = m.root.position.clone().sub(FIELD); d.y = 0;
+        orbit.yaw = Math.atan2(d.x, d.z) || 0;
+        orbit.dist = Math.max(8, d.length() + 4.5); orbit.height = 4.5;
+      } else { orbit.yaw = 0; orbit.dist = 12.5; orbit.height = 6.5; }
+    }
+    if (me()) me().root.visible = true;   // wird in der Ich-Sicht ausgeblendet, sobald die Kamera im Kopf ist
   }
   function dirFrom(yaw, pitch) {
     return new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
@@ -505,40 +507,78 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
       camLookTarget.lerpVectors(transition.fromLook, lt, e);
       camera.lookAt(camLookTarget);
       if (k > 0.8) ch.root.visible = false;
-      if (k >= 1) { const done = transition.done; transition = null; setView('first'); done(); }
+      if (k >= 1) { const done = transition.done; transition = null; setView('first'); blending = false; done(); }
     } else if (mode === 'first') {
       const eye = eyeOf(me());
-      camera.position.copy(eye);
-      camLookTarget.copy(eye).add(dirFrom(lookBase + look.yaw, look.pitch));
+      const lt = eye.clone().add(dirFrom(lookBase + look.yaw, look.pitch));
+      if (blending) {
+        // weich aus dem Rundumblick zurück in den Kopf fahren
+        camera.position.lerp(eye, Math.min(1, dt * 5));
+        camLookTarget.lerp(lt, Math.min(1, dt * 5));
+        if (camera.position.distanceTo(eye) < 0.03) blending = false;
+      } else { camera.position.copy(eye); camLookTarget.copy(lt); }
+      if (me()) me().root.visible = camera.position.distanceTo(eye) > 0.6;
       camera.lookAt(camLookTarget);
     } else {
-      // Übersicht: von vorne über die Kapitäne auf die Bank
-      const center = new THREE.Vector3(ARC.x, 0.6, ARC.z - 2.6);
-      const r = 12.5;
-      camera.position.set(center.x + Math.sin(look.yaw) * r, 7.2, center.z + Math.cos(look.yaw) * r);
-      camLookTarget.copy(center);
-      camera.lookAt(center);
+      // Rundumblick um das ganze Spielfeld
+      const want = new THREE.Vector3(FIELD.x + Math.sin(orbit.yaw) * orbit.dist, orbit.height, FIELD.z + Math.cos(orbit.yaw) * orbit.dist);
+      const lt = new THREE.Vector3(FIELD.x, 0.9, FIELD.z);
+      const k = Math.min(1, dt * (blending ? 4 : 12));
+      camera.position.lerp(want, k);
+      camLookTarget.lerp(lt, k);
+      if (camera.position.distanceTo(want) < 0.05) blending = false;
+      camera.lookAt(camLookTarget);
     }
   }
 
   // ----- Umschauen per Wischen, Antippen von Figuren -----
   const el = renderer.domElement;
   let drag = null;
-  el.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, yaw: look.yaw, pitch: look.pitch }; el.setPointerCapture(e.pointerId); });
+  const pointers = new Map();
+  let pinch = null;
+  el.addEventListener('pointerdown', e => {
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    el.setPointerCapture(e.pointerId);
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), dist: orbit.dist };
+      drag = null; return;
+    }
+    drag = { sx: e.clientX, sy: e.clientY, yaw: look.yaw, pitch: look.pitch, oyaw: orbit.yaw, oh: orbit.height, moved: 0 };
+  });
   el.addEventListener('pointermove', e => {
-    if (!drag || (mode !== 'first' && mode !== 'overview')) return;
+    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && pointers.size === 2 && mode === 'orbit') {
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      orbit.dist = Math.max(4, Math.min(28, pinch.dist * pinch.d / d));
+      return;
+    }
+    if (!drag) return;
     const w = el.clientWidth || 1;
     const dx = (e.clientX - drag.sx) / w, dy = (e.clientY - drag.sy) / w;
-    const maxYaw = mode === 'first' ? 1.3 : 0.9;
-    look.yaw = Math.max(-maxYaw, Math.min(maxYaw, drag.yaw + dx * 2.6));
-    if (mode === 'first') look.pitch = Math.max(-0.6, Math.min(0.35, drag.pitch + dy * 1.6));
+    drag.moved = Math.max(drag.moved, Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy));
+    if (mode === 'first') {
+      look.yaw = Math.max(-1.3, Math.min(1.3, drag.yaw + dx * 2.6));
+      look.pitch = Math.max(-0.6, Math.min(0.35, drag.pitch + dy * 1.6));
+    } else if (mode === 'orbit') {
+      orbit.yaw = drag.oyaw - dx * 4.5;                                   // einmal ganz herum
+      orbit.height = Math.max(1.4, Math.min(16, drag.oh + dy * 12));
+    }
   });
-  el.addEventListener('pointerup', e => {
-    const moved = drag && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy);
-    drag = null;
-    if (moved != null && moved < 8) tapAt(e);
-  });
-  el.addEventListener('pointercancel', () => { drag = null; });
+  const endPointer = e => {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = null;
+    if (e.type === 'pointerup' && drag && drag.moved < 8) tapAt(e);
+    if (!pointers.size) drag = null;
+  };
+  el.addEventListener('pointerup', endPointer);
+  el.addEventListener('pointercancel', endPointer);
+  el.addEventListener('wheel', e => {
+    if (mode !== 'orbit') return;
+    e.preventDefault();
+    orbit.dist = Math.max(4, Math.min(28, orbit.dist * (1 + e.deltaY * 0.001)));
+  }, { passive: false });
 
   const ray = new THREE.Raycaster();
   function tapAt(e) {

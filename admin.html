@@ -29,13 +29,52 @@
     const introUrl = location.href.replace(/admin\.html.*$/, 'intro.html');
 
     let lastTest = null; // letzter Testversuch (nur im Browser, wird nicht gespeichert)
+    let lastAdded = null; // zuletzt angelegte Person -> QR-Code oben anzeigen
+
+    // ----- Dateien aus dem GitHub-Repo (für die Auswahllisten Bild/Video) -----
+    const GH_OWNER = location.hostname.endsWith('.github.io') ? location.hostname.split('.')[0] : 'lolo2016-sketch';
+    const GH_REPO = location.hostname.endsWith('.github.io') ? (location.pathname.split('/')[1] || 'Haeckelsche-Wintergames') : 'Haeckelsche-Wintergames';
+    let repoFiles = { photos: [], videos: [], loaded: false, error: null };
+    async function loadRepoFiles() {
+      const list = async dir => {
+        const r = await fetch(`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${dir}`);
+        if (r.status === 404) return [];
+        if (!r.ok) throw new Error('GitHub antwortet mit ' + r.status);
+        return (await r.json()).filter(f => f.type === 'file').map(f => f.path);
+      };
+      try {
+        const [photos, faces, videos] = await Promise.all([list('photos'), list('faces'), list('videos')]);
+        repoFiles = {
+          photos: [...photos, ...faces].filter(f => /\.(png|jpe?g|webp|gif)$/i.test(f)),
+          videos: videos.filter(f => /\.(mp4|webm|mov|m4v)$/i.test(f)), loaded: true, error: null
+        };
+      } catch (e) { repoFiles = { photos: [], videos: [], loaded: true, error: e.message }; }
+    }
+    function fileOptions() {
+      return `<datalist id="photoFiles">${repoFiles.photos.map(f => `<option value="${f}">`).join('')}</datalist>
+        <datalist id="videoFiles">${repoFiles.videos.map(f => `<option value="${f}">`).join('')}</datalist>`;
+    }
+    function filesHint() {
+      if (!repoFiles.loaded) return 'Lade Dateiliste aus dem Repo …';
+      if (repoFiles.error) return '⚠️ Dateiliste nicht abrufbar (' + repoFiles.error + '), Pfad bitte von Hand eintippen.';
+      return `Im Repo gefunden: ${repoFiles.photos.length} Bilder (photos/, faces/), ${repoFiles.videos.length} Videos (videos/). <a href="#" id="reloadFiles">↻ neu laden</a>`;
+    }
+    // Eingabefelder Bild / Video / Frisur (beim Anlegen und bei bestehenden Personen)
+    function mediaInputs(prefix, x = {}) {
+      return `<input class="${prefix}photo" list="photoFiles" placeholder="Bild für die Figur, z. B. photos/max.png" value="${x.photoUrl ?? ''}" style="width:240px">
+        <input class="${prefix}video" list="videoFiles" placeholder="Intro-Video, z. B. videos/max.mp4" value="${x.videoUrl ?? ''}" style="width:240px">
+        <select class="${prefix}hair" title="Frisur der 3D-Figur (für die Rückansicht)">
+          <option value="kurz" ${x.hair !== 'lang' ? 'selected' : ''}>Haare kurz</option>
+          <option value="lang" ${x.hair === 'lang' ? 'selected' : ''}>Haare lang</option>
+        </select>`;
+    }
 
     // Felder für Foto und Video einer Person (Pfade im Repo, z. B. photos/max.png, videos/max.mp4)
     function mediaFields(x) {
       return `<div style="margin-top:6px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         ${x.photoUrl ? `<img src="${x.photoUrl}" alt="" style="height:54px" onerror="this.replaceWith('⚠️ Foto nicht gefunden')">` : ''}
-        <input class="photoIn" data-token="${x.token}" placeholder="photos/name.png" value="${x.photoUrl ?? ''}" style="width:170px">
-        <input class="videoIn" data-token="${x.token}" placeholder="videos/name.mp4" value="${x.videoUrl ?? ''}" style="width:170px">
+        <input class="photoIn" list="photoFiles" data-token="${x.token}" placeholder="photos/name.png" value="${x.photoUrl ?? ''}" style="width:170px">
+        <input class="videoIn" list="videoFiles" data-token="${x.token}" placeholder="videos/name.mp4" value="${x.videoUrl ?? ''}" style="width:170px">
         <select class="hairIn" data-token="${x.token}" title="Frisur der 3D-Figur">
           <option value="kurz" ${x.hair !== 'lang' ? 'selected' : ''}>Haare kurz</option>
           <option value="lang" ${x.hair === 'lang' ? 'selected' : ''}>Haare lang</option>
@@ -62,6 +101,19 @@
       partsSnap.forEach(d => participants.push({ token: d.id, ...d.data() }));
 
       render(state, teams, participants);
+      // Dateiliste einmal im Hintergrund holen und nur Listen/Hinweise auffrischen (Eingaben bleiben erhalten)
+      if (!repoFiles.loaded && !repoFiles.loading) {
+        repoFiles.loading = true;
+        loadRepoFiles().then(refreshFileUi);
+      }
+    }
+    function refreshFileUi() {
+      const tmp = document.createElement('div'); tmp.innerHTML = fileOptions();
+      for (const dl of tmp.querySelectorAll('datalist')) document.getElementById(dl.id)?.replaceWith(dl);
+      document.querySelectorAll('.filesHint').forEach(h => { h.innerHTML = filesHint(); });
+      document.getElementById('reloadFiles')?.addEventListener('click', async e => {
+        e.preventDefault(); repoFiles.loaded = false; refreshFileUi(); await loadRepoFiles(); refreshFileUi();
+      });
     }
 
     function qrImg(url, size = 140) {
@@ -83,6 +135,11 @@
           <span style="color:#666;font-size:.85rem">Am besten = Anzahl Spieler (ohne Kapitäne). Vor dem Event festlegen.</span>
         </div>
         <div style="margin-top:10px">
+          <span>🏟️ In der Halle: ${participants.filter(p => p.role !== 'admin' && p.arrivedAt).length} von ${participants.filter(p => p.role !== 'admin').length}</span>
+          <button class="secondary" id="resetArrivals">Halle leeren (alle wieder „noch nicht da“)</button>
+          <span style="color:#666;font-size:.85rem">Nach dem Testen und vor dem Event drücken.</span>
+        </div>
+        <div style="margin-top:10px">
           <span>💬 Chat: <span id="chatCount">…</span> Nachrichten</span>
           <button class="danger" id="clearChat">Chat leeren</button>
         </div>
@@ -97,16 +154,36 @@
         <button class="secondary" id="testReplay" ${lastTest ? '' : 'disabled'}>Letzten Test als Wiedergabe ansehen</button>
       </div>`;
 
+      html += fileOptions();
+
+      // zuletzt angelegte Person: QR-Code und Link gleich oben
+      const fresh = lastAdded && participants.find(p => p.token === lastAdded);
+      if (fresh) {
+        const link = `${introUrl}?t=${fresh.token}`;
+        html += `<div class="card" id="freshCard" style="border:3px solid #16a34a">
+          <h2>✅ Angelegt: ${fresh.name} (${fresh.role === 'captain' ? 'Kapitän' : 'Spieler'})</h2>
+          <p style="margin:4px 0">Bild: ${fresh.photoUrl || '–'} · Intro-Video: ${fresh.videoUrl || '– (geht direkt in die Halle)'}</p>
+          ${qrImg(link, 220)}
+          <a href="${link}" target="_blank">${link}</a><br>
+          <button class="secondary" id="copyFresh">Link kopieren</button>
+          <a href="https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=${encodeURIComponent(link)}" target="_blank" download="qr-${fresh.name}.png"><button class="secondary" type="button">QR-Code groß öffnen</button></a>
+        </div>`;
+      }
+
       html += `<div class="card">
         <h2>Kapitän hinzufügen</h2>
         <input id="captainName" placeholder="Name des Kapitäns">
         <input id="teamName" placeholder="Teamname">
+        <div>${mediaInputs('newCap-')}</div>
+        <p class="filesHint" style="font-size:.85rem;color:#666;margin:4px 0">${filesHint()}</p>
         <button id="addCaptain">Hinzufügen</button>
       </div>`;
 
       html += `<div class="card">
         <h2>Spieler hinzufügen</h2>
         <input id="playerName" placeholder="Name des Spielers">
+        <div>${mediaInputs('newPl-')}</div>
+        <p class="filesHint" style="font-size:.85rem;color:#666;margin:4px 0">${filesHint()}</p>
         <button id="addPlayer">Hinzufügen</button>
       </div>`;
 
@@ -160,6 +237,21 @@
 
       root.innerHTML = html;
 
+      function newMedia(prefix) {
+        const v = c => document.querySelector('.' + prefix + c)?.value.trim() || null;
+        return { photoUrl: v('photo'), videoUrl: v('video'), hair: v('hair') || 'kurz' };
+      }
+      document.getElementById('copyFresh')?.addEventListener('click', e => {
+        const link = `${introUrl}?t=${lastAdded}`;
+        navigator.clipboard?.writeText(link).then(() => { e.target.textContent = 'Kopiert ✓'; }).catch(() => prompt('Link:', link));
+      });
+      if (repoFiles.loaded) refreshFileUi();
+      document.getElementById('resetArrivals')?.addEventListener('click', async () => {
+        if (!confirm('Alle Spieler und Kapitäne wieder auf "noch nicht da" setzen? Die Halle ist danach leer und jeder läuft beim nächsten Öffnen neu ein.')) return;
+        for (const p of participants.filter(x => x.role !== 'admin' && x.arrivedAt)) await updateDoc(doc(db, 'participants', p.token), { arrivedAt: null });
+        loadAll();
+      });
+
       document.querySelectorAll('.saveMedia').forEach(btn => {
         btn.addEventListener('click', async () => {
           const t = btn.dataset.token;
@@ -189,16 +281,20 @@
         const token = genToken();
         const teamId = 'team_' + genToken();
         await setDoc(doc(db, 'teams', teamId), { name: teamName, captainToken: token });
-        await setDoc(doc(db, 'participants', token), { name, role: 'captain', teamId: null, minigameScore: null });
-        loadAll();
+        await setDoc(doc(db, 'participants', token), { name, role: 'captain', teamId: null, minigameScore: null, ...newMedia('newCap-') });
+        lastAdded = token;
+        await loadAll();
+        document.getElementById('freshCard')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       });
 
       document.getElementById('addPlayer').addEventListener('click', async () => {
         const name = document.getElementById('playerName').value.trim();
         if (!name) return;
         const token = genToken();
-        await setDoc(doc(db, 'participants', token), { name, role: 'player', teamId: null });
-        loadAll();
+        await setDoc(doc(db, 'participants', token), { name, role: 'player', teamId: null, ...newMedia('newPl-') });
+        lastAdded = token;
+        await loadAll();
+        document.getElementById('freshCard')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       });
 
       document.getElementById('addAdmin').addEventListener('click', async () => {
