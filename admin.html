@@ -36,6 +36,11 @@
         ${x.photoUrl ? `<img src="${x.photoUrl}" alt="" style="height:54px" onerror="this.replaceWith('⚠️ Foto nicht gefunden')">` : ''}
         <input class="photoIn" data-token="${x.token}" placeholder="photos/name.png" value="${x.photoUrl ?? ''}" style="width:170px">
         <input class="videoIn" data-token="${x.token}" placeholder="videos/name.mp4" value="${x.videoUrl ?? ''}" style="width:170px">
+        <select class="hairIn" data-token="${x.token}" title="Frisur der 3D-Figur">
+          <option value="kurz" ${x.hair !== 'lang' ? 'selected' : ''}>Haare kurz</option>
+          <option value="lang" ${x.hair === 'lang' ? 'selected' : ''}>Haare lang</option>
+        </select>
+        ${x.arrivedAt ? '<span title="hat den Link schon geöffnet">✅ in der Halle</span>' : '<span style="color:#888">noch nicht da</span>'}
         <button class="secondary saveMedia" data-token="${x.token}">Speichern</button>
       </div>`;
     }
@@ -78,7 +83,8 @@
         <h2>🎮 Minispiele testen</h2>
         <p style="font-size:0.9rem;color:#555">Zum Ausprobieren. Es wird nichts gespeichert und die Phase bleibt unverändert.</p>
         <button id="testSnake">Snake ausprobieren</button>
-        <a href="${baseUrl}?demo=1" target="_blank"><button class="secondary" type="button">🏟️ Halle mit Beispiel-Leuten ansehen</button></a>
+        <a href="${baseUrl}?demo" target="_blank"><button class="secondary" type="button">🏟️ Demo: als Spieler einlaufen</button></a>
+        <a href="${baseUrl}?demo=kapitaen" target="_blank"><button class="secondary" type="button">🏟️ Demo: als Kapitän wählen</button></a>
         <button class="secondary" id="testReplay" ${lastTest ? '' : 'disabled'}>Letzten Test als Wiedergabe ansehen</button>
       </div>`;
 
@@ -150,7 +156,8 @@
           const t = btn.dataset.token;
           const photoUrl = document.querySelector(`.photoIn[data-token="${t}"]`).value.trim() || null;
           const videoUrl = document.querySelector(`.videoIn[data-token="${t}"]`).value.trim() || null;
-          await updateDoc(doc(db, 'participants', t), { photoUrl, videoUrl });
+          const hair = document.querySelector(`.hairIn[data-token="${t}"]`).value;
+          await updateDoc(doc(db, 'participants', t), { photoUrl, videoUrl, hair });
           loadAll();
         });
       });
