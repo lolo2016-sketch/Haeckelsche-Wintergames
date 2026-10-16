@@ -18,6 +18,7 @@
       collection, getDocs
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
+    import { playSnake, playReplay } from "./minigame.js";
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
@@ -27,6 +28,8 @@
     const baseUrl = location.href.replace(/admin\.html.*$/, 'index.html');
     const adminUrl = location.href.replace(/admin\.html.*$/, 'admin.html');
     const introUrl = location.href.replace(/admin\.html.*$/, 'intro.html');
+
+    let lastTest = null; // letzter Testversuch (nur im Browser, wird nicht gespeichert)
 
     function genToken() {
       return Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6);
@@ -60,6 +63,13 @@
         <button id="toMinigame" ${state.phase !== 'setup' ? 'disabled' : ''}>Minispiel-Phase starten</button>
         <button id="toDraft" ${state.phase !== 'minigame' ? 'disabled' : ''}>Draft starten (Reihenfolge nach Score)</button>
         <button class="danger" id="resetAll">Alles zurücksetzen</button>
+      </div>`;
+
+      html += `<div class="card">
+        <h2>🎮 Minispiele testen</h2>
+        <p style="font-size:0.9rem;color:#555">Zum Ausprobieren. Es wird nichts gespeichert und die Phase bleibt unverändert.</p>
+        <button id="testSnake">Snake ausprobieren</button>
+        <button class="secondary" id="testReplay" ${lastTest ? '' : 'disabled'}>Letzten Test als Wiedergabe ansehen</button>
       </div>`;
 
       html += `<div class="card">
@@ -103,7 +113,7 @@
         const link = `${baseUrl}?t=${c.token}`;
         html += `<div class="card token-list">
           <strong>${c.name}</strong> — Team: ${teams[Object.keys(teams).find(id => teams[id].captainToken === c.token)]?.name ?? '?'}
-          ${c.minigameScore != null ? `<br>Score: ${c.minigameScore}` : ''}
+          ${c.minigamePlayed ? `<br>Snake-Score: ${c.minigameScore} 🍎 <button class="secondary resetTry" data-token="${c.token}">Versuch zurücksetzen</button>` : '<br>Hat noch nicht gespielt'}
           <br><a href="${link}" target="_blank">${link}</a>
           ${qrImg(link)}
           <button class="danger remove" data-token="${c.token}">Entfernen</button>
@@ -122,6 +132,17 @@
       });
 
       root.innerHTML = html;
+
+      document.getElementById('testSnake').addEventListener('click', () => {
+        playSnake({
+          testMode: true,
+          onFinish: r => { lastTest = r; },
+          onClose: () => render(state, teams, participants)
+        });
+      });
+      document.getElementById('testReplay').addEventListener('click', () => {
+        if (lastTest) playReplay({ name: 'Testversuch', score: lastTest.score, replay: lastTest.replay });
+      });
 
       document.getElementById('addCaptain').addEventListener('click', async () => {
         const name = document.getElementById('captainName').value.trim();
@@ -151,6 +172,15 @@
           name, role: 'admin', videoUrl, redirectTo: 'admin.html'
         });
         loadAll();
+      });
+
+      document.querySelectorAll('.resetTry').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Versuch dieses Kapitäns löschen? Er/sie darf dann nochmal spielen.')) return;
+          await updateDoc(doc(db, 'participants', btn.dataset.token),
+            { minigamePlayed: false, minigameScore: null, snakeReplay: null });
+          loadAll();
+        });
       });
 
       document.querySelectorAll('.remove').forEach(btn => {

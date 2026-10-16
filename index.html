@@ -15,6 +15,7 @@
       getFirestore, doc, getDoc, updateDoc, collection, getDocs, query, where
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
+    import { playSnake, playReplay } from "./minigame.js";
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
@@ -46,14 +47,40 @@
       const players = [];
       playersSnap.forEach(d => players.push({ token: d.id, ...d.data() }));
 
-      render(me, state, teams, players);
+      const capSnap = await getDocs(query(collection(db, 'participants'), where('role', '==', 'captain')));
+      const captains = [];
+      capSnap.forEach(d => captains.push({ token: d.id, ...d.data() }));
+
+      render(me, state, teams, players, captains);
     }
 
     function myTeamId(teams) {
       return Object.keys(teams).find(id => teams[id].captainToken === token) || null;
     }
 
-    function render(me, state, teams, players) {
+    function leaderboardHtml(captains, teams) {
+      const done = captains.filter(c => c.minigamePlayed)
+        .sort((a, b) => (b.minigameScore ?? 0) - (a.minigameScore ?? 0));
+      const waiting = captains.filter(c => !c.minigamePlayed);
+      const medals = ['🥇', '🥈', '🥉'];
+      let h = '<h2>🏆 Leaderboard</h2>';
+      if (!done.length) h += '<div class="card"><p>Noch hat kein Kapitän gespielt.</p></div>';
+      done.forEach((c, i) => {
+        const team = Object.values(teams).find(t => t.captainToken === c.token);
+        h += `<div class="card" style="display:flex;align-items:center;gap:12px">
+          <div style="font-size:1.6rem;width:36px;text-align:center">${medals[i] ?? (i + 1) + '.'}</div>
+          <div style="flex:1"><strong>${escapeHtml(c.name)}</strong><br>
+            <span style="color:#555;font-size:.9rem">${escapeHtml(team?.name ?? '')} · ${c.minigameScore} 🍎</span></div>
+          ${c.snakeReplay ? `<button class="watch" data-token="${c.token}">▶ Ansehen</button>` : ''}
+        </div>`;
+      });
+      if (waiting.length) {
+        h += `<p style="color:#555">Noch nicht gespielt: ${waiting.map(c => escapeHtml(c.name)).join(', ')}</p>`;
+      }
+      return h;
+    }
+
+    function render(me, state, teams, players, captains) {
       let html = `<h1>Hallo ${escapeHtml(me.name)}</h1><p>Rolle: ${me.role === 'captain' ? 'Kapitän/in' : 'Spieler/in'}</p>`;
 
       if (state.phase === 'setup') {
@@ -61,17 +88,20 @@
       }
 
       else if (state.phase === 'minigame') {
-        if (me.role === 'captain') {
+        if (me.role === 'captain' && !me.minigamePlayed) {
           html += `<div class="card">
-            <h2>Minispiel</h2>
-            <p>(Das eigentliche Spiel wird hier später eingebaut. Bis dahin: Score manuell eintragen.)</p>
-            <input type="number" id="scoreInput" placeholder="Score" value="${me.minigameScore ?? ''}">
-            <button id="saveScore">Score speichern</button>
-            ${me.minigameScore != null ? `<p>Gespeicherter Score: <strong>${me.minigameScore}</strong></p>` : ''}
+            <h2>Minispiel: Snake 🐍</h2>
+            <p>Sammle so viele Äpfel wie möglich – wer die meisten hat, darf zuerst wählen.
+            Erst kommt ein kurzes Tutorial mit Übungsrunde, danach hast du <strong>einen</strong> echten Versuch.</p>
+            <button id="playSnake">Spielen</button>
           </div>`;
+        } else if (me.role === 'captain') {
+          html += `<div class="card"><h2>Dein Ergebnis: ${me.minigameScore} 🍎</h2>
+            <p>Warte, bis alle Kapitäne gespielt haben.</p></div>`;
         } else {
-          html += `<div class="card"><p>Die Kapitäne treten gerade im Minispiel gegeneinander an. Bitte warten.</p></div>`;
+          html += `<div class="card"><p>Die Kapitäne treten gerade im Minispiel gegeneinander an. Schau dir im Leaderboard an, wie sie sich schlagen!</p></div>`;
         }
+        html += leaderboardHtml(captains, teams);
       }
 
       else if (state.phase === 'draft') {
@@ -110,16 +140,35 @@
         }
       }
 
+      // Leaderboard auch während und nach dem Draft ansehen
+      if (state.phase === 'draft' || state.phase === 'done') {
+        html += `<details style="margin-top:20px"><summary style="cursor:pointer;font-weight:600">🏆 Leaderboard Minispiel</summary>
+          ${leaderboardHtml(captains, teams)}</details>`;
+      }
+
       html += '<button class="secondary" id="refresh">Neu laden</button>';
       root.innerHTML = html;
 
       document.getElementById('refresh')?.addEventListener('click', load);
 
-      document.getElementById('saveScore')?.addEventListener('click', async () => {
-        const val = Number(document.getElementById('scoreInput').value);
-        if (Number.isNaN(val)) return;
-        await updateDoc(doc(db, 'participants', token), { minigameScore: val });
-        load();
+      document.getElementById('playSnake')?.addEventListener('click', () => {
+        playSnake({
+          onFinish: async ({ score, replay }) => {
+            await updateDoc(doc(db, 'participants', token), {
+              minigameScore: score,
+              minigamePlayed: true,
+              snakeReplay: replay
+            });
+          },
+          onClose: load
+        });
+      });
+
+      document.querySelectorAll('.watch').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const c = captains.find(x => x.token === btn.dataset.token);
+          if (c) playReplay({ name: c.name, score: c.minigameScore, replay: c.snakeReplay });
+        });
       });
 
       document.querySelectorAll('.pick').forEach(btn => {
