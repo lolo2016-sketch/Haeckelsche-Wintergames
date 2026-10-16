@@ -1,7 +1,7 @@
 // ===== Biathlon-Sprint: Bildschirm, Tutorial, "Ready Player One", Steuerung, Wiedergabe =====
 import {
   createLevel, createSim, step, replayRunner, draw, loadAssets, elapsedMs, target, scaleFor,
-  DT, TICKS_PER_SEC, IN_LEFT, IN_RIGHT, IN_JUMP, TYPES
+  DT, TICKS_PER_SEC, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, TYPES
 } from './biathlon-core.js';
 
 const CSS = `
@@ -26,11 +26,14 @@ const CSS = `
 .bg-pad{flex:1;width:100%;max-width:900px;display:flex;justify-content:space-between;align-items:stretch;gap:12px;
   padding:12px 16px calc(16px + env(safe-area-inset-bottom));min-height:150px;max-height:30vh}
 .bg-pad .lr{display:flex;gap:10px;flex:1.3}
+.bg-pad .ud{display:flex;flex-direction:column;gap:10px;flex:1}
 .bg-pad button{border:none;border-radius:16px;background:#1e293b;color:#cbd5e1;font-size:2rem;touch-action:none;cursor:pointer;flex:1}
 .bg-pad button.on{background:#38bdf8;color:#0b1220}
 .bg-pad button.off{opacity:.3}
-.bg-pad .jump{flex:1;background:#7c2d12;color:#fed7aa;font-size:1.1rem;font-weight:800}
+.bg-pad .jump{background:#7c2d12;color:#fed7aa}
 .bg-pad .jump.on{background:#f97316;color:#1c0a00}
+.bg-pad .duck{background:#1e3a8a;color:#bfdbfe}
+.bg-pad .duck.on{background:#60a5fa;color:#0b1220}
 .bg-close{position:absolute;top:6px;right:10px;background:none;border:none;color:#fff;font-size:1.6rem;cursor:pointer;z-index:2}
 `;
 function injectCss() {
@@ -54,10 +57,10 @@ function setupCanvas(canvas, wrap) {
 }
 
 const TUTORIAL_PAGES = [
-  { t: 'Biathlon-Sprint ⛷️', h: `<p>Fahre mit <b>◀ ▶</b>, springe mit <b>SPRUNG</b>. Auf Schnee gleitest du weiter, wenn du loslässt. Gegenrichtung = bremsen.</p>` },
+  { t: 'Biathlon-Sprint ⛷️', h: `<p><b>◀ ▶</b> fahren, <b>▲</b> springen, <b>▼</b> hinlegen – du rutschst dabei weiter und kannst gleichzeitig fahren.</p><p>Auf Schnee gleitest du weiter, wenn du loslässt. Gegenrichtung = bremsen.</p>` },
   { t: 'Hindernisse', h: `<p>Berührst du ein Hindernis, <b>stürzt</b> du und brauchst <b>2 Sekunden</b> zum Aufstehen.</p><p>Im Training gibt es Schneehaufen und Hürden. Im echten Lauf warten noch andere Hindernisse, die du selbst herausfinden musst. 😏</p>` },
   { t: 'Wertung', h: `<p>Überwinde alle Hindernisse bis ins Ziel. <b>Gewertet wird deine Zeit</b> – je schneller, desto weiter oben im Leaderboard und desto früher darfst du wählen.</p>` },
-  { t: 'Training', h: `<p>Im Training geht es nur nach rechts. Übe so oft du willst, danach startest du deinen <b>einen echten Versuch</b>.</p>` }
+  { t: 'Training', h: `<p>Übe so oft du willst, danach startest du deinen <b>einen echten Versuch</b>.</p>` }
 ];
 
 // ---------- Spielen ----------
@@ -69,7 +72,7 @@ export function playBiathlon({ onFinish, onClose, testMode = false, photoUrl = n
   ov.innerHTML = `<div class="bg-top"><span>⛷️ Biathlon-Sprint</span><span class="m"></span></div>
     <div class="bg-wrap"><canvas></canvas><div class="bg-msg"></div></div>
     <div class="bg-pad"><div class="lr"><button data-k="1">◀</button><button data-k="2">▶</button></div>
-      <button class="jump" data-k="4">⤒<br>SPRUNG</button></div>`;
+      <div class="ud"><button class="jump" data-k="4">▲</button><button class="duck" data-k="8">▼</button></div></div>`;
   document.body.appendChild(ov);
   document.body.style.overflow = 'hidden';
   const canvas = ov.querySelector('canvas'), msg = ov.querySelector('.bg-msg'), modeEl = ov.querySelector('.bg-top .m');
@@ -86,11 +89,10 @@ export function playBiathlon({ onFinish, onClose, testMode = false, photoUrl = n
     const up = e => { held.delete(e.pointerId); mask &= ~k; for (const v of held.values()) mask |= v; b.classList.remove('on'); };
     b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('lostpointercapture', up);
   });
-  const keyMap = { ArrowLeft: IN_LEFT, a: IN_LEFT, ArrowRight: IN_RIGHT, d: IN_RIGHT, ArrowUp: IN_JUMP, w: IN_JUMP, ' ': IN_JUMP };
+  const keyMap = { ArrowLeft: IN_LEFT, a: IN_LEFT, ArrowRight: IN_RIGHT, d: IN_RIGHT, ArrowUp: IN_JUMP, w: IN_JUMP, ' ': IN_JUMP, ArrowDown: IN_DOWN, s: IN_DOWN };
   const kd = e => { if (e.key in keyMap) { e.preventDefault(); mask |= keyMap[e.key]; } };
   const ku = e => { if (e.key in keyMap) { e.preventDefault(); mask &= ~keyMap[e.key]; } };
   window.addEventListener('keydown', kd); window.addEventListener('keyup', ku);
-  const leftBtn = ov.querySelector('[data-k="1"]');
 
   // ----- Spielschleife mit festem Zeitschritt -----
   let sim = null, level = null, running = false, recording = null, official = false;
@@ -120,7 +122,6 @@ export function playBiathlon({ onFinish, onClose, testMode = false, photoUrl = n
   function newRun(kind) {
     level = createLevel(kind); sim = createSim(level);
     const viewW = W / scaleFor(W, H); camOff = 0.3 * viewW; cam = sim.x + camOff;
-    leftBtn.classList.toggle('off', level.leftLocked);
   }
 
   // ----- Tutorial -----
@@ -149,7 +150,7 @@ export function playBiathlon({ onFinish, onClose, testMode = false, photoUrl = n
     newRun('main'); mask = 0;
     recording = { level: 'main', inputs: [], last: -1 };
     const seq = [
-      ['<div class="bg-rpo small">Ready Player:</div>', 1100],
+      ['<div class="bg-rpo small" style="font-size:2rem">Ready Player:</div>', 4000],
       ['<div class="bg-rpo small">Ready Player:</div><div class="bg-rpo big">One</div>', 800],
       ['<div class="bg-rpo small">Ready Player:</div><div class="bg-rpo big">Two</div>', 800],
       ['<div class="bg-rpo small">Ready Player:</div><div class="bg-rpo big">Three</div>', 0]

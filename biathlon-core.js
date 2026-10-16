@@ -9,13 +9,16 @@
 
 export const DT = 1 / 60;
 export const TICKS_PER_SEC = 60;
-export const IN_LEFT = 1, IN_RIGHT = 2, IN_JUMP = 4;
+export const IN_LEFT = 1, IN_RIGHT = 2, IN_JUMP = 4, IN_DOWN = 8;
 export const PW = 0.6, PH = 1.6;            // Spielerbreite/-höhe (Meter)
+export const PH_DUCK = 0.6;                // Höhe beim Hinlegen (▼)
+export const FENCE_X = -2.4;               // Zaun links neben dem Start
 export const TIME_LIMIT_S = 180;           // danach gilt der Lauf als nicht beendet
 
 const ACC = 15, AIR_ACC = 8, BRAKE = 32, FRICTION = 2.6, VMAX = 9.5;
 const JUMP_V = 11.2, GRAVITY = 30;
 const FALL_TICKS = 2 * TICKS_PER_SEC;      // 2 Sekunden am Boden nach einem Sturz
+const GAP_FALL_TICKS = 3 * TICKS_PER_SEC;  // 3 Sekunden nach einem Fall in die Gletscherspalte
 const RANGE_HOLD_TICKS = 60;               // 1 Sekunde stillstehen am Schießstand
 const RANGE_PENALTY_MS = 5000;             // Strafrunde
 
@@ -24,10 +27,10 @@ export const TYPES = {
   mound:  { w: 1.4, name: 'Schneehaufen', tip: 'Drüberspringen' },
   hurdle: { w: 0.35, name: 'Hürde', tip: 'Drüberspringen' },
   stairs: { w: 5.5, name: 'Eisblock-Treppe', tip: 'Stufe für Stufe hochspringen' },
-  gap:    { w: 2.6, name: 'Gletscherspalte', tip: 'Mit Anlauf drüberspringen' },
+  gap:    { w: 3.4, name: 'Gletscherspalte', tip: 'Mit Anlauf drüberspringen' },
   ball:   { w: 0.9, name: 'Schneeball', tip: 'Rollt auf dich zu – rechtzeitig springen' },
-  branch: { w: 1.6, name: 'Tiefes Banner', tip: 'NICHT springen, einfach drunter durch' },
-  range:  { w: 3.2, name: 'Schießstand', tip: '1 Sekunde anhalten, sonst Strafrunde +5 s' }
+  branch: { w: 2.2, name: 'Limbo-Banner', tip: 'Mit ▼ hinlegen und drunter durchgleiten' },
+  range:  { w: 3.2, name: 'Schießstand', tip: '5 Schießbahnen – 1 Sekunde anhalten, sonst Strafrunde +5 s' }
 };
 
 // Eigene Bilder für Hindernisse: Datei in den Ordner "biathlon/" laden, dann ersetzt sie den Platzhalter.
@@ -59,11 +62,11 @@ export function createLevel(kind) {
   if (kind === 'tutorial') {
     const f = lay(TUTORIAL, 1, 9);
     return { kind, obstacles: f.obstacles, finishF: f.finish, finishB: null, targetF: TUTORIAL.length, targetB: null,
-      minX: -3.5, maxX: f.finish + 6, leftLocked: true };
+      minX: -3.5, maxX: f.finish + 6, fenceBreakable: false };
   }
   const f = lay(FORWARD, 1, 10), b = lay(BACKWARD, -1, 10);
   return { kind, obstacles: [...f.obstacles, ...b.obstacles], finishF: f.finish, finishB: b.finish,
-    targetF: FORWARD.length, targetB: BACKWARD.length, minX: b.finish - 6, maxX: f.finish + 6, leftLocked: false };
+    targetF: FORWARD.length, targetB: BACKWARD.length, minX: b.finish - 6, maxX: f.finish + 6, fenceBreakable: true };
 }
 
 // Treppe: 5 Eisblöcke (hoch und wieder runter), auf denen man stehen kann
@@ -80,7 +83,8 @@ export function createSim(level) {
     hold: 0, shot: false, penalized: false                                                   // Schießstand
   }));
   return {
-    level, obstacles, tick: 0, x: 0, y: 0, vx: 0, vy: 0, grounded: true, facing: 1,
+    level, obstacles, tick: 0, x: 0, y: 0, vx: 0, vy: 0, grounded: true, facing: 1, ducked: false,
+    fenceBroken: false, fenceTick: 0, fallTotal: FALL_TICKS,
     coyote: 0, jumpBuf: 0, prevJump: false, fallen: 0, falls: 0, stride: 0,
     route: 0, score: 0, penaltyMs: 0, finished: false, finishTick: 0, dnf: false,
     msgs: []
@@ -95,7 +99,7 @@ function say(s, text, secs = 1.6) { s.msgs.push({ text, until: s.tick + secs * T
 function overlaps(ax0, ax1, ay0, ay1, bx0, bx1, by0, by1) { return ax0 < bx1 && ax1 > bx0 && ay0 < by1 && ay1 > by0; }
 
 function fall(s, o) {
-  s.fallen = FALL_TICKS; s.falls++;
+  s.fallen = s.fallTotal = o.type === 'gap' ? GAP_FALL_TICKS : FALL_TICKS; s.falls++; s.ducked = false;
   s.vx = 0; s.vy = 0; s.y = 0; s.grounded = true;
   const fromLeft = o.type === 'ball' ? s.x < o.bx : s.x < (o.x0 + o.x1) / 2;
   if (o.type === 'ball') s.x = fromLeft ? o.bx - 0.45 - PW / 2 - 0.25 : o.bx + 0.45 + PW / 2 + 0.25;
@@ -127,7 +131,7 @@ export function step(s, mask) {
   const jump = !!(mask & IN_JUMP);
   const jumpPressed = jump && !s.prevJump;
   s.prevJump = jump;
-  if (L.leftLocked) left = false;
+  const down = !!(mask & IN_DOWN);
   s.msgs = s.msgs.filter(m => m.until > s.tick);
 
   // Schneebälle rollen los, sobald man in die Nähe kommt (immer dem Spieler entgegen)
@@ -164,12 +168,22 @@ export function step(s, mask) {
     }
   }
 
-  // ----- Bewegung x mit festen Eisblöcken und Streckenrand -----
+  // ----- hinlegen (▼): nur am Boden, man gleitet/fährt dabei weiter -----
+  s.ducked = down && s.grounded && s.fallen === 0 && s.vy <= 0;
+  const ph = s.ducked ? PH_DUCK : PH;
+
+  // ----- Bewegung x mit festen Eisblöcken, Zaun und Streckenrand -----
   let nx = s.x + s.vx * DT;
+  // Zaun links neben dem Start: im Training fest, im echten Lauf bricht er bei genug Schwung
+  if (!s.fenceBroken && s.x - PW / 2 >= FENCE_X + 0.15 - 0.001 && nx - PW / 2 < FENCE_X + 0.15) {
+    if (L.fenceBreakable && Math.abs(s.vx) >= 1.5) {
+      s.fenceBroken = true; s.fenceTick = s.tick; say(s, '💥 Zaun durchbrochen!', 1.8);
+    } else { nx = FENCE_X + 0.15 + PW / 2; s.vx = 0; }
+  }
   for (const o of s.obstacles) {
     if (!o.blocks) continue;
     for (const b of o.blocks) {
-      if (s.y < b.top - 0.03 && s.y + PH > 0) {
+      if (s.y < b.top - 0.03 && s.y + ph > 0) {
         if (s.x + PW / 2 <= b.x0 + 0.001 && nx + PW / 2 > b.x0) { nx = b.x0 - PW / 2; s.vx = 0; }
         if (s.x - PW / 2 >= b.x1 - 0.001 && nx - PW / 2 < b.x1) { nx = b.x1 + PW / 2; s.vx = 0; }
       }
@@ -191,14 +205,14 @@ export function step(s, mask) {
 
   // ----- Gefahren -----
   if (s.fallen === 0) {
-    const px0 = s.x - PW / 2 + 0.08, px1 = s.x + PW / 2 - 0.08, py0 = s.y, py1 = s.y + PH;
+    const px0 = s.x - PW / 2 + 0.08, px1 = s.x + PW / 2 - 0.08, py0 = s.y, py1 = s.y + ph;
     for (const o of s.obstacles) {
       let hit = false;
       if (o.type === 'mound') hit = overlaps(px0, px1, py0, py1, o.x0 + 0.2, o.x1 - 0.2, 0, 0.55);
       else if (o.type === 'hurdle') hit = overlaps(px0, px1, py0, py1, o.x0, o.x1, 0, 1.05);
-      else if (o.type === 'branch') hit = overlaps(px0, px1, py0, py1, o.x0, o.x1, 1.75, 2.4);
+      else if (o.type === 'branch') hit = overlaps(px0, px1, py0, py1, o.x0, o.x1, 0.72, 2.6);
       else if (o.type === 'ball' && !o.gone) hit = overlaps(px0, px1, py0, py1, o.bx - 0.36, o.bx + 0.36, 0, 0.78);
-      else if (o.type === 'gap') hit = s.y < -0.9 && s.x > o.x0 - 1 && s.x < o.x1 + 1;
+      else if (o.type === 'gap') hit = s.y < -0.35 && s.x > o.x0 - 1 && s.x < o.x1 + 1;
       if (hit) { fall(s, o); break; }
     }
   }
@@ -207,6 +221,7 @@ export function step(s, mask) {
   for (const o of s.obstacles) {
     if (o.type !== 'range' || o.shot) continue;
     const inside = s.x > o.x0 && s.x < o.x1;
+    o.px = s.x;
     if (inside && s.grounded && Math.abs(s.vx) < 0.8 && s.fallen === 0) {
       o.hold++;
       if (o.hold >= RANGE_HOLD_TICKS) { o.shot = true; say(s, '🎯 5 von 5 Treffern!'); }
@@ -319,19 +334,7 @@ export function draw(g, s, W, H, cam, assets, timeS) {
   flagLine(1.3, 'START', '#16a34a');
   flagLine(s.level.finishF, 'ZIEL', '#dc2626');
   if (s.level.finishB != null) flagLine(s.level.finishB + 2.6, 'ZIEL', '#7c3aed');
-  if (s.level.leftLocked) {   // Tutorial: Zaun links
-    const x = X(s.level.minX - 0.4);
-    g.fillStyle = '#92400e'; for (let k = 0; k < 4; k++) g.fillRect(x - 6 - k * 14, Y(1.2), 6, 1.2 * sc);
-    g.fillRect(x - 50, Y(1.0), 56, 5); g.fillRect(x - 50, Y(0.5), 56, 5);
-  } else {
-    const x = X(-2.2);
-    if (x > -60 && x < W + 60) {   // geheimnisvolles Schild Richtung Rückwärtsstrecke
-      g.fillStyle = '#7c3aed'; rrect(g, x - sc * 0.9, Y(2.2), sc * 1.8, sc * 0.6, 4); g.fill();
-      g.fillRect(x - 2, Y(1.6), 4, 1.6 * sc);
-      g.fillStyle = '#fff'; g.font = `bold ${sc * 0.36}px -apple-system,Segoe UI,Roboto,sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText('← ???', x, Y(1.9));
-    }
-  }
+  drawFence(g, s, X, Y, sc, W);
 
   // Hindernisse
   for (const o of s.obstacles) drawObstacle(g, o, X, Y, sc, assets, timeS, W);
@@ -367,6 +370,33 @@ export function draw(g, s, W, H, cam, assets, timeS) {
   }
 }
 
+// Holzzaun links neben dem Start; im echten Lauf fliegen beim Durchbrechen die Latten weg
+function drawFence(g, s, X, Y, sc, W) {
+  const x = X(FENCE_X);
+  if (x < -150 || x > W + 150) return;
+  const wood = '#92400e', dark = '#78350f';
+  if (!s.fenceBroken) {
+    g.fillStyle = dark;
+    g.fillRect(x - 0.05 * sc, Y(1.5), 0.18 * sc, 1.5 * sc);
+    g.fillRect(x - 1.6 * sc, Y(1.5), 0.18 * sc, 1.5 * sc);
+    g.fillStyle = wood;
+    for (const h of [1.2, 0.75, 0.3]) g.fillRect(x - 1.7 * sc, Y(h + 0.14), 1.9 * sc, 0.14 * sc);
+    g.strokeStyle = wood; g.lineWidth = 0.1 * sc;
+    g.beginPath(); g.moveTo(x - 1.5 * sc, Y(1.3)); g.lineTo(x + 0.05 * sc, Y(0.25)); g.stroke();
+    g.fillStyle = '#fff'; g.beginPath(); g.ellipse(x - 0.7 * sc, Y(1.36), 1.0 * sc, 0.1 * sc, 0, Math.PI, 0); g.fill();
+    return;
+  }
+  // zerbrochen: Latten fliegen kurz und bleiben dann im Schnee liegen
+  const t = Math.min(0.7, (s.tick - s.fenceTick) / TICKS_PER_SEC);
+  const parts = [[-0.9, 4.2, 3.0, 2.5], [-1.4, 3.0, 4.2, -3.2], [-0.4, 5.0, 2.2, 4.0], [-1.9, 2.4, 3.6, -1.8], [-1.1, 3.8, 1.5, 6.0]];
+  g.fillStyle = wood;
+  for (const [vx, vy, len, rot] of parts) {
+    const px = FENCE_X + vx * t * 1.6 - 0.3, py = Math.max(0.05, 0.8 + vy * t - 9 * t * t);
+    g.save(); g.translate(X(px), Y(py)); g.rotate(rot * t); g.fillRect(-len * 0.2 * sc, -0.06 * sc, len * 0.4 * sc, 0.12 * sc); g.restore();
+  }
+  g.fillStyle = dark; g.fillRect(x - 0.05 * sc, Y(0.45), 0.18 * sc, 0.45 * sc); g.fillRect(x - 1.6 * sc, Y(0.6), 0.18 * sc, 0.6 * sc);
+}
+
 function drawObstacle(g, o, X, Y, sc, assets, timeS, W) {
   const x0 = X(o.x0), x1 = X(o.x1);
   if (x1 < -120 || x0 > W + 120) return;
@@ -394,7 +424,7 @@ function drawObstacle(g, o, X, Y, sc, assets, timeS, W) {
     return;
   }
   if (img && o.type !== 'ball' && o.type !== 'range') {
-    const tops = { mound: 0.7, hurdle: 1.15, branch: 2.5 }, bottoms = { branch: 1.7 };
+    const tops = { mound: 0.7, hurdle: 1.15, branch: 1.55 }, bottoms = { branch: 0.72 };
     imgBox(o.x0, o.x1, tops[o.type], bottoms[o.type] ?? 0);
     return;
   }
@@ -407,11 +437,13 @@ function drawObstacle(g, o, X, Y, sc, assets, timeS, W) {
     for (let k = 0; k < 6; k++) { g.fillStyle = k % 2 ? '#fff' : '#dc2626'; g.fillRect(x0, Y(1.1) + k * h / 6, w, h / 6 + 1); }
     g.strokeStyle = '#7f1d1d'; g.lineWidth = 1.5; g.strokeRect(x0, Y(1.1), w, h);
   } else if (o.type === 'branch') {
-    // Banner zwischen zwei Stangen, hängt auf Kopfhöhe beim Springen
-    g.fillStyle = '#475569'; g.fillRect(x0 - 3, Y(2.9), 5, 2.9 * sc); g.fillRect(x1 - 2, Y(2.9), 5, 2.9 * sc);
-    g.fillStyle = '#f59e0b'; rrect(g, x0, Y(2.45), x1 - x0, 0.68 * sc, 4); g.fill();
-    g.fillStyle = '#422006'; g.font = `bold ${sc * 0.26}px -apple-system,Segoe UI,Roboto,sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText('NICHT', (x0 + x1) / 2, Y(2.25)); g.fillText('SPRINGEN', (x0 + x1) / 2, Y(1.98));
+    // Limbo-Banner: hängt so tief, dass man sich hinlegen muss (Lücke nur 0,7 m hoch)
+    g.fillStyle = '#475569'; g.fillRect(x0 - 3, Y(2.0), 5, 2.0 * sc); g.fillRect(x1 - 2, Y(2.0), 5, 2.0 * sc);
+    g.fillStyle = '#f59e0b'; rrect(g, x0, Y(1.55), x1 - x0, 0.83 * sc, 4); g.fill();
+    g.strokeStyle = '#b45309'; g.lineWidth = 2; g.stroke();
+    g.fillStyle = '#422006'; g.font = `bold ${sc * 0.34}px -apple-system,Segoe UI,Roboto,sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('LIMBO', (x0 + x1) / 2, Y(1.14));
+    g.fillStyle = 'rgba(0,0,0,.12)'; g.fillRect(x0, Y(0.72), x1 - x0, 3);
   } else if (o.type === 'ball' && !o.gone) {
     const bx = X(o.bx), by = Y(0.45), r = 0.45 * sc;
     if (img) g.drawImage(img, bx - r, by - r, r * 2, r * 2);
@@ -423,28 +455,34 @@ function drawObstacle(g, o, X, Y, sc, assets, timeS, W) {
     }
     if (o.rolling) { g.fillStyle = 'rgba(255,255,255,.7)'; for (let k = 1; k < 4; k++) g.fillRect(bx + o.dir * (r + k * 8), by + r - 4 - k, 4, 3); }
   } else if (o.type === 'range') {
-    // Matte am Boden, Scheiben im Hintergrund
-    g.fillStyle = o.shot ? '#16a34a' : '#22c55e'; g.fillRect(x0, Y(0.08), x1 - x0, 0.12 * sc);
-    const bw = 2.8 * sc, bxc = (x0 + x1) / 2, by = Y(3.3);
-    if (img) g.drawImage(img, bxc - bw / 2, by, bw, 1.2 * sc);
+    // Schießstand mit 5 Bahnen: Matten am Boden, dahinter je eine Scheibe mit 5 Treffern
+    const lanes = 5, lw = (o.x1 - o.x0) / lanes;
+    const hits = o.shot ? 5 : Math.floor(o.hold / RANGE_HOLD_TICKS * 5);
+    const myLane = Math.max(0, Math.min(lanes - 1, Math.floor(((o.px ?? o.x0) - o.x0) / lw)));
+    if (img) g.drawImage(img, x0, Y(3.4), x1 - x0, 3.4 * sc);
     else {
-      g.fillStyle = '#e2e8f0'; rrect(g, bxc - bw / 2, by, bw, 0.9 * sc, 6); g.fill();
-      g.fillStyle = '#1d4ed8'; rrect(g, bxc - bw / 2, by - 0.42 * sc, bw, 0.38 * sc, 4); g.fill();
-      g.fillStyle = '#fff'; g.font = `bold ${sc * 0.26}px -apple-system,Segoe UI,Roboto,sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText('SCHIESSSTAND · ANHALTEN', bxc, by - 0.23 * sc);
-      const hits = o.shot ? 5 : Math.floor(o.hold / RANGE_HOLD_TICKS * 5);
-      for (let k = 0; k < 5; k++) {
-        g.fillStyle = k < hits ? '#fff' : '#111827';
-        g.beginPath(); g.arc(bxc - bw / 2 + bw * (k + 0.5) / 5, by + 0.45 * sc, 0.18 * sc, 0, 7); g.fill();
-        g.strokeStyle = '#111827'; g.lineWidth = 1.5; g.stroke();
+      g.fillStyle = '#1d4ed8'; rrect(g, x0 - 0.2 * sc, Y(3.35), x1 - x0 + 0.4 * sc, 0.42 * sc, 4); g.fill();
+      g.fillStyle = '#fff'; g.font = `bold ${sc * 0.28}px -apple-system,Segoe UI,Roboto,sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText('BIATHLON', (x0 + x1) / 2, Y(3.14));
+      for (let k = 0; k < lanes; k++) {
+        const lx0 = X(o.x0 + k * lw), lxc = X(o.x0 + (k + 0.5) * lw);
+        g.fillStyle = k % 2 ? '#16a34a' : '#22c55e'; g.fillRect(lx0 + 1, Y(0.1), lw * sc - 2, 0.14 * sc);   // Matte
+        g.fillStyle = '#fff'; g.font = `bold ${sc * 0.2}px -apple-system,sans-serif`; g.fillText(String(k + 1), lxc, Y(0.32));
+        g.fillStyle = '#64748b'; g.fillRect(lxc - 2, Y(2.6), 4, 2.0 * sc);                                   // Pfosten
+        g.fillStyle = '#f1f5f9'; rrect(g, lxc - lw * sc * 0.42, Y(2.85), lw * sc * 0.84, 0.36 * sc, 3); g.fill();
+        for (let d = 0; d < 5; d++) {
+          const on = (o.shot || k === myLane) && d < hits;
+          g.fillStyle = on ? '#fff' : '#111827';
+          g.beginPath(); g.arc(lxc - lw * sc * 0.32 + d * lw * sc * 0.16, Y(2.67), 0.055 * sc, 0, 7); g.fill();
+          g.strokeStyle = '#111827'; g.lineWidth = 1; g.stroke();
+        }
       }
     }
-    g.fillStyle = '#475569'; g.fillRect(bxc - 3, by + 0.9 * sc, 6, Y(0) - by - 0.9 * sc);
   }
   if (done && o.type !== 'gap') {
     g.fillStyle = '#16a34a'; g.font = `bold ${sc * 0.3}px -apple-system,Segoe UI,Roboto,sans-serif`; g.textAlign = 'center';
     g.textBaseline = 'bottom';
-    g.fillText('✓', o.type === 'ball' ? X(o.bx) : (x0 + x1) / 2, Y(o.type === 'branch' ? 3.0 : o.type === 'hurdle' ? 1.2 : 0.8) - 2);
+    g.fillText('✓', o.type === 'ball' ? X(o.bx) : (x0 + x1) / 2, Y(o.type === 'branch' ? 2.1 : o.type === 'range' ? 3.5 : o.type === 'hurdle' ? 1.2 : 0.8) - 2);
   }
 }
 
@@ -455,16 +493,17 @@ function drawSkier(g, s, px, py, sc, assets, timeS) {
   const u = sc;
   if (s.fallen > 0) {
     // liegt im Schnee (am Ende der 2 Sekunden steht er wieder auf)
-    const k = Math.min(1, (FALL_TICKS - s.fallen) / 8, s.fallen / 15);
+    const k = Math.min(1, (s.fallTotal - s.fallen) / 8, s.fallen / 15);
     g.rotate(-1.45 * k);
   }
   // Ski
   g.strokeStyle = '#dc2626'; g.lineWidth = Math.max(3, u * 0.07); g.lineCap = 'round';
   const air = !s.grounded;
   const ph = s.stride * 2.2;
-  const kick = s.grounded && Math.abs(s.vx) > 0.4 ? Math.sin(ph) : 0;
+  const kick = s.grounded && !s.ducked && Math.abs(s.vx) > 0.4 ? Math.sin(ph) : 0;
   g.beginPath(); g.moveTo(-0.75 * u + kick * 0.25 * u, 0); g.lineTo(0.85 * u + kick * 0.25 * u, -0.02 * u); g.stroke();
   g.beginPath(); g.moveTo(-0.75 * u - kick * 0.25 * u, -0.05 * u); g.lineTo(0.85 * u - kick * 0.25 * u, -0.07 * u); g.stroke();
+  if (s.ducked && s.fallen === 0) { g.translate(-0.62 * u, -0.2 * u); g.rotate(1.5); }   // flach hinlegen
   // Beine
   g.strokeStyle = '#1f2937'; g.lineWidth = u * 0.16;
   const hipY = -0.85 * u;
