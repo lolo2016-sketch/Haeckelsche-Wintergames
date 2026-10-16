@@ -147,19 +147,28 @@ export function drawGame(ctx, g, size, faces) {
   ctx.beginPath(); ctx.arc(cx + px + fx, cy + py + fy, c * 0.09, 0, Math.PI * 2); ctx.fill();
   ctx.beginPath(); ctx.arc(cx - px + fx, cy - py + fy, c * 0.09, 0, Math.PI * 2); ctx.fill();
 
-  // Apfel mit Gesicht
+  // Futter: Gesicht anstelle des Apfels (Fallback: roter Apfel, solange kein Foto geladen ist)
   if (g.food) {
     const ax = (g.food.x + 0.5) * c, ay = (g.food.y + 0.5) * c, r = c * 0.72;
+    const face = faces && faces[g.face % faces.length];
+    if (face && face.ok) {
+      const im = face.img;
+      const h = c * 2.2, w = h * im.width / im.height; // gut 2 Felder hoch, Seitenverhältnis bleibt
+      // heller Schein dahinter, damit das Gesicht auf dem dunklen Feld auffällt
+      const glow = ctx.createRadialGradient(ax, ay, 0, ax, ay, h * 0.6);
+      glow.addColorStop(0, 'rgba(253,224,71,0.55)');
+      glow.addColorStop(1, 'rgba(253,224,71,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(ax, ay, h * 0.6, 0, Math.PI * 2); ctx.fill();
+      // am Rand nicht abschneiden: Bild ins Spielfeld schieben
+      const dx = Math.min(Math.max(ax - w / 2, 0), size - w);
+      const dy = Math.min(Math.max(ay - h / 2, 0), size - h);
+      ctx.drawImage(im, dx, dy, w, h);
+      return;
+    }
     ctx.fillStyle = '#dc2626';
     ctx.beginPath(); ctx.arc(ax, ay, r, 0, Math.PI * 2); ctx.fill();
-    const face = faces && faces[g.face];
-    if (face && face.ok) {
-      ctx.save();
-      ctx.beginPath(); ctx.arc(ax, ay, r * 0.8, 0, Math.PI * 2); ctx.clip();
-      const im = face.img, s = Math.min(im.width, im.height);
-      ctx.drawImage(im, (im.width - s) / 2, (im.height - s) / 2, s, s, ax - r * 0.8, ay - r * 0.8, r * 1.6, r * 1.6);
-      ctx.restore();
-    } else {
+    {
       ctx.fillStyle = 'rgba(255,255,255,0.35)';
       ctx.beginPath(); ctx.arc(ax - r * 0.3, ay - r * 0.3, r * 0.25, 0, Math.PI * 2); ctx.fill();
     }
