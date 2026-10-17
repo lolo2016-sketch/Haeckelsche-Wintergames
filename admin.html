@@ -152,7 +152,12 @@
         <div style="margin-top:10px">
           <span>🏟️ In der Halle: ${participants.filter(p => p.role !== 'admin' && p.arrivedAt).length} von ${participants.filter(p => p.role !== 'admin').length}</span>
           <button class="secondary" id="resetArrivals">Halle leeren (alle wieder „noch nicht da“)</button>
-          <span style="color:#666;font-size:.85rem">Nach dem Testen und vor dem Event drücken.</span>
+          <span style="color:#666;font-size:.85rem">Leert die Halle und macht alle QR-Codes wieder „frisch“ (Einlauf + Intro-Video wie beim ersten Mal).</span>
+        </div>
+        <div style="margin-top:10px">
+          <button class="danger" id="freshStart">🔄 Für das Event frisch machen</button>
+          <span style="color:#666;font-size:.85rem">Wie „Halle leeren“ und zusätzlich: Minispiel-Ergebnisse, Teamzuordnungen und Chat löschen, Phase zurück auf „setup“.
+          Personen, Namen, Bilder, Videos und QR-Codes bleiben.</span>
         </div>
         <div style="margin-top:10px">
           <span>💬 Chat: <span id="chatCount">…</span> Nachrichten</span>
@@ -265,8 +270,21 @@
       });
       if (repoFiles.loaded) refreshFileUi();
       document.getElementById('resetArrivals')?.addEventListener('click', async () => {
-        if (!confirm('Alle Spieler und Kapitäne wieder auf "noch nicht da" setzen? Die Halle ist danach leer und jeder läuft beim nächsten Öffnen neu ein.')) return;
-        for (const p of participants.filter(x => x.role !== 'admin' && x.arrivedAt)) await updateDoc(doc(db, 'participants', p.token), { arrivedAt: null });
+        if (!confirm('Alle Spieler und Kapitäne wieder auf "noch nicht da" setzen? Die Halle ist danach leer, jeder läuft beim nächsten Öffnen neu ein und sieht sein Intro-Video wieder wie beim ersten Mal (nicht überspringbar).')) return;
+        for (const p of participants.filter(x => x.role !== 'admin')) await updateDoc(doc(db, 'participants', p.token), { arrivedAt: null, videoViews: 0 });
+        loadAll();
+      });
+      document.getElementById('freshStart')?.addEventListener('click', async () => {
+        if (!confirm('Alles für das Event frisch machen?\n\n• Halle leer, QR-Codes wie neu (Einlauf + Intro-Video)\n• Snake- und Biathlon-Ergebnisse gelöscht\n• Teamzuordnungen gelöscht\n• Chat gelöscht\n• Phase zurück auf "setup"\n\nPersonen, Namen, Bilder, Videos und QR-Codes bleiben erhalten.')) return;
+        for (const p of participants.filter(x => x.role !== 'admin')) {
+          await updateDoc(doc(db, 'participants', p.token), {
+            arrivedAt: null, videoViews: 0, teamId: null,
+            minigamePlayed: false, minigameScore: null, snakeReplay: null, biathlon: null
+          });
+        }
+        for (const d of (await getDocs(collection(db, 'chat'))).docs) await deleteDoc(d.ref);
+        await setDoc(doc(db, 'state', 'current'), { phase: 'setup', benchSeats: state.benchSeats ?? 15, activeGame: state.activeGame || 'snake' });
+        alert('Fertig! Alles ist frisch für das Event.');
         loadAll();
       });
 
