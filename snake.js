@@ -222,7 +222,7 @@ export function drawGame(ctx, g, size, faces, head, timeS = 0) {
   const hd = g.snake[0];
   const hx = (hd.x + 0.5) * c, hy = (hd.y + 0.5) * c;
   const [vx] = VEC[g.dir];
-  const H = c * 2.5;
+  const H = c * 1.9;
   ctx.save();
   ctx.translate(hx, hy);
   if (vx < 0) ctx.scale(-1, 1);                      // nach links schauen: spiegeln statt auf den Kopf stellen
