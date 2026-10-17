@@ -76,8 +76,12 @@
     }
 
     // Felder für Foto und Video einer Person (Pfade im Repo, z. B. photos/max.png, videos/max.mp4)
-    function mediaFields(x) {
+    // Name (und bei Kapitänen der Teamname) lassen sich jederzeit ändern; der QR-Code bleibt gleich
+    function mediaFields(x, team = null) {
+      const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
       return `<div style="margin-top:6px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input class="nameIn" data-token="${x.token}" placeholder="Name" value="${esc(x.name)}" style="width:150px" title="Name">
+        ${team ? `<input class="teamIn" data-token="${x.token}" data-team="${team.id}" placeholder="Teamname" value="${esc(team.name)}" style="width:150px" title="Teamname">` : ''}
         ${x.photoUrl ? `<img src="${x.photoUrl}" alt="" style="height:54px" onerror="this.replaceWith('⚠️ Foto nicht gefunden')">` : ''}
         <input class="photoIn" list="photoFiles" data-token="${x.token}" placeholder="photos/name.png" value="${x.photoUrl ?? ''}" style="width:170px">
         <input class="videoIn" list="videoFiles" data-token="${x.token}" placeholder="videos/name.mp4" value="${x.videoUrl ?? ''}" style="width:170px">
@@ -231,7 +235,7 @@
           ${c.minigamePlayed ? `<br>Snake: ${c.minigameScore} 🍎 <button class="secondary resetTry" data-game="snake" data-token="${c.token}">Snake zurücksetzen</button>` : '<br>Snake: noch nicht gespielt'}
           ${c.biathlon?.played ? `<br>Biathlon: ${formatBiathlon(c.biathlon)} <button class="secondary resetTry" data-game="biathlon" data-token="${c.token}">Biathlon zurücksetzen</button>` : '<br>Biathlon: noch nicht gespielt'}
           <br><a href="${link}" target="_blank">${link}</a>
-          ${mediaFields(c)}
+          ${mediaFields(c, teams[Object.keys(teams).find(id => teams[id].captainToken === c.token)])}
           ${qrImg(link)}
           <button class="danger remove" data-token="${c.token}">Entfernen</button>
         </div>`;
@@ -272,7 +276,11 @@
           const photoUrl = document.querySelector(`.photoIn[data-token="${t}"]`).value.trim() || null;
           const videoUrl = document.querySelector(`.videoIn[data-token="${t}"]`).value.trim() || null;
           const hair = document.querySelector(`.hairIn[data-token="${t}"]`).value;
-          await updateDoc(doc(db, 'participants', t), { photoUrl, videoUrl, hair });
+          const name = document.querySelector(`.nameIn[data-token="${t}"]`).value.trim();
+          if (!name) { alert('Der Name darf nicht leer sein.'); return; }
+          await updateDoc(doc(db, 'participants', t), { name, photoUrl, videoUrl, hair });
+          const teamIn = document.querySelector(`.teamIn[data-token="${t}"]`);
+          if (teamIn && teamIn.value.trim()) await updateDoc(doc(db, 'teams', teamIn.dataset.team), { name: teamIn.value.trim() });
           loadAll();
         });
       });
