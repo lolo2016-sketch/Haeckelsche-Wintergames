@@ -1,33 +1,33 @@
 // ===== Snake – Bildschirm, Steuerung, Tutorial, Aufnahme & Wiedergabe =====
-import { createGame, step, speedFor, drawGame, loadFaces, DIR } from './snake.js';
+import { createGame, step, speedFor, drawGame, loadFaces, loadHead, DIR } from './snake.js';
 
 // Fotos der Veranstalter (in den Ordner "faces" im Repo hochladen)
 export const FACE_URLS = ['faces/face1.png', 'faces/face2.png'];
 
 const CSS = `
 .sg-overlay *{box-sizing:border-box}
-.sg-overlay{position:fixed;inset:0;background:#0b1410;z-index:1000;display:flex;flex-direction:column;
-  align-items:center;color:#f0fdf4;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+.sg-overlay{position:fixed;inset:0;background:linear-gradient(#0c1b33,#16325c);z-index:1000;display:flex;flex-direction:column;
+  align-items:center;color:#f0f9ff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   touch-action:none;user-select:none;-webkit-user-select:none}
 .sg-top{width:100%;max-width:520px;display:flex;justify-content:space-between;align-items:center;padding:10px 14px;font-weight:600}
 .sg-top .sg-mode{font-size:.85rem;opacity:.75;font-weight:500}
 .sg-canvas-wrap{position:relative}
-.sg-canvas-wrap canvas{display:block;border-radius:8px;box-shadow:0 0 0 2px #14532d}
+.sg-canvas-wrap canvas{display:block;border-radius:10px;box-shadow:0 0 0 3px #fff,0 0 0 6px #dc2626,0 8px 30px rgba(0,0,0,.4)}
 .sg-msg{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  text-align:center;background:rgba(5,20,10,.82);border-radius:8px;padding:18px;gap:10px}
+  text-align:center;background:rgba(12,27,51,.84);border-radius:10px;padding:18px;gap:10px}
 .sg-msg h2{margin:0;font-size:1.4rem}
 .sg-msg p{margin:0;line-height:1.45;font-size:.95rem;max-width:320px}
 .sg-msg .sg-big{font-size:4rem;font-weight:800}
-.sg-btn{font-size:1rem;padding:11px 18px;border-radius:10px;border:none;background:#16a34a;color:#fff;cursor:pointer;font-weight:600}
-.sg-btn.sec{background:#374151}
+.sg-btn{font-size:1rem;padding:11px 18px;border-radius:10px;border:none;background:#dc2626;color:#fff;cursor:pointer;font-weight:600}
+.sg-btn.sec{background:#334155}
 .sg-pad{flex:1;width:100%;max-width:420px;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);
   gap:8px;padding:12px 24px 22px;min-height:190px;max-height:34vh}
-.sg-pad button{border:none;border-radius:14px;background:#1f3d2b;color:#bbf7d0;font-size:1.8rem;
+.sg-pad button{border:none;border-radius:14px;background:rgba(255,255,255,.12);color:#e0f2fe;font-size:1.8rem;
   touch-action:none;cursor:pointer}
-.sg-pad button:active,.sg-pad button.on{background:#22c55e;color:#052e16}
+.sg-pad button:active,.sg-pad button.on{background:#e0f2fe;color:#0c1b33}
 .sg-pad .up{grid-column:2;grid-row:1}.sg-pad .left{grid-column:1;grid-row:2}
 .sg-pad .right{grid-column:3;grid-row:2}.sg-pad .down{grid-column:2;grid-row:3}
-.sg-close{position:absolute;top:8px;right:10px;background:none;border:none;color:#f0fdf4;font-size:1.6rem;cursor:pointer}
+.sg-close{position:absolute;top:8px;right:10px;background:none;border:none;color:#f0f9ff;font-size:1.6rem;cursor:pointer}
 `;
 
 function injectCss() {
@@ -54,22 +54,23 @@ function setupCanvas(canvas) {
 }
 
 const TUTORIAL = [
-  { title: 'Snake 🐍', text: 'Steuere die Schlange und friss so viele Äpfel wie möglich. Jeder Apfel = 1 Punkt.' },
+  { title: 'Winter-Snake', text: 'Du bist der Kopf der Schlange – mit Weihnachtsmütze! Sammle so viele Gesichter wie möglich. Jedes Gesicht = 1 Punkt und hängt sich hinten an deine Schlange.' },
   { title: 'Steuerung', text: 'Unten sind die Pfeiltasten: hoch, links, rechts, runter. Du kannst auch auf dem Spielfeld wischen.' },
-  { title: 'Vorsicht!', text: 'Nicht gegen den Rand, dich selbst oder graue Mauern fahren. Im echten Spiel wird es mit jedem Apfel schneller, und alle 3 Äpfel taucht eine neue Mauer auf.' },
+  { title: 'Vorsicht!', text: 'Nicht gegen den Rand, dich selbst oder Eisblöcke fahren. Im echten Spiel wird es mit jedem Gesicht schneller, und alle 3 Gesichter taucht ein neuer Eisblock auf.' },
   { title: 'Übungsrunde', text: 'Jetzt kannst du in Ruhe üben – das zählt noch nicht. Wenn du bereit bist, startest du deinen einen echten Versuch.' }
 ];
 
 // ---------- Spielen (Kapitän) ----------
 // onFinish({score, replay}) wird nach dem echten Versuch aufgerufen
-export function playSnake({ onFinish, onClose, testMode = false }) {
+export function playSnake({ onFinish, onClose, testMode = false, photoUrl = null }) {
   injectCss();
   const faces = loadFaces(FACE_URLS);
+  const head = loadHead(photoUrl);
 
   const ov = document.createElement('div');
   ov.className = 'sg-overlay';
   ov.innerHTML = `
-    <div class="sg-top"><span class="sg-mode">Tutorial</span><span>🍎 <span class="sg-score">0</span></span></div>
+    <div class="sg-top"><span class="sg-mode">Tutorial</span><span>🎅 <span class="sg-score">0</span></span></div>
     <div class="sg-canvas-wrap"><canvas></canvas><div class="sg-msg"></div></div>
     <div class="sg-pad">
       <button class="up" data-d="0">▲</button><button class="left" data-d="3">◀</button>
@@ -109,7 +110,12 @@ export function playSnake({ onFinish, onClose, testMode = false }) {
     input(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? DIR.RIGHT : DIR.LEFT) : (dy > 0 ? DIR.DOWN : DIR.UP));
   });
 
-  function render() { drawGame(ctx, game, size, faces); scoreEl.textContent = game.score; }
+  // Bild läuft durchgehend (Schneefall, pulsierendes Gesicht); die Spiellogik tickt separat
+  let raf = 0;
+  const t0 = performance.now();
+  function frame() { raf = requestAnimationFrame(frame); if (game) drawGame(ctx, game, size, faces, head, (performance.now() - t0) / 1000); }
+  raf = requestAnimationFrame(frame);
+  function render() { scoreEl.textContent = game.score; }
 
   function loop() {
     const d = queue.length ? queue.shift() : null;
@@ -168,7 +174,7 @@ export function playSnake({ onFinish, onClose, testMode = false }) {
 
   function gameOver() {
     if (!official) {
-      showMsg(`<h2>Übung vorbei</h2><p>Du hattest ${game.score} 🍎.</p>
+      showMsg(`<h2>Übung vorbei</h2><p>Du hattest ${game.score} 🎅.</p>
         <p>Dein echter Versuch zählt für die Wahlreihenfolge – du hast nur <strong>einen</strong>.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
           <button class="sg-btn sec" data-a="again">Nochmal üben</button>
@@ -186,12 +192,12 @@ export function playSnake({ onFinish, onClose, testMode = false }) {
     }
     recording.ticks = game.tick;
     const score = game.score;
-    showMsg(`<h2>Game Over</h2><div class="sg-big">${score} 🍎</div><p>Wird gespeichert…</p>`);
+    showMsg(`<h2>Game Over</h2><div class="sg-big">${score} 🎅</div><p>Wird gespeichert…</p>`);
     Promise.resolve(onFinish({ score, replay: recording })).then(() => {
       showMsg(testMode
-        ? `<h2>Test beendet</h2><div class="sg-big">${score} 🍎</div>
+        ? `<h2>Test beendet</h2><div class="sg-big">${score} 🎅</div>
            <p>Testmodus: nichts wurde gespeichert.</p><button class="sg-btn" data-a="close">Fertig</button>`
-        : `<h2>Gespeichert!</h2><div class="sg-big">${score} 🍎</div>
+        : `<h2>Gespeichert!</h2><div class="sg-big">${score} 🎅</div>
            <p>Dein Versuch ist jetzt im Leaderboard.</p><button class="sg-btn" data-a="close">Fertig</button>`);
       msg.querySelector('[data-a=close]').onclick = close;
     }).catch(err => {
@@ -200,7 +206,7 @@ export function playSnake({ onFinish, onClose, testMode = false }) {
   }
 
   function close() {
-    clearTimeout(timer);
+    clearTimeout(timer); cancelAnimationFrame(raf);
     window.removeEventListener('keydown', onKey);
     document.body.style.overflow = '';
     ov.remove();
@@ -211,15 +217,16 @@ export function playSnake({ onFinish, onClose, testMode = false }) {
 }
 
 // ---------- Wiedergabe (Leaderboard) ----------
-export function playReplay({ name, score, replay }) {
+export function playReplay({ name, score, replay, photoUrl = null }) {
   injectCss();
   const faces = loadFaces(FACE_URLS);
+  const head = loadHead(photoUrl);
   const ov = document.createElement('div');
   ov.className = 'sg-overlay';
   ov.style.justifyContent = 'center';
   ov.innerHTML = `
     <button class="sg-close">✕</button>
-    <div class="sg-top"><span>${name.replace(/</g, '&lt;')}</span><span>🍎 <span class="sg-score">0</span> / ${score}</span></div>
+    <div class="sg-top"><span>${name.replace(/</g, '&lt;')}</span><span>🎅 <span class="sg-score">0</span> / ${score}</span></div>
     <div class="sg-canvas-wrap"><canvas></canvas><div class="sg-msg" style="display:none"></div></div>
     <div style="display:flex;gap:8px;padding:16px">
       <button class="sg-btn sec" data-a="speed">Tempo: 1×</button>
@@ -233,21 +240,24 @@ export function playReplay({ name, score, replay }) {
   const scoreEl = ov.querySelector('.sg-score');
   const { ctx, size } = setupCanvas(canvas);
   let timer = null, speed = 1, game, idx;
+  let raf = 0; const t0 = performance.now();
+  function frame() { raf = requestAnimationFrame(frame); if (game) drawGame(ctx, game, size, faces, head, (performance.now() - t0) / 1000); }
+  raf = requestAnimationFrame(frame);
 
   function start() {
     clearTimeout(timer);
     msg.style.display = 'none';
     game = createGame(replay.seed); idx = 0;
-    drawGame(ctx, game, size, faces); scoreEl.textContent = 0;
+    scoreEl.textContent = 0;
     timer = setTimeout(loop, 600);
   }
   function loop() {
     let d = null;
     if (idx < replay.inputs.length && replay.inputs[idx] === game.tick) { d = replay.inputs[idx + 1]; idx += 2; }
     step(game, d);
-    drawGame(ctx, game, size, faces); scoreEl.textContent = game.score;
+    scoreEl.textContent = game.score;
     if (!game.alive) {
-      msg.innerHTML = `<h2>Game Over</h2><div class="sg-big">${game.score} 🍎</div>`;
+      msg.innerHTML = `<h2>Game Over</h2><div class="sg-big">${game.score} 🎅</div>`;
       msg.style.display = 'flex';
       return;
     }
@@ -260,7 +270,7 @@ export function playReplay({ name, score, replay }) {
     e.target.textContent = `Tempo: ${speed}×`;
   };
   ov.querySelector('.sg-close').onclick = () => {
-    clearTimeout(timer); document.body.style.overflow = ''; ov.remove();
+    clearTimeout(timer); cancelAnimationFrame(raf); document.body.style.overflow = ''; ov.remove();
   };
   start();
 }

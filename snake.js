@@ -22,6 +22,7 @@ export function createGame(seed, { practice = false } = {}) {
     dir: DIR.RIGHT,
     food: null,
     face: 0,
+    eaten: [],        // gefressene Gesichter in Reihenfolge – hängen hinten an der Schlange
     obstacles: [],
     score: 0,
     tick: 0,
@@ -92,6 +93,7 @@ export function step(g, newDir) {
   g.snake.unshift({ x: nx, y: ny });
   if (eating) {
     g.score++;
+    g.eaten.push(g.face);
     if (!g.practice && g.score % 3 === 0) addObstacle(g); // alle 3 Äpfel ein neues Hindernis
     placeFood(g);
   } else {
@@ -105,7 +107,7 @@ export function speedFor(g) {
   return Math.max(70, 170 - g.score * 5);
 }
 
-// ===== Darstellung =====
+// ===== Darstellung (winterlich) =====
 export function loadFaces(urls) {
   return urls.map(url => {
     const f = { img: new Image(), ok: false };
@@ -114,66 +116,135 @@ export function loadFaces(urls) {
     return f;
   });
 }
+// Kopf der Schlange: Foto des Kapitäns (freigestellt)
+export function loadHead(url) {
+  const f = { img: new Image(), ok: false };
+  if (url) { f.img.onload = () => { f.ok = true; }; f.img.src = url; }
+  return f;
+}
 
-export function drawGame(ctx, g, size, faces) {
+// Schneeflocken (nur Optik, beeinflusst das Spiel nicht)
+const FLAKES = Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random(), r: 0.6 + Math.random() * 1.6, v: 0.03 + Math.random() * 0.05, w: Math.random() * 6 }));
+
+function drawImageFit(ctx, img, cx, cy, h) {
+  const w = h * img.width / img.height;
+  ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
+  return w;
+}
+
+// Weihnachtsmütze über einem Kopf mit Mittelpunkt (cx, top) und Breite w
+function santaHat(ctx, cx, top, w, lean) {
+  const h = w * 0.85;
+  ctx.save();
+  ctx.translate(cx, top);
+  ctx.rotate(lean);
+  ctx.fillStyle = '#dc2626';
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.46, 0);
+  ctx.quadraticCurveTo(-w * 0.1, -h * 0.9, w * 0.42, -h * 0.82);   // Zipfel nach hinten
+  ctx.quadraticCurveTo(w * 0.2, -h * 0.45, w * 0.46, 0);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,.15)';
+  ctx.beginPath(); ctx.moveTo(w * 0.1, -h * 0.2); ctx.quadraticCurveTo(w * 0.25, -h * 0.5, w * 0.42, -h * 0.82); ctx.quadraticCurveTo(w * 0.22, -h * 0.4, w * 0.46, 0); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#fff';                                            // Fellrand
+  ctx.beginPath(); ctx.roundRect(-w * 0.55, -h * 0.12, w * 1.1, h * 0.24, h * 0.12); ctx.fill();
+  ctx.beginPath(); ctx.arc(w * 0.44, -h * 0.84, w * 0.13, 0, Math.PI * 2); ctx.fill();   // Bommel
+  ctx.restore();
+}
+
+export function drawGame(ctx, g, size, faces, head, timeS = 0) {
   const c = size / GRID;
-  for (let y = 0; y < GRID; y++) {
-    for (let x = 0; x < GRID; x++) {
-      ctx.fillStyle = (x + y) % 2 ? '#1a3d24' : '#163520';
-      ctx.fillRect(x * c, y * c, c, c);
-    }
-  }
 
-  // Hindernisse
+  // Schneefeld
+  for (let y = 0; y < GRID; y++) for (let x = 0; x < GRID; x++) {
+    ctx.fillStyle = (x + y) % 2 ? '#d9e8f7' : '#cddff2';
+    ctx.fillRect(x * c, y * c, c, c);
+  }
+  // kleine Tannen in den Ecken als Deko (blockieren nichts)
+  ctx.globalAlpha = 0.18;
+  for (const [tx, ty] of [[0.6, 0.6], [19.4, 0.6], [0.6, 19.4], [19.4, 19.4]]) {
+    ctx.fillStyle = '#166534';
+    ctx.beginPath(); ctx.moveTo(tx * c, ty * c - c * 0.7); ctx.lineTo(tx * c + c * 0.5, ty * c + c * 0.5); ctx.lineTo(tx * c - c * 0.5, ty * c + c * 0.5); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Hindernisse: Eisblöcke
   for (const o of g.obstacles) {
-    ctx.fillStyle = '#6b7280';
-    ctx.fillRect(o.x * c, o.y * c, c, c);
-    ctx.fillStyle = '#4b5563';
-    ctx.fillRect(o.x * c + c * 0.2, o.y * c + c * 0.2, c * 0.6, c * 0.6);
+    const x = o.x * c, y = o.y * c;
+    ctx.fillStyle = '#7dd3fc'; ctx.fillRect(x + 1, y + 1, c - 2, c - 2);
+    ctx.fillStyle = '#bae6fd'; ctx.fillRect(x + 1, y + 1, c - 2, c * 0.35);
+    ctx.strokeStyle = '#0284c7'; ctx.lineWidth = 1.5; ctx.strokeRect(x + 1.5, y + 1.5, c - 3, c - 3);
+    ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillRect(x + c * 0.18, y + c * 0.18, c * 0.18, c * 0.5);
   }
 
-  // Schlange
-  g.snake.forEach((s, i) => {
-    ctx.fillStyle = i === 0 ? '#4ade80' : (i % 2 ? '#22c55e' : '#16a34a');
-    ctx.fillRect(s.x * c + 1, s.y * c + 1, c - 2, c - 2);
-  });
-  // Augen
-  const h = g.snake[0];
-  const [dx, dy] = VEC[g.dir];
-  ctx.fillStyle = '#052e16';
-  const cx = h.x * c + c / 2, cy = h.y * c + c / 2;
-  const px = -dy * c * 0.2, py = dx * c * 0.2;
-  const fx = dx * c * 0.15, fy = dy * c * 0.15;
-  ctx.beginPath(); ctx.arc(cx + px + fx, cy + py + fy, c * 0.09, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(cx - px + fx, cy - py + fy, c * 0.09, 0, Math.PI * 2); ctx.fill();
-
-  // Futter: Gesicht anstelle des Apfels (Fallback: roter Apfel, solange kein Foto geladen ist)
+  // Futter: Gesicht mit goldenem Schein (Fallback: rote Christbaumkugel)
   if (g.food) {
-    const ax = (g.food.x + 0.5) * c, ay = (g.food.y + 0.5) * c, r = c * 0.72;
+    const ax = (g.food.x + 0.5) * c, ay = (g.food.y + 0.5) * c;
     const face = faces && faces[g.face % faces.length];
+    const pulse = 1 + Math.sin(timeS * 5) * 0.06;
+    const glow = ctx.createRadialGradient(ax, ay, 0, ax, ay, c * 1.4);
+    glow.addColorStop(0, 'rgba(250,204,21,.6)'); glow.addColorStop(1, 'rgba(250,204,21,0)');
+    ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(ax, ay, c * 1.4, 0, Math.PI * 2); ctx.fill();
     if (face && face.ok) {
-      const im = face.img;
-      const h = c * 2.2, w = h * im.width / im.height; // gut 2 Felder hoch, Seitenverhältnis bleibt
-      // heller Schein dahinter, damit das Gesicht auf dem dunklen Feld auffällt
-      const glow = ctx.createRadialGradient(ax, ay, 0, ax, ay, h * 0.6);
-      glow.addColorStop(0, 'rgba(253,224,71,0.55)');
-      glow.addColorStop(1, 'rgba(253,224,71,0)');
-      ctx.fillStyle = glow;
-      ctx.beginPath(); ctx.arc(ax, ay, h * 0.6, 0, Math.PI * 2); ctx.fill();
-      // am Rand nicht abschneiden: Bild ins Spielfeld schieben
-      const dx = Math.min(Math.max(ax - w / 2, 0), size - w);
-      const dy = Math.min(Math.max(ay - h / 2, 0), size - h);
-      ctx.drawImage(im, dx, dy, w, h);
-      return;
+      const h = c * 2.0 * pulse, w = h * face.img.width / face.img.height;
+      const dx = Math.min(Math.max(ax - w / 2, 0), size - w), dy = Math.min(Math.max(ay - h / 2, 0), size - h);
+      ctx.drawImage(face.img, dx, dy, w, h);
+    } else {
+      const r = c * 0.62 * pulse;
+      ctx.fillStyle = '#dc2626'; ctx.beginPath(); ctx.arc(ax, ay + c * 0.08, r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.beginPath(); ctx.arc(ax - r * 0.35, ay - r * 0.2, r * 0.25, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#facc15'; ctx.fillRect(ax - c * 0.14, ay - r - c * 0.05, c * 0.28, c * 0.18);
     }
-    ctx.fillStyle = '#dc2626';
-    ctx.beginPath(); ctx.arc(ax, ay, r, 0, Math.PI * 2); ctx.fill();
-    {
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.beginPath(); ctx.arc(ax - r * 0.3, ay - r * 0.3, r * 0.25, 0, Math.PI * 2); ctx.fill();
-    }
-    // Blatt
-    ctx.fillStyle = '#22c55e';
-    ctx.beginPath(); ctx.ellipse(ax + r * 0.3, ay - r * 0.95, r * 0.3, r * 0.14, -0.5, 0, Math.PI * 2); ctx.fill();
   }
+
+  // Körper: rot-weiß geringelter Schal durch alle Glieder
+  const pts = g.snake.map(s => [(s.x + 0.5) * c, (s.y + 0.5) * c]);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (let i = pts.length - 1; i > 0; i--) {
+    ctx.strokeStyle = i % 2 ? '#dc2626' : '#ffffff';
+    ctx.lineWidth = c * 0.78;
+    ctx.beginPath(); ctx.moveTo(pts[i][0], pts[i][1]); ctx.lineTo(pts[i - 1][0], pts[i - 1][1]); ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(15,23,42,.18)'; ctx.lineWidth = 1;
+
+  // Gefressene Gesichter hängen hinten an (ältestes ganz am Schwanz)
+  const n = g.snake.length;
+  for (let k = 0; k < g.eaten.length && k < n - 1; k++) {
+    const seg = g.snake[n - 1 - k];
+    if (n - 1 - k < 2) break;                       // die zwei Glieder hinter dem Kopf bleiben Schal
+    const f = faces && faces[g.eaten[k] % faces.length];
+    const sx = (seg.x + 0.5) * c, sy = (seg.y + 0.5) * c;
+    if (f && f.ok) drawImageFit(ctx, f.img, sx, sy, c * 1.35);
+    else { ctx.fillStyle = '#fde68a'; ctx.beginPath(); ctx.arc(sx, sy, c * 0.42, 0, Math.PI * 2); ctx.fill(); }
+  }
+
+  // Kopf: Foto des Kapitäns mit Weihnachtsmütze
+  const hd = g.snake[0];
+  const hx = (hd.x + 0.5) * c, hy = (hd.y + 0.5) * c;
+  const [vx] = VEC[g.dir];
+  const H = c * 2.5;
+  ctx.save();
+  ctx.translate(hx, hy);
+  if (vx < 0) ctx.scale(-1, 1);                      // nach links schauen: spiegeln statt auf den Kopf stellen
+  let hw;
+  if (head && head.ok) {
+    hw = drawImageFit(ctx, head.img, 0, 0, H);
+  } else {
+    hw = H * 0.78;
+    ctx.fillStyle = '#f0c4a0'; ctx.beginPath(); ctx.arc(0, 0, hw / 2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1f2937';
+    ctx.beginPath(); ctx.arc(hw * 0.14, -hw * 0.06, hw * 0.07, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(hw * 0.34, -hw * 0.06, hw * 0.07, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#7c2d12'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(hw * 0.22, hw * 0.08, hw * 0.16, 0.2, Math.PI - 0.2); ctx.stroke();
+  }
+  santaHat(ctx, 0, -H * 0.36, Math.min(hw, H * 0.85) * 0.95, -0.12);
+  ctx.restore();
+
+  // Schneefall
+  ctx.fillStyle = 'rgba(255,255,255,.95)';
+  for (const f of FLAKES) {
+    const y = ((f.y + timeS * f.v) % 1) * size, x = (f.x * size + Math.sin(timeS + f.w) * 6 + size) % size;
+    ctx.beginPath(); ctx.arc(x, y, f.r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(148,163,184,.35)';
 }

@@ -31,7 +31,7 @@
 
     let lastTest = null; // letzter Snake-Testversuch (nur im Browser, wird nicht gespeichert)
     let lastBiathlon = null; // letzter Biathlon-Testlauf
-    const GAME_NAMES = { snake: 'Snake 🐍', biathlon: 'Biathlon-Sprint ⛷️' };
+    const GAME_NAMES = { snake: 'Winter-Snake 🎅', biathlon: 'Biathlon-Sprint ⛷️' };
     // Rangwert fürs aktive Spiel: kleiner = besser (ohne Ergebnis ganz hinten)
     const rankFor = (game, c) => game === 'biathlon' ? biathlonRank(c.biathlon)
       : (c.minigamePlayed ? -(c.minigameScore ?? 0) : Infinity);
@@ -279,13 +279,13 @@
 
       document.getElementById('testSnake').addEventListener('click', () => {
         playSnake({
-          testMode: true,
+          testMode: true, photoUrl: 'faces/face1.png',
           onFinish: r => { lastTest = r; },
           onClose: () => render(state, teams, participants)
         });
       });
       document.getElementById('testReplay').addEventListener('click', () => {
-        if (lastTest) playReplay({ name: 'Testversuch', score: lastTest.score, replay: lastTest.replay });
+        if (lastTest) playReplay({ name: 'Testversuch', score: lastTest.score, replay: lastTest.replay, photoUrl: 'faces/face1.png' });
       });
 
       document.getElementById('addCaptain').addEventListener('click', async () => {

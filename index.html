@@ -469,15 +469,15 @@
     // Welches Spiel über die Wahlreihenfolge entscheidet, legt der Admin fest (state.activeGame).
     const GAMES = {
       snake: {
-        name: 'Snake 🐍',
+        name: 'Winter-Snake 🎅',
         info: 'Sammle so viele Gesichter wie möglich – wer die meisten hat, darf zuerst wählen.',
         played: c => !!c.minigamePlayed,
         rank: c => c.minigamePlayed ? -(c.minigameScore ?? 0) : Infinity,
-        label: c => `${c.minigameScore} 🍎`,
+        label: c => `${c.minigameScore} 🎅`,
         canWatch: c => !!c.snakeReplay,
-        watch: c => playReplay({ name: c.name, score: c.minigameScore, replay: c.snakeReplay }),
+        watch: c => playReplay({ name: c.name, score: c.minigameScore, replay: c.snakeReplay, photoUrl: c.photoUrl }),
         play: (test, onDone) => playSnake({
-          testMode: test, onClose: onDone,
+          testMode: test, onClose: onDone, photoUrl: S.me.photoUrl,
           onFinish: test ? () => {} : async ({ score, replay }) =>
             updateDoc(doc(db, 'participants', token), { minigameScore: score, minigamePlayed: true, snakeReplay: replay })
         })
