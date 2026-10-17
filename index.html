@@ -558,18 +558,19 @@
     }
 
     // ---------- Demo-Modus: index.html?demo (Spieler) oder ?demo=kapitaen ----------
-    // Zeigt die in admin.html angelegten Personen mit ihren Fotos/Frisuren (nur lesen, nichts wird gespeichert).
-    // Sind noch keine angelegt, kommen Beispiel-Leute.
+    // Zeigt die in admin.html angelegten Personen (nur lesen, nichts wird gespeichert). Auf der Bank sitzen
+    // nur Spieler mit Gesicht; in der Spieler-Demo läuft man selbst als "Du" mit faces/face1.png ein.
+    // Kapitäns-Demo ohne angelegte Kapitäne/Spieler: Beispiel-Leute.
     async function demoStart() {
       let ps = [], ts = {};
       try {
         (await getDocs(collection(db, 'participants'))).forEach(d => ps.push({ token: d.id, ...d.data() }));
         (await getDocs(collection(db, 'teams'))).forEach(d => { ts[d.id] = { id: d.id, ...d.data() }; });
       } catch (e) { ps = []; }
-      const realPlayers = ps.filter(p => p.role === 'player');
-      const realCaps = ps.filter(p => p.role === 'captain' && Object.values(ts).some(t => t.captainToken === p.token));
-      const usable = DEMO === 'captain' ? realCaps.length > 0 && realPlayers.length > 0 : realPlayers.length > 0;
-      if (!usable) return demoSample();
+      // Auf der Bank sitzen nur angelegte Spieler, die ein Gesicht (Foto) haben
+      const realPlayers = ps.filter(p => p.role === 'player' && p.photoUrl);
+      const realCaps = ps.filter(p => p.role === 'captain' && p.photoUrl && Object.values(ts).some(t => t.captainToken === p.token));
+      if (DEMO === 'captain' && !(realCaps.length > 0 && realPlayers.length > 0)) return demoSample();
       const t0 = Date.now() - 600000;
       const byName = (a, b) => String(a.name).localeCompare(String(b.name), 'de');
       const players = realPlayers.sort((a, b) => (a.arrivedAt ?? 9e15) - (b.arrivedAt ?? 9e15) || byName(a, b))
@@ -577,7 +578,10 @@
       const captains = realCaps.sort(byName).map(c => ({ ...c, arrivedAt: t0, minigamePlayed: c.minigamePlayed ?? false }));
       let me;
       if (DEMO === 'captain') me = captains[0];
-      else { me = players[players.length - 1]; me.arrivedAt = Date.now(); }   // der Letzte läuft gerade ein
+      else {   // Spieler-Demo: alle sitzen schon, "Du" läuft mit face1 als Letzter ein
+        me = { token: 'demo-me', name: 'Du', role: 'player', teamId: null, hair: 'kurz', photoUrl: 'faces/face1.png', arrivedAt: Date.now() };
+        players.push(me);
+      }
       token = me.token;
       const teamIds = captains.map(c => Object.values(ts).find(t => t.captainToken === c.token).id);
       let benchSeats;
