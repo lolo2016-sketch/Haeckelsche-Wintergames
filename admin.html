@@ -17,9 +17,9 @@
       collection, getDocs
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js";
-    import { startDraft, finishPairs, founderCount, ranked, isPerson, teamColor, DEFAULT_FOUNDERS } from "./draft.js";
+    import { playSnake, playReplay } from "./minigame.js?v=20261018";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261018";
+    import { startDraft, finishPairs, founderCount, ranked, isPerson, teamColor, DEFAULT_FOUNDERS } from "./draft.js?v=20261018";
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
@@ -188,8 +188,8 @@
         <button id="testSnake">Snake ausprobieren</button>
         <button id="testBiathlon">Biathlon-Sprint ausprobieren</button>
         <button class="secondary" id="testBiathlonReplay" ${lastBiathlon ? '' : 'disabled'}>Letzten Biathlon-Test als Wiedergabe</button>
-        <a href="${baseUrl}?demo" target="_blank"><button class="secondary" type="button">🏟️ Demo: einlaufen</button></a>
-        <a href="${baseUrl}?demo=wahl" target="_blank"><button class="secondary" type="button">🏟️ Demo: Teamwahl</button></a>
+        <a href="${baseUrl}?demo&v=${Date.now().toString(36)}" target="_blank"><button class="secondary" type="button">🏟️ Demo: einlaufen</button></a>
+        <a href="${baseUrl}?demo=wahl&v=${Date.now().toString(36)}" target="_blank"><button class="secondary" type="button">🏟️ Demo: Teamwahl</button></a>
         <button class="secondary" id="testReplay" ${lastTest ? '' : 'disabled'}>Letzten Test als Wiedergabe ansehen</button>
       </div>`;
 

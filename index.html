@@ -87,15 +87,17 @@
   <div id="app"><div class="card"><p>Lade …</p></div></div>
 
   <script type="module">
+    // ?v=… hinter den eigenen Dateien: zwingt Handys, nach einem Update alle Dateien neu zu laden
+    // (sonst mischt der Browser-Zwischenspeicher alte und neue Dateien). Bei jedem Update hochzählen.
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import {
       getFirestore, doc, getDoc, getDocs, updateDoc, collection, onSnapshot, addDoc, query, orderBy, limit
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js";
-    import { createHall } from "./hall.js";
-    import { compareRank, playedGame, finishPairs, planPairs, teamColor, isPerson, DEFAULT_FOUNDERS } from "./draft.js";
+    import { playSnake, playReplay } from "./minigame.js?v=20261018";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261018";
+    import { createHall } from "./hall.js?v=20261018";
+    import { compareRank, playedGame, finishPairs, planPairs, teamColor, isPerson, DEFAULT_FOUNDERS } from "./draft.js?v=20261018";
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
@@ -307,7 +309,7 @@
       // 3D, wenn möglich, sonst die einfache 2D-Halle
       let use3d = false;
       try {
-        hall3dMod ??= await import('./hall3d.js');
+        hall3dMod ??= await import('./hall3d.js?v=20261018');
         use3d = hall3dMod.webglAvailable();
       } catch (e) { use3d = false; }
 

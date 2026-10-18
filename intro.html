@@ -53,7 +53,9 @@
       const data = snap.data();
 
       // Admins bekommen ihren Token mit, damit admin.html ohne Passwort öffnet
-      const destination = data.role === 'admin' ? `admin.html?t=${token}` : (data.redirectTo || `index.html?t=${token}`);
+      // &v=… sorgt dafür, dass das Handy immer die aktuelle Version der Seite lädt (nicht eine alte aus dem Zwischenspeicher)
+      const fresh = '&v=' + Date.now().toString(36);
+      const destination = data.role === 'admin' ? `admin.html?t=${token}${fresh}` : (data.redirectTo || `index.html?t=${token}${fresh}`);
       if (!data.videoUrl) { location.replace(destination); return; }   // kein Video -> direkt in die Halle
 
       const canSkip = (data.videoViews || 0) >= 1;   // erst ab dem zweiten Aufruf überspringbar
