@@ -3,7 +3,7 @@
 // eine Person dazu. Wer danach noch ohne Team ist, wird zufällig zu Zweierteams gepaart.
 // Rollen aus früheren Versionen ("captain"/"player") spielen keine Rolle mehr, nur "admin" wird ausgelassen.
 import { doc, collection, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { biathlonRank } from "./biathlon.js?v=20261018d";
+import { biathlonRank } from "./biathlon.js?v=20261018e";
 
 export const DEFAULT_FOUNDERS = 7;
 // Teamfarben (Reihenfolge = Reihenfolge der Teams)

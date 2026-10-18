@@ -95,10 +95,10 @@
       getFirestore, doc, getDoc, getDocs, updateDoc, collection, onSnapshot, addDoc, query, orderBy, limit
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261018d";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261018d";
-    import { createHall } from "./hall.js?v=20261018d";
-    import { compareRank, playedGame, finishPairs, planPairs, teamColor, isPerson, DEFAULT_FOUNDERS } from "./draft.js?v=20261018d";
+    import { playSnake, playReplay } from "./minigame.js?v=20261018e";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261018e";
+    import { createHall } from "./hall.js?v=20261018e";
+    import { compareRank, playedGame, finishPairs, planPairs, teamColor, isPerson, DEFAULT_FOUNDERS } from "./draft.js?v=20261018e";
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
@@ -313,7 +313,7 @@
       // 3D, wenn möglich, sonst die einfache 2D-Halle
       let use3d = false;
       try {
-        hall3dMod ??= await import('./hall3d.js?v=20261018d');
+        hall3dMod ??= await import('./hall3d.js?v=20261018e');
         use3d = hall3dMod.webglAvailable();
       } catch (e) { use3d = false; }
 

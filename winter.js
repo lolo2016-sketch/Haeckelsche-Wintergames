@@ -445,8 +445,8 @@ export function buildWinterWorld(scene, floorTex) {
       floater('besen', new THREE.Vector3(-7.2, 7.6, -19.7), 12, 378 / 465, 'rgba(255,90,20,0.85)', 0xffa040),
       floater('schaedel', new THREE.Vector3(-7.2, 7.6, 19.7), 12, 378 / 465, 'rgba(90,255,60,0.7)', 0x9dff5a),
       // dazwischen, näher am Tor: die Zauberer (halb links) und die Balkon-Szene (halb rechts), noch größer
-      floater('zauberer', new THREE.Vector3(14.8, 7.9, -14.8), 12.5, 1012 / 754, 'rgba(255,110,30,0.7)', 0xffb050),
-      floater('balkon', new THREE.Vector3(14.8, 7.6, 14.8), 11, 800 / 520, 'rgba(80,255,70,0.55)', 0xa6ff6a)
+      floater('zauberer', new THREE.Vector3(11.73, 7.9, -17.33), 12.5, 1012 / 754, 'rgba(255,110,30,0.7)', 0xffb050),
+      floater('balkon', new THREE.Vector3(11.73, 7.6, 17.33), 11, 800 / 520, 'rgba(80,255,70,0.55)', 0xa6ff6a)
     ];
     scene.add(g);
     return { group: g, update: (dt, time, cam) => {
