@@ -401,9 +401,9 @@ export function buildWinterWorld(scene, floorTex) {
 
     // Schwebende Objekte mit 4 Ansichten
     const VIEWS = ['vorne', 'links', 'hinten', 'rechts'];   // gegen den Uhrzeigersinn um das Objekt herum
-    function floater(name, pos, glowColor, emberColor) {
+    function floater(name, pos, H, aspect, glowColor, emberColor) {
       const texs = VIEWS.map(v => load(`agents/welt/${name}_${v}.png`));
-      const H = 9, W = H * 378 / 465;
+      const W = H * aspect;
       const grp = new THREE.Group(); grp.position.copy(pos);
       const mk = () => new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ map: texs[0], transparent: true, depthWrite: false, fog: false }));
       const a = mk(), b = mk(); b.renderOrder = 1;
@@ -441,8 +441,12 @@ export function buildWinterWorld(scene, floorTex) {
     }
     // links und rechts (von der Mitte aus Richtung Tor gesehen), hinten bleibt frei
     const floaters = [
-      floater('besen', new THREE.Vector3(5, 6.2, -15), 'rgba(255,90,20,0.85)', 0xffa040),
-      floater('schaedel', new THREE.Vector3(5, 6.2, 15), 'rgba(90,255,60,0.7)', 0x9dff5a)
+      // ganz außen: Besen (links) und Schädel-Pokal (rechts)
+      floater('besen', new THREE.Vector3(-7.2, 7.6, -19.7), 12, 378 / 465, 'rgba(255,90,20,0.85)', 0xffa040),
+      floater('schaedel', new THREE.Vector3(-7.2, 7.6, 19.7), 12, 378 / 465, 'rgba(90,255,60,0.7)', 0x9dff5a),
+      // dazwischen, näher am Tor: die Zauberer (halb links) und die Balkon-Szene (halb rechts), noch größer
+      floater('zauberer', new THREE.Vector3(14.8, 7.9, -14.8), 12.5, 1012 / 754, 'rgba(255,110,30,0.7)', 0xffb050),
+      floater('balkon', new THREE.Vector3(14.8, 7.6, 14.8), 11, 800 / 520, 'rgba(80,255,70,0.55)', 0xa6ff6a)
     ];
     scene.add(g);
     return { group: g, update: (dt, time, cam) => {
