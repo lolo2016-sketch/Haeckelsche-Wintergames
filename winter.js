@@ -366,8 +366,96 @@ export function buildWinterWorld(scene, floorTex) {
     flakeGeo.attributes.position.needsUpdate = true;
   });
 
+  // ----- Agentenwelt: leuchtender Schriftzug über dem Tor, schwebender Besen (links) und Schädel-Pokal (rechts) -----
+  // Wird erst beim ersten Einschalten des Agentenmodus gebaut und geladen (spart Ladezeit für alle anderen).
+  // Besen und Schädel: je 4 Ansichten (vorne/rechts/links/hinten); je nach Blickwinkel wird zwischen ihnen
+  // überblendet, dadurch wirken sie dreidimensional, kosten aber kaum Leistung.
+  let agentWorld = null;
+  function buildAgentWorld() {
+    const g = new THREE.Group();
+    const loader = new THREE.TextureLoader();
+    const load = url => { const t = loader.load(url); t.colorSpace = THREE.SRGBColorSpace; return t; };
+    const glowTex = c => canvasTex(128, 128, (x) => {
+      const gr = x.createRadialGradient(64, 64, 4, 64, 64, 64);
+      gr.addColorStop(0, c); gr.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = gr; x.fillRect(0, 0, 128, 128);
+    });
+    const glowSprite = c => new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(c), blending: THREE.AdditiveBlending,
+      transparent: true, depthWrite: false, fog: false }));
+
+    // Schriftzug: mehrere Schichten hintereinander ergeben die Tiefe (vorne hell, dahinter dunkel-glühend)
+    const logoTex = load('agents/welt/logo.png');
+    const LW = 9, LH = LW * 853 / 1024;
+    const logo = new THREE.Group();
+    logo.position.set(17, 4 + LH / 2, 0); logo.rotation.y = -Math.PI / 2;   // schaut zur Mitte der runden Bank
+    const LAYERS = 9;
+    for (let i = LAYERS - 1; i >= 0; i--) {
+      const k = i / (LAYERS - 1);
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(LW, LH), new THREE.MeshBasicMaterial({
+        map: logoTex, transparent: true, alphaTest: 0.3, fog: false, side: THREE.DoubleSide,
+        color: i === 0 ? 0xffffff : new THREE.Color(0.75 - k * 0.45, 0.22 - k * 0.15, 0.04)
+      }));
+      m.position.z = -i * 0.05; logo.add(m);
+    }
+    const logoGlow = glowSprite('rgba(255,120,30,0.9)'); logoGlow.scale.set(LW * 1.5, LH * 1.4, 1); logoGlow.position.z = -0.6; logo.add(logoGlow);
+    g.add(logo);
+
+    // Schwebende Objekte mit 4 Ansichten
+    const VIEWS = ['vorne', 'links', 'hinten', 'rechts'];   // gegen den Uhrzeigersinn um das Objekt herum
+    function floater(name, pos, glowColor, emberColor) {
+      const texs = VIEWS.map(v => load(`agents/welt/${name}_${v}.png`));
+      const H = 9, W = H * 378 / 465;
+      const grp = new THREE.Group(); grp.position.copy(pos);
+      const mk = () => new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ map: texs[0], transparent: true, depthWrite: false, fog: false }));
+      const a = mk(), b = mk(); b.renderOrder = 1;
+      const glow = glowSprite(glowColor); glow.scale.set(W * 1.6, H * 1.2, 1); glow.position.z = -0.3;
+      const face = new THREE.Group(); face.add(glow, a, b); grp.add(face);
+      // aufsteigende Funken
+      const N = 40, ep = new Float32Array(N * 3), ev = [];
+      for (let i = 0; i < N; i++) { ep[i * 3] = (R() - 0.5) * W; ep[i * 3 + 1] = (R() - 0.5) * H; ep[i * 3 + 2] = (R() - 0.5) * 2; ev.push(0.6 + R() * 1.2); }
+      const eg = new THREE.BufferGeometry(); eg.setAttribute('position', new THREE.BufferAttribute(ep, 3));
+      const embers = new THREE.Points(eg, new THREE.PointsMaterial({ color: emberColor, size: 0.18, map: flakeTex, transparent: true,
+        depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+      grp.add(embers);
+      g.add(grp);
+      const frontYaw = Math.atan2(-pos.x, -pos.z);          // Vorderseite zeigt zur Mitte
+      const baseY = pos.y, phase = R() * 6;
+      return (dt, time, cam) => {
+        grp.position.y = baseY + Math.sin(time * 0.8 + phase) * 0.35;
+        const camYaw = Math.atan2(cam.position.x - grp.position.x, cam.position.z - grp.position.z);
+        face.rotation.y = camYaw;
+        // Blickwinkel relativ zur Vorderseite -> passende Ansicht, weich überblendet
+        let rel = Math.atan2(Math.sin(camYaw - frontYaw), Math.cos(camYaw - frontYaw));
+        const u = ((rel / (Math.PI / 2)) % 4 + 4) % 4, i0 = Math.floor(u) % 4, i1 = (i0 + 1) % 4, f = u - Math.floor(u);
+        const w = Math.min(1, Math.max(0, (f - 0.35) / 0.3)), ws = w * w * (3 - 2 * w);
+        a.material.map = texs[i0]; b.material.map = texs[i1];
+        a.material.opacity = 1 - ws; b.material.opacity = ws;
+        // Flackern
+        glow.material.opacity = 0.55 + Math.sin(time * 7 + phase) * 0.1 + Math.sin(time * 13.3) * 0.06;
+        for (let i = 0; i < N; i++) {
+          ep[i * 3 + 1] += dt * ev[i];
+          if (ep[i * 3 + 1] > H / 2) { ep[i * 3 + 1] = -H / 2; ep[i * 3] = (R() - 0.5) * W * 0.8; }
+        }
+        eg.attributes.position.needsUpdate = true;
+        embers.rotation.y = camYaw;
+      };
+    }
+    // links und rechts (von der Mitte aus Richtung Tor gesehen), hinten bleibt frei
+    const floaters = [
+      floater('besen', new THREE.Vector3(5, 6.2, -15), 'rgba(255,90,20,0.85)', 0xffa040),
+      floater('schaedel', new THREE.Vector3(5, 6.2, 15), 'rgba(90,255,60,0.7)', 0x9dff5a)
+    ];
+    scene.add(g);
+    return { group: g, update: (dt, time, cam) => {
+      logoGlow.material.opacity = 0.5 + Math.sin(time * 2.2) * 0.12;
+      logo.position.y = 4 + LH / 2 + Math.sin(time * 0.6) * 0.15;
+      floaters.forEach(f => f(dt, time, cam));
+    } };
+  }
+
   // Stimmung: normal (Wintertag) oder Agentenmodus (roter, düsterer Himmel, alles in rotes Licht getaucht)
   function setMood(agent) {
+    if (agent && !agentWorld) agentWorld = buildAgentWorld();
+    if (agentWorld) agentWorld.group.visible = agent;
     sky.material.map = agent ? redSkyTex : skyTex; sky.material.needsUpdate = true;
     scene.background.setHex(agent ? 0x3a0608 : 0xeef4fb);
     scene.fog.color.setHex(agent ? 0x4a0a0c : 0xe6eef8);
@@ -377,5 +465,11 @@ export function buildWinterWorld(scene, floorTex) {
     sun.color.setHex(agent ? 0xff2a1a : 0xfff7ed); sun.intensity = agent ? 1.5 : 1.6;
   }
 
-  return { update: (dt, time) => updaters.forEach(u => u(dt, time)), setMood };
+  return {
+    update: (dt, time, cam) => {
+      updaters.forEach(u => u(dt, time));
+      if (agentWorld?.group.visible && cam) agentWorld.update(dt, time, cam);
+    },
+    setMood
+  };
 }
