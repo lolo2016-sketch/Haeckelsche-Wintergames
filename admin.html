@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Admin – Team-Draft</title>
+<title>Admin – Haeckelsche Wintergames</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -18,7 +18,8 @@
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
     import { playSnake, playReplay } from "./minigame.js";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon, biathlonRank } from "./biathlon.js";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js";
+    import { startDraft, finishPairs, founderCount, ranked, isPerson, teamColor, DEFAULT_FOUNDERS } from "./draft.js";
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
@@ -32,9 +33,6 @@
     let lastTest = null; // letzter Snake-Testversuch (nur im Browser, wird nicht gespeichert)
     let lastBiathlon = null; // letzter Biathlon-Testlauf
     const GAME_NAMES = { snake: 'Winter-Snake 🎅', biathlon: 'Biathlon-Sprint ⛷️' };
-    // Rangwert fürs aktive Spiel: kleiner = besser (ohne Ergebnis ganz hinten)
-    const rankFor = (game, c) => game === 'biathlon' ? biathlonRank(c.biathlon)
-      : (c.minigamePlayed ? -(c.minigameScore ?? 0) : Infinity);
     let lastAdded = null; // zuletzt angelegte Person -> QR-Code oben anzeigen
 
     // ----- Dateien aus dem GitHub-Repo (für die Auswahllisten Bild/Video) -----
@@ -76,12 +74,11 @@
     }
 
     // Felder für Foto und Video einer Person (Pfade im Repo, z. B. photos/max.png, videos/max.mp4)
-    // Name (und bei Kapitänen der Teamname) lassen sich jederzeit ändern; der QR-Code bleibt gleich
-    function mediaFields(x, team = null) {
+    // Der Name lässt sich jederzeit ändern; der QR-Code bleibt gleich
+    function mediaFields(x) {
       const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
       return `<div style="margin-top:6px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <input class="nameIn" data-token="${x.token}" placeholder="Name" value="${esc(x.name)}" style="width:150px" title="Name">
-        ${team ? `<input class="teamIn" data-token="${x.token}" data-team="${team.id}" placeholder="Teamname" value="${esc(team.name)}" style="width:150px" title="Teamname">` : ''}
         ${x.photoUrl ? `<img src="${x.photoUrl}" alt="" style="height:54px" onerror="this.replaceWith('⚠️ Foto nicht gefunden')">` : ''}
         <input class="photoIn" list="photoFiles" data-token="${x.token}" placeholder="photos/name.png" value="${x.photoUrl ?? ''}" style="width:170px">
         <input class="videoIn" list="videoFiles" data-token="${x.token}" placeholder="videos/name.mp4" value="${x.videoUrl ?? ''}" style="width:170px">
@@ -131,32 +128,42 @@
     }
 
     function render(state, teams, participants) {
-      const captains = participants.filter(p => p.role === 'captain');
-      const players = participants.filter(p => p.role === 'player');
+      // Alle außer Admins sind Teilnehmer (frühere Rollen Kapitän/Spieler werden nicht mehr unterschieden)
+      const people = participants.filter(isPerson);
       const admins = participants.filter(p => p.role === 'admin');
+      const game = state.activeGame || 'snake';
+      const F = founderCount(state, people, game);
+      const playedN = ranked(game, people).length;
 
       let html = `<div class="card"><h2>Phase: ${state.phase}</h2>
         <div style="margin:4px 0 8px">
-          <label>Minispiel, das über die Wahlreihenfolge entscheidet:
-            <select id="activeGame">${Object.entries(GAME_NAMES).map(([k, n]) => `<option value="${k}" ${(state.activeGame || 'snake') === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
+          <label>Minispiel, das über die Teamwahl entscheidet:
+            <select id="activeGame">${Object.entries(GAME_NAMES).map(([k, n]) => `<option value="${k}" ${game === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
           </label>
         </div>
-        <button id="toMinigame" ${state.phase !== 'setup' ? 'disabled' : ''}>Minispiel-Phase starten</button>
-        <button id="toDraft" ${state.phase !== 'minigame' ? 'disabled' : ''}>Draft starten (Reihenfolge nach ${GAME_NAMES[state.activeGame || 'snake']})</button>
+        <div style="margin:4px 0 8px">
+          <label>Wie viele dürfen wählen (die Besten im Leaderboard): <input id="founders" type="number" min="1" max="20" value="${state.founders ?? DEFAULT_FOUNDERS}" style="width:60px"></label>
+          <button class="secondary" id="saveFounders">Speichern</button>
+          <span style="color:#666;font-size:.85rem">Jeder davon wählt eine Person, alle übrigen werden danach zufällig zu Zweierteams gepaart.
+          Höchstens die Hälfte aller Personen. Gespielt haben: ${playedN} von ${people.length}.</span>
+        </div>
+        <button id="toMinigame" ${state.phase !== 'setup' ? 'disabled' : ''}>Minispiel-Phase starten (alle spielen)</button>
+        <button id="toDraft" ${state.phase !== 'minigame' || F < 1 ? 'disabled' : ''}>Teamwahl starten (die besten ${F} nach ${GAME_NAMES[game]})</button>
+        <button class="secondary" id="pairNow" ${state.phase !== 'draft' ? 'disabled' : ''}>Teamwahl beenden: Rest jetzt zufällig paaren</button>
         <button class="danger" id="resetAll">Alles zurücksetzen</button>
         <div style="margin-top:10px">
-          <label>Plätze auf der Bank: <input id="benchSeats" type="number" min="4" max="40" value="${state.benchSeats ?? 15}" style="width:70px"></label>
+          <label>Plätze auf der runden Bank: <input id="benchSeats" type="number" min="7" max="40" value="${state.benchSeats ?? 20}" style="width:70px"></label>
           <button class="secondary" id="saveSeats">Speichern</button>
-          <span style="color:#666;font-size:.85rem">Am besten = Anzahl Spieler (ohne Kapitäne). Vor dem Event festlegen.</span>
+          <span style="color:#666;font-size:.85rem">Am besten = Anzahl Personen. Kommen mehr, wird die Bank automatisch größer.</span>
         </div>
         <div style="margin-top:10px">
-          <span>🏟️ In der Halle: ${participants.filter(p => p.role !== 'admin' && p.arrivedAt).length} von ${participants.filter(p => p.role !== 'admin').length}</span>
+          <span>🏟️ In der Halle: ${people.filter(p => p.arrivedAt).length} von ${people.length}</span>
           <button class="secondary" id="resetArrivals">Halle leeren (alle wieder „noch nicht da“)</button>
           <span style="color:#666;font-size:.85rem">Leert die Halle und macht alle QR-Codes wieder „frisch“ (Einlauf + Intro-Video wie beim ersten Mal).</span>
         </div>
         <div style="margin-top:10px">
           <button class="danger" id="freshStart">🔄 Für das Event frisch machen</button>
-          <span style="color:#666;font-size:.85rem">Wie „Halle leeren“ und zusätzlich: Minispiel-Ergebnisse, Teamzuordnungen und Chat löschen, Phase zurück auf „setup“.
+          <span style="color:#666;font-size:.85rem">Wie „Halle leeren“ und zusätzlich: Minispiel-Ergebnisse, Teams und Chat löschen, Phase zurück auf „setup“.
           Personen, Namen, Bilder, Videos und QR-Codes bleiben.</span>
         </div>
         <div style="margin-top:10px">
@@ -165,14 +172,24 @@
         </div>
       </div>`;
 
+      // Aktuelle Teams
+      const teamArr = Object.values(teams).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      if (teamArr.length) {
+        html += `<div class="card"><h2>Teams (${teamArr.length})</h2>${teamArr.map((t, i) => {
+          const mem = people.filter(p => p.teamId === t.id).sort((a, b) => (a.pickedAt ?? 0) - (b.pickedAt ?? 0));
+          return `<div style="margin:4px 0"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${teamColor(t.order ?? i)}"></span>
+            <strong>${t.name}</strong>${t.random ? ' (zufällig)' : ''}: ${mem.map(m => (m.token === t.captainToken ? '★ ' : '') + m.name).join(', ') || '–'}</div>`;
+        }).join('')}</div>`;
+      }
+
       html += `<div class="card">
         <h2>🎮 Minispiele testen</h2>
         <p style="font-size:0.9rem;color:#555">Zum Ausprobieren. Es wird nichts gespeichert und die Phase bleibt unverändert.</p>
         <button id="testSnake">Snake ausprobieren</button>
         <button id="testBiathlon">Biathlon-Sprint ausprobieren</button>
         <button class="secondary" id="testBiathlonReplay" ${lastBiathlon ? '' : 'disabled'}>Letzten Biathlon-Test als Wiedergabe</button>
-        <a href="${baseUrl}?demo" target="_blank"><button class="secondary" type="button">🏟️ Demo: als Spieler einlaufen</button></a>
-        <a href="${baseUrl}?demo=kapitaen" target="_blank"><button class="secondary" type="button">🏟️ Demo: als Kapitän wählen</button></a>
+        <a href="${baseUrl}?demo" target="_blank"><button class="secondary" type="button">🏟️ Demo: einlaufen</button></a>
+        <a href="${baseUrl}?demo=wahl" target="_blank"><button class="secondary" type="button">🏟️ Demo: Teamwahl</button></a>
         <button class="secondary" id="testReplay" ${lastTest ? '' : 'disabled'}>Letzten Test als Wiedergabe ansehen</button>
       </div>`;
 
@@ -183,7 +200,7 @@
       if (fresh) {
         const link = `${introUrl}?t=${fresh.token}`;
         html += `<div class="card" id="freshCard" style="border:3px solid #16a34a">
-          <h2>✅ Angelegt: ${fresh.name} (${fresh.role === 'captain' ? 'Kapitän' : 'Spieler'})</h2>
+          <h2>✅ Angelegt: ${fresh.name}</h2>
           <p style="margin:4px 0">Bild: ${fresh.photoUrl || '–'} · Intro-Video: ${fresh.videoUrl || '– (geht direkt in die Halle)'}</p>
           ${qrImg(link, 220)}
           <a href="${link}" target="_blank">${link}</a><br>
@@ -193,17 +210,8 @@
       }
 
       html += `<div class="card">
-        <h2>Kapitän hinzufügen</h2>
-        <input id="captainName" placeholder="Name des Kapitäns">
-        <input id="teamName" placeholder="Teamname">
-        <div>${mediaInputs('newCap-')}</div>
-        <p class="filesHint" style="font-size:.85rem;color:#666;margin:4px 0">${filesHint()}</p>
-        <button id="addCaptain">Hinzufügen</button>
-      </div>`;
-
-      html += `<div class="card">
-        <h2>Spieler hinzufügen</h2>
-        <input id="playerName" placeholder="Name des Spielers">
+        <h2>Person hinzufügen</h2>
+        <input id="playerName" placeholder="Name">
         <div>${mediaInputs('newPl-')}</div>
         <p class="filesHint" style="font-size:.85rem;color:#666;margin:4px 0">${filesHint()}</p>
         <button id="addPlayer">Hinzufügen</button>
@@ -232,25 +240,14 @@
         </div>`;
       });
 
-      html += `<h2>Kapitäne (${captains.length})</h2>`;
-      captains.forEach(c => {
-        const link = `${introUrl}?t=${c.token}`;
-        html += `<div class="card token-list">
-          <strong>${c.name}</strong> — Team: ${teams[Object.keys(teams).find(id => teams[id].captainToken === c.token)]?.name ?? '?'}
-          ${c.minigamePlayed ? `<br>Snake: ${c.minigameScore} 🍎 <button class="secondary resetTry" data-game="snake" data-token="${c.token}">Snake zurücksetzen</button>` : '<br>Snake: noch nicht gespielt'}
-          ${c.biathlon?.played ? `<br>Biathlon: ${formatBiathlon(c.biathlon)} <button class="secondary resetTry" data-game="biathlon" data-token="${c.token}">Biathlon zurücksetzen</button>` : '<br>Biathlon: noch nicht gespielt'}
-          <br><a href="${link}" target="_blank">${link}</a>
-          ${mediaFields(c, teams[Object.keys(teams).find(id => teams[id].captainToken === c.token)])}
-          ${qrImg(link)}
-          <button class="danger remove" data-token="${c.token}">Entfernen</button>
-        </div>`;
-      });
-
-      html += `<h2>Spieler (${players.length})</h2>`;
-      players.forEach(p => {
+      html += `<h2>Teilnehmer (${people.length})</h2>`;
+      people.slice().sort((x, y) => String(x.name).localeCompare(String(y.name), 'de')).forEach(p => {
         const link = `${introUrl}?t=${p.token}`;
+        const t = teams[p.teamId];
         html += `<div class="card token-list">
-          <strong>${p.name}</strong> ${p.teamId ? `— im Team: ${teams[p.teamId]?.name ?? '?'}` : '— auf der Bank'}
+          <strong>${t?.captainToken === p.token ? '★ ' : ''}${p.name}</strong> ${t ? `— Team: ${t.name}` : '— noch ohne Team'}
+          ${p.minigamePlayed ? `<br>Snake: ${p.minigameScore} 🎅 <button class="secondary resetTry" data-game="snake" data-token="${p.token}">Snake zurücksetzen</button>` : '<br>Snake: noch nicht gespielt'}
+          ${p.biathlon?.played ? `<br>Biathlon: ${formatBiathlon(p.biathlon)} <button class="secondary resetTry" data-game="biathlon" data-token="${p.token}">Biathlon zurücksetzen</button>` : '<br>Biathlon: noch nicht gespielt'}
           <br><a href="${link}" target="_blank">${link}</a>
           ${mediaFields(p)}
           ${qrImg(link)}
@@ -270,20 +267,21 @@
       });
       if (repoFiles.loaded) refreshFileUi();
       document.getElementById('resetArrivals')?.addEventListener('click', async () => {
-        if (!confirm('Alle Spieler und Kapitäne wieder auf "noch nicht da" setzen? Die Halle ist danach leer, jeder läuft beim nächsten Öffnen neu ein und sieht sein Intro-Video wieder wie beim ersten Mal (nicht überspringbar).')) return;
+        if (!confirm('Alle Teilnehmer wieder auf "noch nicht da" setzen? Die Halle ist danach leer, jeder läuft beim nächsten Öffnen neu ein und sieht sein Intro-Video wieder wie beim ersten Mal (nicht überspringbar).')) return;
         for (const p of participants.filter(x => x.role !== 'admin')) await updateDoc(doc(db, 'participants', p.token), { arrivedAt: null, videoViews: 0 });
         loadAll();
       });
       document.getElementById('freshStart')?.addEventListener('click', async () => {
-        if (!confirm('Alles für das Event frisch machen?\n\n• Halle leer, QR-Codes wie neu (Einlauf + Intro-Video)\n• Snake- und Biathlon-Ergebnisse gelöscht\n• Teamzuordnungen gelöscht\n• Chat gelöscht\n• Phase zurück auf "setup"\n\nPersonen, Namen, Bilder, Videos und QR-Codes bleiben erhalten.')) return;
+        if (!confirm('Alles für das Event frisch machen?\n\n• Halle leer, QR-Codes wie neu (Einlauf + Intro-Video)\n• Snake- und Biathlon-Ergebnisse gelöscht\n• Teams gelöscht\n• Chat gelöscht\n• Phase zurück auf "setup"\n\nPersonen, Namen, Bilder, Videos und QR-Codes bleiben erhalten.')) return;
         for (const p of participants.filter(x => x.role !== 'admin')) {
           await updateDoc(doc(db, 'participants', p.token), {
-            arrivedAt: null, videoViews: 0, teamId: null,
-            minigamePlayed: false, minigameScore: null, snakeReplay: null, biathlon: null
+            arrivedAt: null, videoViews: 0, teamId: null, pickedAt: null,
+            minigamePlayed: false, minigameScore: null, minigameAt: null, snakeReplay: null, biathlon: null
           });
         }
+        for (const t of Object.values(teams)) await deleteDoc(doc(db, 'teams', t.id));
         for (const d of (await getDocs(collection(db, 'chat'))).docs) await deleteDoc(d.ref);
-        await setDoc(doc(db, 'state', 'current'), { phase: 'setup', benchSeats: state.benchSeats ?? 15, activeGame: state.activeGame || 'snake' });
+        await setDoc(doc(db, 'state', 'current'), { phase: 'setup', benchSeats: state.benchSeats ?? 20, founders: state.founders ?? DEFAULT_FOUNDERS, activeGame: state.activeGame || 'snake' });
         alert('Fertig! Alles ist frisch für das Event.');
         loadAll();
       });
@@ -314,19 +312,6 @@
         if (lastTest) playReplay({ name: 'Testversuch', score: lastTest.score, replay: lastTest.replay, photoUrl: 'faces/face1.png' });
       });
 
-      document.getElementById('addCaptain').addEventListener('click', async () => {
-        const name = document.getElementById('captainName').value.trim();
-        const teamName = document.getElementById('teamName').value.trim();
-        if (!name || !teamName) return;
-        const token = genToken();
-        const teamId = 'team_' + genToken();
-        await setDoc(doc(db, 'teams', teamId), { name: teamName, captainToken: token });
-        await setDoc(doc(db, 'participants', token), { name, role: 'captain', teamId: null, minigameScore: null, ...newMedia('newCap-') });
-        lastAdded = token;
-        await loadAll();
-        document.getElementById('freshCard')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      });
-
       document.getElementById('addPlayer').addEventListener('click', async () => {
         const name = document.getElementById('playerName').value.trim();
         if (!name) return;
@@ -350,7 +335,7 @@
 
       document.querySelectorAll('.resetTry').forEach(btn => {
         btn.addEventListener('click', async () => {
-          if (!confirm('Versuch dieses Kapitäns löschen? Er/sie darf dann nochmal spielen.')) return;
+          if (!confirm('Versuch dieser Person löschen? Sie darf dann nochmal spielen.')) return;
           await updateDoc(doc(db, 'participants', btn.dataset.token), btn.dataset.game === 'biathlon'
             ? { biathlon: null } : { minigamePlayed: false, minigameScore: null, snakeReplay: null });
           loadAll();
@@ -377,20 +362,31 @@
       });
 
       document.getElementById('toMinigame').addEventListener('click', async () => {
-        await setDoc(doc(db, 'state', 'current'), { phase: 'minigame', benchSeats: state.benchSeats ?? 15, activeGame: state.activeGame || 'snake' });
+        await setDoc(doc(db, 'state', 'current'), { ...state, phase: 'minigame', activeGame: game });
         loadAll();
       });
 
       document.getElementById('toDraft').addEventListener('click', async () => {
-        const game = state.activeGame || 'snake';
-        const ranked = captains.slice().sort((a, b) => rankFor(game, a) - rankFor(game, b));
-        const pickOrder = ranked.map(c => Object.keys(teams).find(id => teams[id].captainToken === c.token)).filter(Boolean);
-        await setDoc(doc(db, 'state', 'current'), { phase: 'draft', pickOrder, turnIndex: 0, benchSeats: state.benchSeats ?? 15, activeGame: game });
+        const notPlayed = people.length - playedN;
+        if (!confirm(`Teamwahl starten?\n\nDie besten ${F} gründen je ein Team und wählen nacheinander eine Person.${notPlayed ? `\n${notPlayed} Person(en) haben noch nicht gespielt und können danach nicht mehr spielen.` : ''}`)) return;
+        try { await startDraft(db, people, state); } catch (e) { alert(e.message); }
+        loadAll();
+      });
+
+      document.getElementById('pairNow').addEventListener('click', async () => {
+        if (!confirm('Teamwahl jetzt beenden? Alle, die noch kein Team haben, werden zufällig zu Zweierteams gepaart.')) return;
+        await finishPairs(db, people, teams, state);
+        loadAll();
+      });
+
+      document.getElementById('saveFounders').addEventListener('click', async () => {
+        const n = Math.max(1, Math.min(20, Number(document.getElementById('founders').value) || DEFAULT_FOUNDERS));
+        await setDoc(doc(db, 'state', 'current'), { ...state, founders: n });
         loadAll();
       });
 
       document.getElementById('saveSeats').addEventListener('click', async () => {
-        const n = Math.max(4, Math.min(40, Number(document.getElementById('benchSeats').value) || 15));
+        const n = Math.max(7, Math.min(40, Number(document.getElementById('benchSeats').value) || 20));
         await setDoc(doc(db, 'state', 'current'), { ...state, benchSeats: n });
         loadAll();
       });
@@ -408,7 +404,7 @@
         if (!confirm('Wirklich ALLE Teilnehmer, Teams und den Status löschen?')) return;
         for (const p of participants) await deleteDoc(doc(db, 'participants', p.token));
         for (const t of Object.values(teams)) await deleteDoc(doc(db, 'teams', t.id));
-        await setDoc(doc(db, 'state', 'current'), { phase: 'setup', benchSeats: state.benchSeats ?? 15, activeGame: state.activeGame || 'snake' });
+        await setDoc(doc(db, 'state', 'current'), { phase: 'setup', benchSeats: state.benchSeats ?? 20, founders: state.founders ?? DEFAULT_FOUNDERS, activeGame: state.activeGame || 'snake' });
         for (const d of (await getDocs(collection(db, 'chat'))).docs) await deleteDoc(d.ref);
         loadAll();
       });

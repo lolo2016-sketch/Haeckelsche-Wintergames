@@ -93,20 +93,22 @@
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
     import { playSnake, playReplay } from "./minigame.js";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon, biathlonRank } from "./biathlon.js";
-    import { createHall, TEAM_COLORS as TEAM_COLORS_CSS } from "./hall.js";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js";
+    import { createHall } from "./hall.js";
+    import { compareRank, playedGame, finishPairs, planPairs, teamColor, isPerson, DEFAULT_FOUNDERS } from "./draft.js";
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
     const params = new URLSearchParams(location.search);
-    const DEMO = params.has('demo') ? (params.get('demo') === 'kapitaen' ? 'captain' : 'player') : null;
+    // Demo: index.html?demo (einlaufen) oder index.html?demo=wahl (Teamwahl ausprobieren; ?demo=kapitaen geht weiterhin)
+    const DEMO = params.has('demo') ? (['wahl', 'kapitaen'].includes(params.get('demo')) ? 'pick' : 'enter') : null;
     let token = DEMO ? 'demo-me' : params.get('t');
     const root = document.getElementById('app');
     const tabbar = document.getElementById('tabbar');
 
     let tab = 'hall';
-    let S = null;            // aktueller Datenstand
+    let S = null;            // aktueller Datenstand: { me, state, teams, people }
     let hall = null;         // 3D- oder 2D-Halle
     let hall3dMod = null;    // wird nur geladen, wenn der Browser 3D kann
     let picking = false;
@@ -145,12 +147,9 @@
         ready.s = true; changed();
       }, err => showError(err));
     }
+    // Alle außer Admins sind Teilnehmer (frühere Rollen Kapitän/Spieler spielen keine Rolle mehr)
     function build(parts, teams, state) {
-      const all = Object.values(parts);
-      return {
-        me: parts[token] ?? null, state: { ...state }, teams: { ...teams },
-        players: all.filter(p => p.role === 'player'), captains: all.filter(p => p.role === 'captain')
-      };
+      return { me: parts[token] ?? null, state: { ...state }, teams: { ...teams }, people: Object.values(parts).filter(isPerson) };
     }
     function showError(err) {
       root.innerHTML = `<div class="card"><p>Verbindung zur Datenbank fehlgeschlagen: ${escapeHtml(err.message)}</p></div>`;
@@ -163,8 +162,8 @@
       const phaseChanged = S && S.state.phase !== s.state.phase;
       S = s;
       if (firstTime) {
-        // Ankunft speichern: bestimmt den Sitzplatz (der Erste sitzt ganz links)
-        if (DEMO) needsEntrance = true;
+        // Ankunft speichern: bestimmt den Sitzplatz (die Erste sitzt mittig, dann abwechselnd links/rechts)
+        if (DEMO === 'enter') needsEntrance = true;
         if (!DEMO && !S.me.arrivedAt && S.me.role !== 'admin') {
           needsEntrance = true;
           S.me.arrivedAt = Date.now();
@@ -176,34 +175,32 @@
       renderTimer = setTimeout(() => {
         if (picking) return;
         renderTabbar();
-        renderBanner(); updateHall();
+        renderTop(); updateHall();
         if (tab !== 'hall' || phaseChanged) renderTab();
       }, 120);
     }
 
     // ---------- Hilfen ----------
-    function columns(s) {
-      let ids = s.state.pickOrder?.filter(id => s.teams[id]) ?? [];
-      const rest = Object.values(s.teams).filter(t => !ids.includes(t.id))
-        .sort((a, b) => capName(s, a).localeCompare(capName(s, b), 'de')).map(t => t.id);
-      ids = [...ids, ...rest];
-      return ids.map((id, j) => ({ teamId: id, captainToken: s.teams[id].captainToken, j }));
-    }
-    const capName = (s, t) => s.captains.find(c => c.token === t.captainToken)?.name ?? '';
-    const myTeamId = s => Object.keys(s.teams).find(id => s.teams[id].captainToken === s.me.token) || null;
+    const teamList = s => Object.values(s.teams).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      .map((t, i) => ({ ...t, css: teamColor(t.order ?? i) }));
+    const teamOf = (s, p) => p?.teamId ? teamList(s).find(t => t.id === p.teamId) ?? null : null;
+    const foundedTeamId = s => Object.keys(s.teams).find(id => s.teams[id].captainToken === s.me.token) || null;
     const turnTeamId = s => s.state.phase === 'draft' && s.state.pickOrder ? s.state.pickOrder[s.state.turnIndex] : null;
-    const isMyTurn = s => s.state.phase === 'draft' && (DEMO === 'captain' || (s.me.role === 'captain' && turnTeamId(s) === myTeamId(s) && !!myTeamId(s)));
+    const turnFounder = s => s.teams[turnTeamId(s)]?.captainToken ?? null;
+    const isMyTurn = s => s.state.phase === 'draft' && !!turnTeamId(s) && (DEMO === 'pick' || turnFounder(s) === s.me.token);
+    const personName = (s, tok) => s.people.find(p => p.token === tok)?.name ?? '?';
+    const teamMates = (s, p) => p?.teamId ? s.people.filter(x => x.teamId === p.teamId && x.token !== p.token) : [];
+    // Wie viele dürfen wählen (Anzeige während des Minispiels)
+    const foundersPlanned = s => Math.max(1, Math.min(Number(s.state.founders) || DEFAULT_FOUNDERS, Math.floor(s.people.length / 2) || 1));
+    const dot = css => `<span style="display:inline-block;width:.75em;height:.75em;border-radius:50%;background:${css};vertical-align:-1px;margin-right:4px"></span>`;
 
     // ---------- Tabs ----------
-    function tabsFor(s) {
-      const t = [{ id: 'hall', icon: '🏟️', label: 'Halle' }];
-      if (s.me.role === 'captain') t.push({ id: 'game', icon: '🎮', label: 'Minispiel' });
-      t.push({ id: 'board', icon: '🏆', label: 'Leaderboard' });
-      return t;
+    function tabsFor() {
+      return [{ id: 'hall', icon: '🏟️', label: 'Halle' }, { id: 'game', icon: '🎮', label: 'Minispiel' }, { id: 'board', icon: '🏆', label: 'Leaderboard' }];
     }
     function renderTabbar() {
-      const needsPlay = S.me.role === 'captain' && S.state.phase === 'minigame' && !playedActive(S.me);
-      tabbar.innerHTML = tabsFor(S).map(t => `<button data-tab="${t.id}" class="glass ${t.id === tab ? 'active' : ''}">
+      const needsPlay = S.state.phase === 'minigame' && !playedActive(S.me);
+      tabbar.innerHTML = tabsFor().map(t => `<button data-tab="${t.id}" class="glass ${t.id === tab ? 'active' : ''}">
           <span>${t.icon}</span>${t.label}${t.id === 'game' && needsPlay ? '<i class="dot"></i>' : ''}</button>`).join('');
       tabbar.querySelectorAll('button').forEach(b => b.onclick = () => {
         tab = tab === b.dataset.tab ? 'hall' : b.dataset.tab;   // nochmal tippen = zurück zur Halle
@@ -211,15 +208,15 @@
       });
     }
 
-    // Oben schwebend: Name/Rolle, Hinweis-Banner, eigene letzte Nachricht
+    // Oben schwebend: Name/Team, Hinweis-Banner, eigene letzte Nachricht
     function renderTop() {
-      const role = S.me.role === 'captain' ? 'Kapitän/in' : 'Spieler/in';
+      const t = teamOf(S, S.me);
       const demo = DEMO ? `<div class="chip glass demo">🧪 Demo · nichts wird gespeichert</div>` : '';
-      document.getElementById('top').innerHTML = `${demo}<div class="chip glass">👋 ${escapeHtml(S.me.name)} · ${role}</div>
+      const star = foundedTeamId(S) ? '★ ' : '';
+      document.getElementById('top').innerHTML = `${demo}<div class="chip glass">👋 ${star}${escapeHtml(S.me.name)}${t ? ` · ${dot(t.css)}${escapeHtml(t.name)}` : ''}</div>
         <div id="banner">${bannerHtml()}</div><div class="my-msg" id="myMsg"></div>`;
       refreshBubbles();
     }
-    const header = () => '';
 
     // Die Halle bleibt immer im Hintergrund; Minispiel und Leaderboard öffnen sich als Fenster darüber
     function renderTab() {
@@ -239,45 +236,52 @@
       if (tab === 'game') renderGameTab(); else renderBoardTab();
     }
 
-    // ---------- Halle ----------
+    // ---------- Banner ----------
     function bannerHtml() { return glassBanner(bannerHtmlRaw()); }
     function bannerHtmlRaw() {
-      const s = S, ph = s.state.phase, me = s.me;
+      const s = S, ph = s.state.phase, me = s.me, G = GAMES[activeGame()];
       if (ph === 'setup') {
-        const n = s.players.filter(p => p.arrivedAt).length;
-        return `<div class="banner">Willkommen in der Halle! <strong>${n}</strong> Spieler sitzen schon auf der Bank. Gleich geht's los. 🏁</div>`;
+        const n = s.people.filter(p => p.arrivedAt).length;
+        return `<div class="banner">Willkommen bei den Wintergames! <strong>${n}</strong> sitzen schon in der Runde. Gleich geht's los. 🏁</div>`;
       }
       if (ph === 'minigame') {
-        if (me.role === 'captain' && !playedActive(me))
-          return `<div class="banner myturn">Kapitäne spielen um die Wahlreihenfolge. <strong>Starte dein Minispiel</strong> im Tab 🎮 unten.</div>`;
-        const done = s.captains.filter(playedActive).length;
-        return `<div class="banner">Die Kapitäne spielen um die Wahlreihenfolge: <strong>${done} von ${s.captains.length}</strong> fertig. Schau im 🏆 Leaderboard zu!</div>`;
+        const F = foundersPlanned(s);
+        if (!playedActive(me))
+          return `<div class="banner myturn">Alle spielen mit! <strong>Starte dein Minispiel</strong> im Tab 🎮 unten. Die besten ${F} dürfen sich danach einen Teamkollegen aussuchen.</div>`;
+        const done = s.people.filter(playedActive).length;
+        return `<div class="banner">${G.name}: <strong>${done} von ${s.people.length}</strong> haben gespielt. Die besten ${F} wählen danach. Schau im 🏆 Leaderboard zu!</div>`;
       }
       if (ph === 'draft') {
         const t = s.teams[turnTeamId(s)];
-        if (isMyTurn(s)) return `<div class="banner myturn">${DEMO ? `Für ${escapeHtml(capName(s, t ?? {}))}: ` : 'Du bist dran! '}Tippe auf einen leuchtenden Spieler.</div>`;
-        const mine = me.role === 'player' && me.teamId ? ` Du bist bei <strong>${escapeHtml(s.teams[me.teamId]?.name)}</strong>. 🎉` : '';
-        return `<div class="banner">Am Zug: <strong>${escapeHtml(capName(s, t ?? {}))}</strong> (${escapeHtml(t?.name ?? '?')}).${mine}</div>`;
+        const fName = personName(s, t?.captainToken);
+        if (isMyTurn(s)) return `<div class="banner myturn">${DEMO ? `Für ${escapeHtml(fName)}: ` : 'Du bist dran! '}Tippe auf eine leuchtende Person, die in ${DEMO ? 'das' : 'dein'} Team soll.</div>`;
+        const mates = teamMates(s, me);
+        const mine = me.teamId && !foundedTeamId(s) ? ` Du bist im Team von <strong>${escapeHtml(personName(s, s.teams[me.teamId]?.captainToken))}</strong>. 🎉`
+          : foundedTeamId(s) && mates.length ? ` Du hast <strong>${escapeHtml(mates.map(m => m.name).join(', '))}</strong> gewählt. 🎉` : '';
+        return `<div class="banner">Teamwahl · am Zug: <strong>${escapeHtml(fName)}</strong> (Platz ${s.state.turnIndex + 1} von ${s.state.pickOrder.length}).${mine}
+          ${!me.teamId ? ' Wer nicht gewählt wird, bekommt danach zufällig einen Partner.' : ''}</div>`;
       }
-      const myT = me.role === 'player' ? s.teams[me.teamId] : s.teams[myTeamId(s)];
-      return `<div class="banner">Die Teams stehen fest! 🎉${myT ? ` Dein Team: <strong>${escapeHtml(myT.name)}</strong>` : ''}</div>`;
+      const mates = teamMates(s, me);
+      return `<div class="banner">Die Teams stehen fest! 🎉${mates.length ? ` Du spielst mit <strong>${escapeHtml(mates.map(m => m.name).join(' & '))}</strong>.` : ''}</div>`;
     }
-    function renderBanner() { const b = document.getElementById('banner'); if (b) b.innerHTML = bannerHtml(); }
     // Banner-Klassen: halbdurchsichtig über der Halle
     const glassBanner = html => html.replace('class="banner"', 'class="banner glass"').replace('class="banner myturn"', 'class="banner glass myturn"');
 
-    // Wer ist schon in der Halle? (angekommen, oder man selbst)
+    // ---------- Halle ----------
+    // Wer ist schon da? (angekommen, oder man selbst)
     function present() {
-      return [...S.players, ...S.captains].filter(p => p.arrivedAt || p.token === token);
+      return S.people.filter(p => p.arrivedAt || p.token === token);
     }
     function hallData3d() {
-      const cols = columns(S).map(c => ({ ...c, color: [0xe11d48, 0x2563eb, 0x16a34a, 0xf59e0b, 0x9333ea, 0x0891b2, 0xea580c, 0xdb2777][c.j % 8] }));
-      return { people: present(), columns: cols, turnTeamId: turnTeamId(S), pickable: isMyTurn(S), benchSeats: S.state.benchSeats };
+      const teams = teamList(S).map(t => ({ id: t.id, captainToken: t.captainToken, order: t.order ?? 0, color: parseInt(t.css.slice(1), 16) }));
+      return { people: present(), teams, turnToken: turnFounder(S), pickable: isMyTurn(S), benchSeats: S.state.benchSeats };
     }
+    // Einfache 2D-Halle (sehr alte Handys): Gründer stehen vorne, ihre Teams dahinter
     function hallData2d() {
       const p = present();
-      const cols = columns(S).map(c => ({ ...c, color: TEAM_COLORS_CSS[c.j % TEAM_COLORS_CSS.length] }));
-      return { players: p.filter(x => x.role === 'player'), captains: p.filter(x => x.role === 'captain'), columns: cols, turnTeamId: turnTeamId(S) };
+      const founders = new Set(Object.values(S.teams).map(t => t.captainToken).filter(Boolean));
+      const cols = teamList(S).map((t, j) => ({ teamId: t.id, captainToken: t.captainToken, color: t.css, j }));
+      return { players: p.filter(x => !founders.has(x.token)), captains: p.filter(x => founders.has(x.token)), columns: cols, turnTeamId: turnTeamId(S) };
     }
     function updateHall() {
       if (!hall) return;
@@ -294,10 +298,10 @@
       side.innerHTML = `<button class="round glass" id="viewBtn" style="display:none" title="Ansicht wechseln"></button>
         ${DEMO ? '<button class="round glass" id="replayIntro" title="Einlauf nochmal">▶</button>' : ''}`;
       const tapToken = t => {
-        const p = S.players.find(x => x.token === t);
-        if (p && !p.teamId && isMyTurn(S)) return askPick(p);
-        const any = p ?? S.captains.find(x => x.token === t);
-        if (any) showPersonMessages(any);
+        const p = S.people.find(x => x.token === t);
+        if (!p) return;
+        if (!p.teamId && p.token !== token && isMyTurn(S)) return askPick(p);
+        showPersonMessages(p);
       };
 
       // 3D, wenn möglich, sonst die einfache 2D-Halle
@@ -358,7 +362,7 @@
       if (!hall?.setBubble || !S) return;
       const newest = {};
       for (const m of messages) if (!newest[m.token]) newest[m.token] = m;
-      for (const p of [...S.players, ...S.captains]) {
+      for (const p of S.people) {
         const m = newest[p.token];
         hall.setBubble(p.token, m ? m.text : null);
       }
@@ -371,13 +375,6 @@
     }
     setInterval(refreshBubbles, 2000);
 
-    function chatHtmlUnused() {
-      return `<form class="chatbar" id="chatForm" autocomplete="off">
-          <input id="chatIn" maxlength="${MAX_LEN}" placeholder="Nachricht an alle …" enterkeyhint="send">
-          <button type="submit">Senden</button>
-          <button type="button" class="secondary" id="chatToggle">💬 ${chatOpen ? 'Zu' : 'Chat'}${!chatOpen && unread ? `<span class="badge">${unread}</span>` : ''}</button>
-        </form><div class="chatlog" id="chatLog" style="display:${chatOpen ? 'block' : 'none'}"></div>`;
-    }
     function fmtTime(at) { const d = new Date(at); return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }); }
     function renderChatLog() {
       const log = document.getElementById('chatLog');
@@ -414,12 +411,14 @@
     // Antippen einer Figur (wenn gerade nicht gewählt wird): ihre letzten 5 Nachrichten
     function showPersonMessages(p) {
       const mine = messages.filter(m => m.token === p.token).slice(0, 5);
+      const t = teamOf(S, p);
+      const isFounder = Object.values(S.teams).some(x => x.captainToken === p.token);
       const bg = document.createElement('div');
       bg.className = 'modal-bg';
       bg.innerHTML = `<div class="modal">
         ${p.photoUrl ? `<img src="${escapeHtml(p.photoUrl)}" alt="" onerror="this.remove()">` : ''}
-        <h2 style="margin:0 0 4px">${escapeHtml(p.name)}</h2>
-        <div style="color:#64748b;font-size:.9rem">${p.role === 'captain' ? 'Kapitän/in' : p.teamId ? 'Team ' + escapeHtml(S.teams[p.teamId]?.name ?? '') : 'Auf der Bank'}</div>
+        <h2 style="margin:0 0 4px">${isFounder ? '★ ' : ''}${escapeHtml(p.name)}</h2>
+        <div style="color:#64748b;font-size:.9rem">${t ? dot(t.css) + escapeHtml(t.name) : 'Noch ohne Team'}</div>
         <div class="msgs5">${mine.length ? mine.map(m => `<div>${escapeHtml(m.text)} <span style="color:#94a3b8;font-size:.75rem">${fmtTime(m.at)}</span></div>`).join('')
           : '<div style="background:none;color:#94a3b8;text-align:center">Hat noch nichts geschrieben.</div>'}</div>
         <button data-a="ok">Schließen</button></div>`;
@@ -447,49 +446,55 @@
       if (DEMO) return demoPick(player);
       picking = true;
       try {
-        // frischen Stand prüfen: bin ich dran und ist der Spieler noch frei?
+        // frischen Stand prüfen: bin ich dran und ist die Person noch frei?
         const st = (await getDoc(doc(db, 'state', 'current'))).data();
         const pl = (await getDoc(doc(db, 'participants', player.token))).data();
-        const teamId = myTeamId(S);
+        const teamId = foundedTeamId(S);
         if (st.phase !== 'draft' || st.pickOrder[st.turnIndex] !== teamId || pl.teamId) {
           alert('Das hat sich gerade geändert, bitte nochmal schauen.');
           return;
         }
-        await updateDoc(doc(db, 'participants', player.token), { teamId });
-        const remaining = S.players.filter(p => !p.teamId && p.token !== player.token).length;
-        if (remaining > 0) await updateDoc(doc(db, 'state', 'current'), { turnIndex: (st.turnIndex + 1) % st.pickOrder.length });
-        else await updateDoc(doc(db, 'state', 'current'), { phase: 'done' });
+        await updateDoc(doc(db, 'participants', player.token), { teamId, pickedAt: Date.now() });
+        if (st.turnIndex + 1 < st.pickOrder.length) {
+          await updateDoc(doc(db, 'state', 'current'), { turnIndex: st.turnIndex + 1 });
+        } else {
+          // Letzte Wahl: alle anderen werden zufällig zu Zweierteams gepaart
+          const people = [], teams = {};
+          (await getDocs(collection(db, 'participants'))).forEach(d => { const p = { token: d.id, ...d.data() }; if (isPerson(p)) people.push(p); });
+          (await getDocs(collection(db, 'teams'))).forEach(d => { teams[d.id] = { id: d.id, ...d.data() }; });
+          await finishPairs(db, people, teams, st);
+        }
+      } catch (err) {
+        alert('Speichern fehlgeschlagen: ' + err.message);
       } finally {
         picking = false;
       }
-      // Die Live-Updates zeichnen die Halle neu; der Spieler läuft dabei zu seinem Team.
+      // Die Live-Updates zeichnen die Halle neu; die gewählte Person setzt sich neben ihr Team.
     }
 
     // ---------- Minispiele: Snake und Biathlon-Sprint ----------
-    // Welches Spiel über die Wahlreihenfolge entscheidet, legt der Admin fest (state.activeGame).
+    // Welches Spiel über die Teamwahl entscheidet, legt der Admin fest (state.activeGame).
     const GAMES = {
       snake: {
         name: 'Winter-Snake 🎅',
-        info: 'Sammle so viele Gesichter wie möglich – wer die meisten hat, darf zuerst wählen.',
-        played: c => !!c.minigamePlayed,
-        rank: c => c.minigamePlayed ? -(c.minigameScore ?? 0) : Infinity,
-        label: c => `${c.minigameScore} 🎅`,
-        canWatch: c => !!c.snakeReplay,
-        watch: c => playReplay({ name: c.name, score: c.minigameScore, replay: c.snakeReplay, photoUrl: c.photoUrl }),
+        info: 'Sammle so viele Gesichter wie möglich – die Besten dürfen sich danach einen Teamkollegen aussuchen.',
+        played: p => playedGame('snake', p),
+        label: p => `${p.minigameScore} 🎅`,
+        canWatch: p => !!p.snakeReplay,
+        watch: p => playReplay({ name: p.name, score: p.minigameScore, replay: p.snakeReplay, photoUrl: p.photoUrl }),
         play: (test, onDone) => playSnake({
           testMode: test, onClose: onDone, photoUrl: S.me.photoUrl,
           onFinish: test ? () => {} : async ({ score, replay }) =>
-            updateDoc(doc(db, 'participants', token), { minigameScore: score, minigamePlayed: true, snakeReplay: replay })
+            updateDoc(doc(db, 'participants', token), { minigameScore: score, minigamePlayed: true, minigameAt: Date.now(), snakeReplay: replay })
         })
       },
       biathlon: {
         name: 'Biathlon-Sprint ⛷️',
-        info: 'Fahre über die Hindernisse ins Ziel – die schnellste Zeit darf zuerst wählen.',
-        played: c => !!c.biathlon?.played,
-        rank: c => biathlonRank(c.biathlon),
-        label: c => formatBiathlon(c.biathlon),
-        canWatch: c => !!c.biathlon?.replay,
-        watch: c => playBiathlonReplay({ name: c.name, result: c.biathlon, photoUrl: c.photoUrl }),
+        info: 'Fahre über die Hindernisse ins Ziel – die schnellsten Zeiten dürfen sich einen Teamkollegen aussuchen.',
+        played: p => playedGame('biathlon', p),
+        label: p => formatBiathlon(p.biathlon),
+        canWatch: p => !!p.biathlon?.replay,
+        watch: p => playBiathlonReplay({ name: p.name, result: p.biathlon, photoUrl: p.photoUrl }),
         play: (test, onDone) => playBiathlon({
           testMode: test, photoUrl: S.me.photoUrl, onClose: onDone,
           onFinish: test ? () => {} : async result => updateDoc(doc(db, 'participants', token), { biathlon: result })
@@ -497,12 +502,12 @@
       }
     };
     const activeGame = () => GAMES[S?.state.activeGame] ? S.state.activeGame : 'snake';
-    const playedActive = c => GAMES[activeGame()].played(c);
+    const playedActive = p => GAMES[activeGame()].played(p);
 
-    // ---------- Minispiel-Tab (nur Kapitäne) ----------
+    // ---------- Minispiel-Tab (für alle) ----------
     function renderGameTab() {
       const s = S, ph = s.state.phase, gk = activeGame(), G = GAMES[gk];
-      let h = header();
+      let h = '';
       if (DEMO) {
         // Demo: beide Spiele zum Ausprobieren (nichts wird gespeichert)
         for (const [k, g] of Object.entries(GAMES)) {
@@ -516,7 +521,7 @@
           <button class="playGame" data-g="${gk}">Minispiel starten</button></div>`;
       } else if (G.played(s.me)) {
         h += `<div class="card"><h2>Dein Ergebnis (${G.name}): ${G.label(s.me)}</h2>
-          <p>${ph === 'minigame' ? 'Warte, bis alle Kapitäne gespielt haben.' : 'Das Minispiel ist vorbei.'}</p>
+          <p>${ph === 'minigame' ? 'Warte, bis alle gespielt haben.' : 'Das Minispiel ist vorbei.'}</p>
           ${G.canWatch(s.me) ? '<button class="secondary" id="watchMe">▶ Meinen Versuch ansehen</button>' : ''}</div>`;
       } else {
         h += `<div class="card"><p>Das Minispiel ist vorbei.</p></div>`;
@@ -529,110 +534,85 @@
 
     // ---------- Leaderboard: aktives Spiel oben, das andere darunter ----------
     function boardSection(gk) {
-      const s = S, G = GAMES[gk];
-      const done = s.captains.filter(G.played).sort((a, b) => G.rank(a) - G.rank(b));
-      const waiting = s.captains.filter(c => !G.played(c));
-      if (gk !== activeGame() && !done.length) return '';
+      const s = S, G = GAMES[gk], active = gk === activeGame();
+      const done = s.people.filter(G.played).sort(compareRank(gk));
+      const waiting = s.people.filter(p => !G.played(p));
+      if (!active && !done.length) return '';
+      const F = foundersPlanned(s);
       const medals = ['🥇', '🥈', '🥉'];
-      let h = `<h2 style="margin-top:4px">🏆 ${G.name}${gk === activeGame() ? ' <span style="font-size:.75rem;color:#16a34a">entscheidet die Wahl</span>' : ''}</h2>`;
-      if (!done.length) h += '<div class="card"><p>Noch hat kein Kapitän gespielt.</p></div>';
-      done.forEach((c, i) => {
-        const team = Object.values(s.teams).find(t => t.captainToken === c.token);
-        h += `<div class="card" style="display:flex;align-items:center;gap:12px">
+      let h = `<h2 style="margin-top:4px">🏆 ${G.name}${active ? ` <span style="font-size:.75rem;color:#16a34a">die besten ${F} wählen</span>` : ''}</h2>`;
+      if (!done.length) h += '<div class="card"><p>Noch hat niemand gespielt.</p></div>';
+      done.forEach((p, i) => {
+        const t = teamOf(s, p);
+        const chooses = active && i < F && s.state.phase === 'minigame';
+        h += `<div class="card" style="display:flex;align-items:center;gap:12px${chooses ? ';border:2px solid #facc15' : ''}">
           <div style="font-size:1.6rem;width:36px;text-align:center">${medals[i] ?? (i + 1) + '.'}</div>
-          <div style="flex:1"><strong>${escapeHtml(c.name)}</strong><br>
-            <span style="color:#555;font-size:.9rem">${escapeHtml(team?.name ?? '')} · ${escapeHtml(G.label(c))}</span></div>
-          ${G.canWatch(c) ? `<button class="watch" data-g="${gk}" data-token="${c.token}">▶ Ansehen</button>` : ''}
+          <div style="flex:1"><strong>${escapeHtml(p.name)}</strong>${p.token === token ? ' (du)' : ''}<br>
+            <span style="color:#555;font-size:.9rem">${escapeHtml(G.label(p))}${t ? ` · ${dot(t.css)}${escapeHtml(t.name)}` : chooses ? ' · ★ darf wählen' : ''}</span></div>
+          ${G.canWatch(p) ? `<button class="watch" data-g="${gk}" data-token="${p.token}">▶ Ansehen</button>` : ''}
         </div>`;
       });
-      if (waiting.length && gk === activeGame()) h += `<p style="color:#555">Noch nicht gespielt: ${waiting.map(c => escapeHtml(c.name)).join(', ')}</p>`;
+      if (waiting.length && active) h += `<p style="color:#555">Noch nicht gespielt: ${waiting.map(p => escapeHtml(p.name)).join(', ')}</p>`;
       return h;
     }
     function renderBoardTab() {
       const order = [activeGame(), ...Object.keys(GAMES).filter(k => k !== activeGame())];
       document.getElementById('panelBody').innerHTML = order.map(boardSection).join('');
       document.querySelectorAll('.watch').forEach(btn => btn.addEventListener('click', () => {
-        const c = S.captains.find(x => x.token === btn.dataset.token);
-        if (c) GAMES[btn.dataset.g].watch(c);
+        const p = S.people.find(x => x.token === btn.dataset.token);
+        if (p) GAMES[btn.dataset.g].watch(p);
       }));
     }
 
-    // ---------- Demo-Modus: index.html?demo (Spieler) oder ?demo=kapitaen ----------
-    // Zeigt die in admin.html angelegten Personen (nur lesen, nichts wird gespeichert). Auf der Bank sitzen
-    // nur Spieler mit Gesicht; in der Spieler-Demo läuft man selbst als "Du" mit faces/face1.png ein.
-    // Kapitäns-Demo ohne angelegte Kapitäne/Spieler: Beispiel-Leute.
+    // ---------- Demo-Modus ----------
+    // index.html?demo       : alle angelegten Personen mit Gesicht sitzen schon, "Du" läuft mit face1 ein
+    // index.html?demo=wahl  : Teamwahl ausprobieren, du wählst nacheinander für alle Gründer
+    // Es wird nur gelesen, nichts gespeichert.
     async function demoStart() {
-      let ps = [], ts = {};
+      let ps = [], benchSeats;
       try {
         (await getDocs(collection(db, 'participants'))).forEach(d => ps.push({ token: d.id, ...d.data() }));
-        (await getDocs(collection(db, 'teams'))).forEach(d => { ts[d.id] = { id: d.id, ...d.data() }; });
+        benchSeats = (await getDoc(doc(db, 'state', 'current'))).data()?.benchSeats;
       } catch (e) { ps = []; }
-      // Auf der Bank sitzen nur angelegte Spieler, die ein Gesicht (Foto) haben
-      const realPlayers = ps.filter(p => p.role === 'player' && p.photoUrl);
-      const realCaps = ps.filter(p => p.role === 'captain' && p.photoUrl && Object.values(ts).some(t => t.captainToken === p.token));
-      if (DEMO === 'captain' && !(realCaps.length > 0 && realPlayers.length > 0)) return demoSample();
       const t0 = Date.now() - 600000;
       const byName = (a, b) => String(a.name).localeCompare(String(b.name), 'de');
-      const players = realPlayers.sort((a, b) => (a.arrivedAt ?? 9e15) - (b.arrivedAt ?? 9e15) || byName(a, b))
-        .map((p, i) => ({ ...p, teamId: null, arrivedAt: t0 + i * 1000 }));
-      const captains = realCaps.sort(byName).map(c => ({ ...c, arrivedAt: t0, minigamePlayed: c.minigamePlayed ?? false }));
-      let me;
-      if (DEMO === 'captain') me = captains[0];
-      else {   // Spieler-Demo: alle sitzen schon, "Du" läuft mit face1 als Letzter ein
-        me = { token: 'demo-me', name: 'Du', role: 'player', teamId: null, hair: 'kurz', photoUrl: 'faces/face1.png', arrivedAt: Date.now() };
-        players.push(me);
-      }
+      let people = ps.filter(p => isPerson(p) && p.photoUrl)
+        .sort((a, b) => (a.arrivedAt ?? 9e15) - (b.arrivedAt ?? 9e15) || byName(a, b))
+        .map((p, i) => ({ ...p, teamId: null, pickedAt: null, arrivedAt: t0 + i * 1000 }));
+      if (DEMO === 'pick' && people.length < 3) people = demoSample(t0);
+      const me = { token: 'demo-me', name: 'Du', role: 'player', teamId: null, hair: 'kurz', photoUrl: 'faces/face1.png',
+        arrivedAt: DEMO === 'enter' ? Date.now() : t0 + 99000 };
+      people.push(me);
       token = me.token;
-      const teamIds = captains.map(c => Object.values(ts).find(t => t.captainToken === c.token).id);
-      let benchSeats;
-      try { benchSeats = (await getDoc(doc(db, 'state', 'current'))).data()?.benchSeats; } catch (e) {}
-      const state = DEMO === 'captain' ? { phase: 'draft', pickOrder: teamIds, turnIndex: 0, benchSeats } : { phase: 'setup', benchSeats };
-      onData({ me, state, teams: ts, players, captains });
+      if (DEMO === 'enter') return onData({ me, state: { phase: 'setup', benchSeats }, teams: {}, people });
+
+      // Teamwahl: erfundene Snake-Ergebnisse, die besten gründen Teams
+      people.forEach((p, i) => { p.minigamePlayed = true; p.minigameScore = Math.max(1, 30 - i * 2 - (i % 3)); p.minigameAt = t0 + i; });
+      const order = people.slice().sort(compareRank('snake'));
+      const F = Math.max(1, Math.min(DEFAULT_FOUNDERS, Math.floor(people.length / 2)));
+      const teams = {};
+      const pickOrder = order.slice(0, F).map((f, i) => {
+        const id = 'demo-t' + i;
+        teams[id] = { id, name: 'Team ' + f.name, captainToken: f.token, order: i };
+        f.teamId = id; f.pickedAt = t0 + i;
+        return id;
+      });
+      onData({ me, state: { phase: 'draft', pickOrder, turnIndex: 0, benchSeats }, teams, people });
     }
-    function demoSample() {
+    function demoSample(t0) {
       const names = ['Anna', 'Ben', 'Clara', 'David', 'Emil', 'Fiona', 'Greta', 'Hannes', 'Ida', 'Jonas', 'Klara', 'Leon', 'Mia', 'Noah'];
       const longHair = new Set(['Anna', 'Clara', 'Fiona', 'Greta', 'Ida', 'Klara', 'Mia']);
-      const t0 = Date.now() - 600000;
-      const mk = (n, i, extra = {}) => ({ token: 'demo-p-' + i, name: n, role: 'player', teamId: null, hair: longHair.has(n) ? 'lang' : 'kurz',
-        photoUrl: i % 4 === 1 ? 'faces/face' + (1 + (i % 2)) + '.png' : null, arrivedAt: t0 + i * 1000, ...extra });
-      const players = names.slice(0, 9).map((n, i) => mk(n, i));
-      const later = names.slice(9).map((n, i) => mk(n, i + 9, { arrivedAt: null }));
-      const capNames = ['Lorenz', 'Max', 'Sophie', 'Felix'];
-      const captains = capNames.map((n, i) => ({ token: 'demo-cap-' + i, name: n, role: 'captain', hair: n === 'Sophie' ? 'lang' : 'kurz',
-        minigamePlayed: true, minigameScore: [17, 12, 9, 5][i], photoUrl: i < 2 ? 'faces/face' + (i + 1) + '.png' : null, arrivedAt: t0 }));
-      const teams = {};
-      captains.forEach((c, i) => { teams['demo-t' + i] = { id: 'demo-t' + i, name: ['Eisbären', 'Schneeeulen', 'Pinguine', 'Polarfüchse'][i], captainToken: c.token }; });
-      let me;
-      if (DEMO === 'captain') {
-        captains[0] = { ...captains[0], token: 'demo-me' };
-        teams['demo-t0'].captainToken = 'demo-me';
-        me = captains[0];
-        players.push(...later.map(p => ({ ...p, arrivedAt: Date.now() })));
-      } else {
-        me = { token: 'demo-me', name: 'Du', role: 'player', teamId: null, hair: 'kurz', photoUrl: 'faces/face1.png', arrivedAt: Date.now() };
-        players.push(me);
-      }
-      const state = DEMO === 'captain' ? { phase: 'draft', pickOrder: Object.keys(teams), turnIndex: 0 } : { phase: 'setup' };
-      const s = { me, state, teams, players, captains };
-      onData(s);
-      // Spieler-Demo: nach und nach kommen weitere Leute herein
-      if (DEMO === 'player') {
-        let k = 0;
-        const iv = setInterval(() => {
-          if (k >= later.length) return clearInterval(iv);
-          S.players.push({ ...later[k++], arrivedAt: Date.now() });
-          onData({ ...S, players: [...S.players] });
-        }, 9000);
-      }
+      return names.map((n, i) => ({ token: 'demo-p-' + i, name: n, role: 'player', teamId: null, hair: longHair.has(n) ? 'lang' : 'kurz',
+        photoUrl: i % 4 === 1 ? 'faces/face' + (1 + (i % 2)) + '.png' : null, arrivedAt: t0 + i * 1000 }));
     }
     function demoChatter() {
-      const lines = ['Hallo zusammen! 👋', 'Wer hat die Musik mitgebracht? 🎶', 'Ich will ins Team von Lorenz!',
+      const lines = ['Hallo zusammen! 👋', 'Wer hat die Musik mitgebracht? 🎶', 'Ich will in dein Team!',
         'Kalt hier draußen 🥶', 'Hat jemand den Springer gesehen?? 😮', 'Wann geht es los?', 'Wir gewinnen eh 💪',
-        'Schöner Schneemann ⛄', 'Bitte wählt mich zuerst 🙏', 'Biathlon kann ich auch!'];
+        'Schöner Schneemann ⛄', 'Bitte wählt mich 🙏', 'Biathlon kann ich auch!'];
       let k = 0;
       setInterval(() => {
         if (!S) return;
-        const pool = [...S.players, ...S.captains].filter(p => p.token !== token && p.arrivedAt);
+        const pool = S.people.filter(p => p.token !== token && p.arrivedAt);
         const p = pool[Math.floor(Math.random() * pool.length)];
         if (!p) return;
         messages.unshift({ id: 'd' + Date.now(), token: p.token, name: p.name, text: lines[k++ % lines.length], at: Date.now() });
@@ -641,11 +621,22 @@
     }
     function demoPick(player) {
       const teamId = turnTeamId(S);
-      const players = S.players.map(p => p.token === player.token ? { ...p, teamId } : p);
-      const state = { ...S.state };
-      if (!players.some(p => !p.teamId)) state.phase = 'done';
-      else state.turnIndex = (state.turnIndex + 1) % state.pickOrder.length;
-      onData({ ...S, players, state });
+      let people = S.people.map(p => p.token === player.token ? { ...p, teamId, pickedAt: Date.now() } : p);
+      const state = { ...S.state }, teams = { ...S.teams };
+      if (state.turnIndex + 1 < state.pickOrder.length) state.turnIndex++;
+      else {
+        const { newTeams, extra } = planPairs(people.filter(p => !p.teamId), Object.keys(teams).length);
+        const now = Date.now();
+        newTeams.forEach((t, k) => {
+          const id = 'demo-r' + k;
+          teams[id] = { id, name: t.name, captainToken: null, order: t.order, random: true };
+          const set = new Set(t.members.map(m => m.token));
+          people = people.map(p => set.has(p.token) ? { ...p, teamId: id, pickedAt: now + k * 10 + t.members.findIndex(m => m.token === p.token) } : p);
+        });
+        if (extra) people = people.map(p => p.token === extra.token ? { ...p, teamId: state.pickOrder[0], pickedAt: now + 9999 } : p);
+        state.phase = 'done';
+      }
+      onData({ ...S, me: people.find(p => p.token === token), people, state, teams });
     }
 
     function escapeHtml(str) {

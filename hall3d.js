@@ -1,38 +1,39 @@
-// ===== 3D-Turnhalle (Three.js) =====
-// Spieler sitzen in Ankunftsreihenfolge auf der Bank (der Erste ganz links, weit weg von der Tür),
-// Kapitäne stehen davor. Wer neu dazukommt, läuft durch die Tür herein.
-// Die eigene Figur läuft in der Third-Person-Ansicht ein, danach sieht man die Halle aus ihren Augen
-// und kann sich durch Wischen umschauen.
+// ===== 3D-Winterplattform (Three.js) =====
+// Alle sitzen auf einer runden Bank in der Mitte der Plattform. Die Bank ist zum Eingangstor hin offen.
+// Die erste Person setzt sich mittig gegenüber der Öffnung, danach abwechselnd eine links, eine rechts daneben.
+// Wer ins selbe Team kommt, bekommt dieselbe Farbe und setzt sich neben die anderen Teammitglieder.
+// Die eigene Figur läuft in der Third-Person-Ansicht ein, danach sieht man die Runde aus ihren Augen.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js';
 import { buildWinterWorld } from './winter.js';
 
-export const TEAM_COLORS = [0xe11d48, 0x2563eb, 0x16a34a, 0xf59e0b, 0x9333ea, 0x0891b2, 0xea580c, 0xdb2777];
 const BENCH_SHIRT = 0xe2e8f0;
 const HAIR = 0x4a2f1b;
 const SKIN = 0xf0c4a0;
 
-// Halle (Meter): x von -12 bis 12, z von -9 (hinten, Bänke) bis 9 (vorne, Basketballkorb)
-const DOOR = new THREE.Vector3(18.5, 0, -3.2);   // vor dem Eingangstor im Schnee
-// Gerade Bank hinten, Kapitäne davor. Eine Reihe mit BENCH_SEATS Plätzen (Standard 15, in admin.html
-// einstellbar), gleichmäßig verteilt. Kommen mehr, entsteht automatisch eine zweite, höhere Reihe dahinter.
-const FIELD = new THREE.Vector3(-1.6, 0, -3.8);   // Mitte zwischen Bank und Kapitänen (Drehpunkt Rundumblick)
-let BENCH_SEATS = 15;
-const SEAT_DX = 0.9;
-const rowZ = r => -6.3 - r * 0.8;
-const rowH = r => 0.45 + r * 0.42;
-const seatsInRow = r => BENCH_SEATS + r * 2;
-const FRONT_Z = -5.0;
-const CAP_Z = -1.9;
-// Sitzplatz Nr. i (0 = erster Ankömmling, ganz links, am weitesten vom Eingang)
-function seatAt(i) {
-  let r = 0, k = i;
-  while (k >= seatsInRow(r)) { k -= seatsInRow(r); r++; }
-  const n = seatsInRow(r);
-  const x = FIELD.x + (k - (n - 1) / 2) * SEAT_DX;
-  return { r, k, x, z: rowZ(r), yaw: 0, fx: x, fz: FRONT_Z };
-}
-function rowsFor(n) { let r = 0, cap = 0; while (cap < n) { cap += seatsInRow(r); r++; } return Math.max(1, r); }
+const CENTER = new THREE.Vector3(0, 0, 0);          // Mitte der Plattform und der runden Bank
+const DOOR = new THREE.Vector3(18.5, 0, 0);         // vor dem Eingangstor (Tor auf Höhe der Mitte)
+const SEAT_SP = 0.8;                                // Abstand der Sitzplätze (m)
+const GAP = 2.4;                                    // Breite der Öffnung zum Tor hin (m)
+const SEAT_H = 0.45;                                // Sitzhöhe
+let BENCH_SEATS = 20;
 const WALK_SPEED = 3.0;
+
+// Ring mit ungerader Platzzahl: Platz j = 0 … ns-1 entlang des Bogens, Mitte (j = K) gegenüber dem Tor
+function makeRing(n) {
+  const K = Math.max(3, Math.ceil((n - 1) / 2)), ns = 2 * K + 1;
+  const R = Math.max(3.2, (ns * SEAT_SP + GAP) / (2 * Math.PI));
+  return { K, ns, R, dA: SEAT_SP / R };
+}
+// Reihenfolge: 0 = mittig, dann links, rechts, links, rechts … (aus Sicht der Einlaufenden)
+const kOf = i => i === 0 ? 0 : (i % 2 ? (i + 1) / 2 : -i / 2);
+function slotPos(ring, j) {
+  const a = Math.PI - (j - ring.K) * ring.dA, c = Math.cos(a), s = Math.sin(a);
+  return {
+    j, a, x: CENTER.x + ring.R * c, z: CENTER.z + ring.R * s,
+    fx: CENTER.x + (ring.R - 0.7) * c, fz: CENTER.z + (ring.R - 0.7) * s,
+    yaw: Math.atan2(-c, -s)                           // Blick zur Mitte
+  };
+}
 
 export function webglAvailable() {
   try {
@@ -139,24 +140,28 @@ function haloTexture() {
   });
 }
 
-function buildBenches(scene, rows) {
+// Runde Bank aus einzelnen, leicht gebogen angeordneten Brettern, offen zum Tor hin
+function buildRing(scene, ring) {
   const group = new THREE.Group();
   const plank = new THREE.MeshLambertMaterial({ color: 0xc08446 });
   const dark = new THREE.MeshLambertMaterial({ color: 0x6b4423 });
-  const step = new THREE.MeshLambertMaterial({ color: 0x94a3b8 });
-  for (let r = 0; r < rows; r++) {
-    const len = seatsInRow(r) * SEAT_DX + 0.5;
-    const seat = new THREE.Mesh(new THREE.BoxGeometry(len, 0.06, 0.34), plank);
-    seat.position.set(FIELD.x, rowH(r), rowZ(r)); group.add(seat);
-    for (let k = 0; k <= 6; k++) {
-      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.45, 0.28), dark);
-      leg.position.set(FIELD.x - len / 2 + 0.2 + k * (len - 0.4) / 6, rowH(r) - 0.24, rowZ(r)); group.add(leg);
+  const segW = 2 * (ring.R + 0.17) * Math.tan(ring.dA / 2) + 0.02;
+  for (let j = 0; j < ring.ns; j++) {
+    const s = slotPos(ring, j);
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(segW, 0.06, 0.38), plank);
+    seat.position.set(s.x, SEAT_H, s.z); seat.rotation.y = s.yaw; group.add(seat);
+    if (j % 2 === 0 || j === ring.ns - 1) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, SEAT_H, 0.3), dark);
+      leg.position.set(s.x, SEAT_H / 2 - 0.02, s.z); leg.rotation.y = s.yaw; group.add(leg);
     }
-    if (r > 0) {
-      const h = r * 0.42;
-      const st = new THREE.Mesh(new THREE.BoxGeometry(len, h, 0.8), step);
-      st.position.set(FIELD.x, h / 2, rowZ(r) + 0.2); group.add(st);
-    }
+  }
+  // Pfosten an beiden Enden der Öffnung
+  for (const j of [0, ring.ns - 1]) {
+    const s = slotPos(ring, j + (j ? 0.62 : -0.62));
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 1.1, 8), dark);
+    post.position.set(s.x, 0.55, s.z); group.add(post);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), new THREE.MeshLambertMaterial({ color: 0xf8fbff }));
+    cap.position.set(s.x, 1.12, s.z); group.add(cap);
   }
   scene.add(group);
   return group;
@@ -189,7 +194,7 @@ const mat = {
 };
 let HALO_TEX = null;
 
-function makeCharacter(p, captain) {
+function makeCharacter(p) {
   const root = new THREE.Group();
   root.userData.token = p.token;
   const body = new THREE.Group(); root.add(body);
@@ -208,11 +213,12 @@ function makeCharacter(p, captain) {
   const torso = new THREE.Mesh(geo.torso, shirt);
   torso.scale.z = 0.62; torso.position.y = 1.18; body.add(torso);
   const arms = [];
+  let band = null;
   for (const side of [-1, 1]) {
     const sh = new THREE.Group(); sh.position.set(side * 0.27, 1.44, 0); body.add(sh);
     const am = new THREE.Mesh(geo.arm, shirt); am.position.y = -0.24; sh.add(am);
     const hand = new THREE.Mesh(geo.hand, mat.skin); hand.position.y = -0.5; sh.add(hand);
-    if (captain && side === -1) { const b = new THREE.Mesh(geo.band, mat.band); b.position.y = -0.12; sh.add(b); }
+    if (side === -1) { band = new THREE.Mesh(geo.band, mat.band); band.position.y = -0.12; band.visible = false; sh.add(band); }
     arms.push({ sh, side });
   }
   const neck = new THREE.Mesh(geo.neck, mat.skin); neck.position.y = 1.56; body.add(neck);
@@ -237,7 +243,7 @@ function makeCharacter(p, captain) {
   }
 
   // Name über dem Kopf
-  const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTexture((captain ? 'C · ' : '') + p.name, captain), depthWrite: false }));
+  const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTexture(p.name, false), depthWrite: false }));
   label.scale.set(1.15, 0.25, 1); label.position.y = 2.18; label.renderOrder = 10; root.add(label);
 
   // Markierung "wählbar" (Leuchten hinter dem Kopf) und "am Zug" (Pfeil)
@@ -254,9 +260,19 @@ function makeCharacter(p, captain) {
   bubble.center.set(0.5, 0); bubble.position.y = 2.36; bubble.visible = false; bubble.renderOrder = 11; root.add(bubble);
 
   return {
-    token: p.token, captain, root, body, shirt, legs, arms, head, label, halo, arrow, blob, bubble, bubbleText: null,
+    token: p.token, founder: false, name: p.name, band, root, body, shirt, legs, arms, head, label, halo, arrow, blob, bubble, bubbleText: null,
     sit: 0, walkPhase: 0, walkAmt: 0, yaw: 0, actions: [], cur: null, data: p
   };
+}
+
+// Teamgründer: goldenes Namensschild mit Stern und Armbinde
+function setFounder(ch, founder, name) {
+  if (ch.founder === founder && ch.name === name) return;
+  ch.founder = founder; ch.name = name;
+  ch.label.material.map?.dispose();
+  ch.label.material.map = labelTexture((founder ? '★ ' : '') + name, founder);
+  ch.label.material.needsUpdate = true;
+  if (ch.band) ch.band.visible = founder;
 }
 
 function applyPose(ch) {
@@ -325,7 +341,7 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(68, 1, 0.05, 500);
   const world = buildWinterWorld(scene, floorTexture());
-  let benches = null, benchRows = 0;
+  let benches = null, ring = null;
 
   const chars = {};          // token -> Figur
   let data = null;
@@ -334,81 +350,108 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
   let lookBase = 0;
   let transition = null;
   let pickableSet = new Set();
-  let turnCaptain = null;
+  let turnToken = null;
 
-  // ----- Positionen -----
+  // ----- Sitzplätze -----
+  // 1. Grundplatz nach Ankunft (mittig, dann links/rechts im Wechsel)
+  // 2. Teams der Reihe nach: Mitglieder rücken neben den Gründer (tauschen mit dem Sitznachbarn)
+  // Alle Handys rechnen das gleich, weil es nur von Ankunftszeit, Teams und Wahlzeitpunkt abhängt.
+  const byArrival = (a, b) => (a.arrivedAt ?? 0) - (b.arrivedAt ?? 0) || String(a.token).localeCompare(String(b.token));
   function targets() {
-    const res = {};
-    const players = data.people.filter(p => p.role === 'player')
-      .sort((a, b) => (a.arrivedAt ?? 0) - (b.arrivedAt ?? 0) || String(a.name).localeCompare(String(b.name), 'de'));
-    const cols = data.columns;
-    const C = Math.max(1, cols.length);
-    const capX = j => FIELD.x + (j - (C - 1) / 2) * Math.min(1.8, 11 / C);
-    const colOf = {};
-    cols.forEach((c, j) => { colOf[c.teamId] = j; });
-    const teamCount = {};
-    players.forEach((p, i) => {
-      const seat = seatAt(i), r = seat.r;
-      if (p.teamId != null && p.teamId in colOf) {
-        const j = colOf[p.teamId];
-        const n = (teamCount[p.teamId] = (teamCount[p.teamId] ?? -1) + 1);
-        const q = Math.floor(n / 3), c = n % 3;
-        res[p.token] = { kind: 'team', pos: new THREE.Vector3(capX(j) + (c - 1) * 0.55, 0, CAP_Z + 0.95 + q * 0.7), yaw: Math.PI,
-          color: cols[j].color, seat };
-      } else {
-        res[p.token] = { kind: 'seat', pos: new THREE.Vector3(seat.x, rowH(r) + 0.05 - 0.86, seat.z), yaw: seat.yaw,
-          front: new THREE.Vector3(seat.fx, 0, seat.fz), color: BENCH_SHIRT, seat };
+    const people = data.people.slice().sort(byArrival);
+    const need = Math.max(people.length, BENCH_SEATS);
+    const r = makeRing(need);
+    const ringChanged = !ring || ring.ns !== r.ns;
+    if (ringChanged) ring = r;
+    const ns = ring.ns;
+    const slotOf = {}, occ = new Array(ns).fill(null);
+    people.forEach((p, i) => { const j = kOf(i) + ring.K; slotOf[p.token] = j; occ[j] = p.token; });
+
+    const teams = (data.teams || []).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const members = {};
+    for (const p of people) if (p.teamId) (members[p.teamId] ??= []).push(p);
+    const locked = new Set();
+    const move = (tok, j) => {
+      const other = occ[j], from = slotOf[tok];
+      occ[j] = tok; slotOf[tok] = j; occ[from] = other; if (other) slotOf[other] = from;
+    };
+    for (const t of teams) {
+      const list = (members[t.id] || []).sort((a, b) => (a.pickedAt ?? 0) - (b.pickedAt ?? 0) || String(a.token).localeCompare(String(b.token)));
+      if (!list.length) continue;
+      const anchor = list.find(m => m.token === t.captainToken) ?? list[0];
+      let lo = slotOf[anchor.token], hi = lo;
+      locked.add(anchor.token);
+      for (const m of list) {
+        if (m === anchor) continue;
+        const cur = slotOf[m.token];
+        let j = (cur === hi + 1 || cur === lo - 1) ? cur : null;
+        if (j == null) {
+          for (let d = 1; d < ns && j == null; d++) {
+            for (const c of [hi + d, lo - d]) if (c >= 0 && c < ns && !locked.has(occ[c])) { j = c; break; }
+          }
+        }
+        if (j == null) continue;
+        if (j !== cur) move(m.token, j);
+        locked.add(m.token);
+        lo = Math.min(lo, j); hi = Math.max(hi, j);
       }
-    });
-    cols.forEach((c, j) => {
-      res[c.captainToken] = { kind: 'captain', pos: new THREE.Vector3(capX(j), 0, CAP_Z), yaw: Math.PI, color: c.color };
-    });
-    const rows = rowsFor(players.length);
-    return { res, rows };
+    }
+
+    const colorOf = {};
+    for (const t of teams) colorOf[t.id] = t.color;
+    const res = {};
+    for (const p of people) {
+      const sp = slotPos(ring, slotOf[p.token]);
+      res[p.token] = {
+        kind: 'seat', slot: sp.j, yaw: sp.yaw,
+        pos: new THREE.Vector3(sp.x, SEAT_H + 0.05 - 0.86, sp.z),
+        front: new THREE.Vector3(sp.fx, 0, sp.fz),
+        color: p.teamId && colorOf[p.teamId] != null ? colorOf[p.teamId] : BENCH_SHIRT
+      };
+    }
+    return { res, ringChanged };
   }
 
   // Weg von der Tür (oder vom aktuellen Platz) zum Ziel
   function routeTo(ch, t, fromDoor) {
     ch.actions = []; ch.cur = null;
     if (fromDoor) {
+      // durchs Tor, durch die Öffnung der Bank in den Kreis
       ch.root.position.copy(DOOR); ch.sit = 0; ch.yaw = -Math.PI / 2;
-      ch.actions.push({ type: 'walk', to: new THREE.Vector3(DOOR.x - 2.5, 0, DOOR.z) });
-      ch.actions.push({ type: 'walk', to: new THREE.Vector3(8, 0, -3.4) });
-    } else if (ch.sit > 0.5 || ch.root.position.y > 0.01) {
+      ch.actions.push({ type: 'walk', to: new THREE.Vector3(ring.R + 1.6, 0, CENTER.z) });
+      ch.actions.push({ type: 'walk', to: new THREE.Vector3(ring.R - 1.2, 0, CENTER.z) });
+    } else if (ch.sit > 0.5 || ch.root.position.y < -0.01) {
       // aufstehen: nach vorne von der Bank (zur Mitte hin)
-      const f = ch.target?.front ?? ch.prevFront;
-      ch.actions.push({ type: 'stand', at: f ? f.clone() : new THREE.Vector3(ch.root.position.x, 0, ch.root.position.z + 1) });
+      const f = ch.prevFront;
+      ch.actions.push({ type: 'stand', at: f ? f.clone() : new THREE.Vector3(ch.root.position.x, 0, ch.root.position.z) });
     }
-    if (t.kind === 'seat') {
-      ch.prevFront = t.front;
-      ch.actions.push({ type: 'walk', to: t.front });
-      ch.actions.push({ type: 'turn', to: t.yaw });
-      ch.actions.push({ type: 'sit', at: t.pos });
-    } else {
-      ch.actions.push({ type: 'walk', to: new THREE.Vector3(t.pos.x, 0, t.pos.z + (t.kind === 'team' ? 0 : 0)) });
-      ch.actions.push({ type: 'turn', to: t.yaw });
-    }
+    ch.prevFront = t.front;
+    ch.actions.push({ type: 'walk', to: t.front });
+    ch.actions.push({ type: 'turn', to: t.yaw });
+    ch.actions.push({ type: 'sit', at: t.pos });
   }
 
   function placeDirect(ch, t) {
     ch.actions = []; ch.cur = null;
     ch.root.position.copy(t.pos);
     ch.yaw = t.yaw;
-    ch.sit = t.kind === 'seat' ? 1 : 0;
+    ch.sit = 1;
+    ch.prevFront = t.front;
     applyPose(ch);
   }
 
   // ----- Daten übernehmen -----
+  // data: { people, teams: [{id, captainToken, order, color}], turnToken, pickable, benchSeats }
   let first = true;
   function update(newData) {
     data = newData;
-    const seats = Math.max(4, Math.min(40, Number(data.benchSeats) || 15));
-    if (seats !== BENCH_SEATS) { BENCH_SEATS = seats; benchRows = -1; }
-    const { res, rows } = targets();
-    if (rows !== benchRows) {
+    BENCH_SEATS = Math.max(7, Math.min(40, Number(data.benchSeats) || 20));
+    const { res, ringChanged } = targets();
+    if (ringChanged) {
       if (benches) scene.remove(benches);
-      benches = buildBenches(scene, rows); benchRows = rows;
+      benches = buildRing(scene, ring);
     }
+    const founders = new Set((data.teams || []).map(t => t.captainToken).filter(Boolean));
     const tokens = new Set(Object.keys(res));
     for (const t of Object.keys(chars)) if (!tokens.has(t)) { scene.remove(chars[t].root); delete chars[t]; }
     for (const p of data.people) {
@@ -416,19 +459,20 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
       if (!t) continue;
       let ch = chars[p.token];
       if (!ch) {
-        ch = chars[p.token] = makeCharacter(p, p.role === 'captain');
+        ch = chars[p.token] = makeCharacter(p);
         ch.target = t;
         scene.add(ch.root);
         if (first || p.token === meToken) placeDirect(ch, t);
-        else routeTo(ch, t, true);                // Neuankömmling läuft durch die Tür herein
-      } else if (ch.target.kind !== t.kind || ch.target.pos.distanceTo(t.pos) > 0.05) {
-        routeTo(ch, t, false);                    // z. B. gewählt: läuft von der Bank zum Team
+        else routeTo(ch, t, true);                // Neuankömmling läuft durch das Tor herein
+      } else if (ch.target.pos.distanceTo(t.pos) > 0.05) {
+        routeTo(ch, t, false);               // z. B. ins Team gewählt: rückt neben den Gründer
       }
       ch.target = t;
       ch.shirt.color.setHex(t.color);
+      setFounder(ch, founders.has(p.token), p.name);
     }
-    pickableSet = new Set(data.pickable ? data.people.filter(p => p.role === 'player' && !p.teamId).map(p => p.token) : []);
-    turnCaptain = data.columns.find(c => c.teamId === data.turnTeamId)?.captainToken ?? null;
+    pickableSet = new Set(data.pickable ? data.people.filter(p => !p.teamId && p.token !== meToken).map(p => p.token) : []);
+    turnToken = data.turnToken ?? null;
     if (first) {
       first = false;
       if (chars[meToken]) setView('first'); else setView('orbit');
@@ -459,7 +503,7 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
     if (v === 'orbit') {
       const m = me();
       if (m) {
-        const d = m.root.position.clone().sub(FIELD); d.y = 0;
+        const d = m.root.position.clone().sub(CENTER); d.y = 0;
         orbit.yaw = Math.atan2(d.x, d.z) || 0;
         orbit.dist = Math.max(8, d.length() + 4.5); orbit.height = 4.5;
       } else { orbit.yaw = 0; orbit.dist = 12.5; orbit.height = 6.5; }
@@ -521,8 +565,8 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
       camera.lookAt(camLookTarget);
     } else {
       // Rundumblick um das ganze Spielfeld
-      const want = new THREE.Vector3(FIELD.x + Math.sin(orbit.yaw) * orbit.dist, orbit.height, FIELD.z + Math.cos(orbit.yaw) * orbit.dist);
-      const lt = new THREE.Vector3(FIELD.x, 0.9, FIELD.z);
+      const want = new THREE.Vector3(CENTER.x + Math.sin(orbit.yaw) * orbit.dist, orbit.height, CENTER.z + Math.cos(orbit.yaw) * orbit.dist);
+      const lt = new THREE.Vector3(CENTER.x, 0.9, CENTER.z);
       const k = Math.min(1, dt * (blending ? 4 : 12));
       camera.position.lerp(want, k);
       camLookTarget.lerp(lt, k);
@@ -611,7 +655,7 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
     const dt = Math.min(0.05, clock.getDelta()); time += dt;
     for (const ch of Object.values(chars)) {
       tick(ch, dt);
-      const pk = pickableSet.has(ch.token) && ch.target?.kind === 'seat' && !ch.cur;
+      const pk = pickableSet.has(ch.token) && !ch.cur;
       ch.halo.visible = pk;
       if (pk) { const s = 0.85 + Math.sin(time * 5) * 0.15; ch.halo.scale.set(s, s, 1); }
       const camDist = camera.position.distanceTo(ch.label.getWorldPosition(_v));
@@ -625,7 +669,7 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
         if (dx * dx + dz * dz < 9) headYaw = Math.max(-1.3, Math.min(1.3, angDiff(ch.yaw, Math.atan2(dx, dz))));
       }
       ch.head.rotation.y += (headYaw - ch.head.rotation.y) * Math.min(1, dt * 4);
-      ch.arrow.visible = ch.token === turnCaptain;
+      ch.arrow.visible = ch.token === turnToken;
       if (ch.arrow.visible) { ch.arrow.position.y = 2.6 + Math.sin(time * 4) * 0.08; ch.arrow.rotation.y += dt * 2; }
     }
     world.update(dt, time);

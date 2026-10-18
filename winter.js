@@ -96,7 +96,7 @@ export function buildWinterWorld(scene, floorTex) {
     const x = Math.cos(a) * 13.3, z = Math.sin(a) * 10.2;
     const d = new THREE.Mesh(new THREE.SphereGeometry(0.6 + R() * 0.7, 10, 6), driftMat);
     d.scale.y = 0.35; d.position.set(Math.max(-12.9, Math.min(12.9, x)) * 1.04, 0, Math.max(-9.6, Math.min(9.6, z)) * 1.05);
-    if (Math.abs(d.position.z - (-3.2)) < 2.2 && d.position.x > 10) continue; // Eingang frei lassen
+    if (Math.abs(d.position.z) < 2.4 && d.position.x > 10) continue; // Eingang frei lassen
     scene.add(d);
   }
 
@@ -271,7 +271,7 @@ export function buildWinterWorld(scene, floorTex) {
     const x = TRACK_CX + Math.cos(a) * r * 1.15, z = TRACK_CZ + Math.sin(a) * r;
     if (Math.abs(x - JUMP_X) < 13 && z > 15 && z < 105) continue;          // Schanze frei
     if (z < -18 && z > -30 && Math.abs(x - TRACK_CX + 3) < 7) continue;    // Schießstand frei
-    if (x > 12 && Math.abs(z + 3.2) < 5 && x < 30) continue;               // Weg zum Eingang frei
+    if (x > 12 && Math.abs(z) < 5 && x < 30) continue;               // Weg zum Eingang frei
     trees.push({ x, z, s: 0.8 + R() * 0.9, rot: R() * Math.PI });
   }
   const trunkGeo = new THREE.CylinderGeometry(0.25, 0.32, 1.4, 6);
@@ -301,22 +301,26 @@ export function buildWinterWorld(scene, floorTex) {
     cap.position.set(mtn.position.x, h - 1 - h * 0.21 + 0.3, mtn.position.z); scene.add(cap);
   }
 
-  // ----- Eingangstor mit Banner (statt Hallentür) -----
+  // ----- Eingangstor mit Banner, auf Höhe der Plattformmitte (gegenüber der Öffnung der runden Bank) -----
   const gateMat = lam(0x7c4a21);
   for (const dz of [-1.7, 1.7]) {
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.35, 3.6, 0.35), gateMat);
-    post.position.set(13.4, 1.8, -3.2 + dz); scene.add(post);
+    post.position.set(13.4, 1.8, dz); scene.add(post);
     const cap = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), lam(SNOW));
-    cap.scale.y = 0.5; cap.position.set(13.4, 3.62, -3.2 + dz); scene.add(cap);
+    cap.scale.y = 0.5; cap.position.set(13.4, 3.62, dz); scene.add(cap);
   }
-  const gateBanner = new THREE.Mesh(new THREE.PlaneGeometry(4.0, 0.9), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, map: canvasTex(1024, 230, (g, w, h) => {
+  const gateTex = canvasTex(1024, 230, (g, w, h) => {
     g.fillStyle = '#1e3a8a'; g.fillRect(0, 0, w, h);
     g.strokeStyle = '#bfdbfe'; g.lineWidth = 8; g.strokeRect(8, 8, w - 16, h - 16);
     g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
     g.font = 'bold 74px -apple-system,Segoe UI,Roboto,sans-serif'; g.fillText('❄ HAECKELSCHE ❄', w / 2, 82);
     g.font = 'bold 66px -apple-system,Segoe UI,Roboto,sans-serif'; g.fillText('WINTERGAMES', w / 2, 160);
-  }) }));
-  gateBanner.position.set(13.4, 3.15, -3.2); gateBanner.rotation.y = Math.PI / 2; scene.add(gateBanner);
+  });
+  // Vorder- und Rückseite einzeln, damit der Schriftzug von außen und aus der Runde heraus lesbar ist
+  for (const back of [false, true]) {
+    const gb = new THREE.Mesh(new THREE.PlaneGeometry(4.0, 0.9), new THREE.MeshBasicMaterial({ map: gateTex }));
+    gb.position.set(13.4 + (back ? -0.01 : 0.01), 3.15, 0); gb.rotation.y = back ? -Math.PI / 2 : Math.PI / 2; scene.add(gb);
+  }
 
   // ----- Schneemann -----
   const sm = new THREE.Group();
