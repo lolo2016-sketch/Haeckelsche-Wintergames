@@ -73,12 +73,18 @@ export function buildWinterWorld(scene, floorTex) {
     gr.addColorStop(0, '#5b8fd6'); gr.addColorStop(0.55, '#a9c9ef'); gr.addColorStop(1, '#eef4fb');
     g.fillStyle = gr; g.fillRect(0, 0, w, h);
   });
+  const redSkyTex = canvasTex(8, 256, (g, w, h) => {
+    const gr = g.createLinearGradient(0, 0, 0, h);
+    gr.addColorStop(0, '#1a0204'); gr.addColorStop(0.5, '#6b0f12'); gr.addColorStop(0.85, '#c0262d'); gr.addColorStop(1, '#ff5a3c');
+    g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  });
   const sky = new THREE.Mesh(new THREE.SphereGeometry(380, 24, 16),
     new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false }));
   scene.add(sky);
   scene.background = new THREE.Color(0xeef4fb);
   scene.fog = new THREE.Fog(0xe6eef8, 70, 260);
-  scene.add(new THREE.HemisphereLight(0xdbeafe, 0xffffff, 1.5));
+  const hemi = new THREE.HemisphereLight(0xdbeafe, 0xffffff, 1.5);
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff7ed, 1.6);
   sun.position.set(-30, 50, 25); scene.add(sun);
 
@@ -360,5 +366,16 @@ export function buildWinterWorld(scene, floorTex) {
     flakeGeo.attributes.position.needsUpdate = true;
   });
 
-  return { update: (dt, time) => updaters.forEach(u => u(dt, time)) };
+  // Stimmung: normal (Wintertag) oder Agentenmodus (roter, düsterer Himmel, alles in rotes Licht getaucht)
+  function setMood(agent) {
+    sky.material.map = agent ? redSkyTex : skyTex; sky.material.needsUpdate = true;
+    scene.background.setHex(agent ? 0x3a0608 : 0xeef4fb);
+    scene.fog.color.setHex(agent ? 0x4a0a0c : 0xe6eef8);
+    scene.fog.near = agent ? 30 : 70; scene.fog.far = agent ? 170 : 260;
+    hemi.color.setHex(agent ? 0xff5f5f : 0xdbeafe); hemi.groundColor.setHex(agent ? 0x3b0606 : 0xffffff);
+    hemi.intensity = agent ? 1.05 : 1.5;
+    sun.color.setHex(agent ? 0xff2a1a : 0xfff7ed); sun.intensity = agent ? 1.5 : 1.6;
+  }
+
+  return { update: (dt, time) => updaters.forEach(u => u(dt, time)), setMood };
 }

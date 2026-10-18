@@ -4,7 +4,7 @@
 // Wer ins selbe Team kommt, bekommt dieselbe Farbe und setzt sich neben die anderen Teammitglieder.
 // Die eigene Figur läuft in der Third-Person-Ansicht ein, danach sieht man die Runde aus ihren Augen.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js';
-import { buildWinterWorld } from './winter.js?v=20261018';
+import { buildWinterWorld } from './winter.js?v=20261018b';
 
 const BENCH_SHIRT = 0xe2e8f0;
 const HAIR = 0x4a2f1b;
@@ -17,6 +17,7 @@ const GAP = 2.4;                                    // Breite der Öffnung zum T
 const SEAT_H = 0.45;                                // Sitzhöhe
 let BENCH_SEATS = 20;
 const WALK_SPEED = 3.0;
+const DEFAULT_AGENT = 'agents/agent1.png';     // Agentenbild, wenn bei der Person keins eingetragen ist
 
 // Ring mit ungerader Platzzahl: Platz j = 0 … ns-1 entlang des Bogens, Mitte (j = K) gegenüber dem Tor
 function makeRing(n) {
@@ -228,8 +229,9 @@ function makeCharacter(p) {
   if (p.hair === 'lang') { const hl = new THREE.Mesh(geo.hairLong, mat.hair); hl.position.set(0, -0.17, -0.12); head.add(hl); }
 
   // Gesicht: Foto (freigestellt) oder gezeichnetes Gesicht
+  const faceG = new THREE.Group(); head.add(faceG);   // wird im Agentenmodus ausgeblendet
   const disc = new THREE.Mesh(geo.faceDisc, new THREE.MeshBasicMaterial({ map: faceTexture(p.name) }));
-  disc.position.z = 0.172; head.add(disc);
+  disc.position.z = 0.172; faceG.add(disc);
   if (p.photoUrl) {
     texLoader.load(p.photoUrl, t => {
       t.colorSpace = THREE.SRGBColorSpace;
@@ -237,7 +239,7 @@ function makeCharacter(p) {
       const face = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
         new THREE.MeshBasicMaterial({ map: t, transparent: true, alphaTest: 0.08 }));
       face.position.set(0, 0.04, 0.2);
-      head.add(face);
+      faceG.add(face);
       disc.visible = false; hairS.visible = true;
     });
   }
@@ -260,9 +262,30 @@ function makeCharacter(p) {
   bubble.center.set(0.5, 0); bubble.position.y = 2.36; bubble.visible = false; bubble.renderOrder = 11; root.add(bubble);
 
   return {
-    token: p.token, founder: false, name: p.name, band, root, body, shirt, legs, arms, head, label, halo, arrow, blob, bubble, bubbleText: null,
+    token: p.token, founder: false, name: p.name, band, faceG, agentUrl: null, agentMesh: null, root, body, shirt, legs, arms, head, label, halo, arrow, blob, bubble, bubbleText: null,
     sit: 0, walkPhase: 0, walkAmt: 0, yaw: 0, actions: [], cur: null, data: p
   };
+}
+
+// Agentenmodus: Bild (Kopf + Oberkörper) liegt vor der Figur, das eigene Gesicht wird ausgeblendet.
+// Nur von vorne sichtbar; von hinten sieht man weiter die normale Figur.
+const AGENT_H = 0.95, AGENT_TOP = 2.0;
+function setAgent(ch, url) {
+  url = url || null;
+  if (ch.agentUrl === url) return;
+  ch.agentUrl = url;
+  if (ch.agentMesh) { ch.body.remove(ch.agentMesh); ch.agentMesh.geometry.dispose(); ch.agentMesh = null; }
+  ch.faceG.visible = !url;
+  if (!url) return;
+  texLoader.load(url, t => {
+    if (ch.agentUrl !== url) return;          // inzwischen wieder ausgeschaltet
+    t.colorSpace = THREE.SRGBColorSpace;
+    const w = AGENT_H * t.image.width / t.image.height;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, AGENT_H),
+      new THREE.MeshBasicMaterial({ map: t, transparent: true, alphaTest: 0.1 }));
+    m.position.set(0, AGENT_TOP - AGENT_H / 2, 0.26);
+    ch.body.add(m); ch.agentMesh = m;
+  }, undefined, () => { ch.faceG.visible = true; });   // Bild fehlt: normales Gesicht zeigen
 }
 
 // Teamgründer: goldenes Namensschild mit Stern und Armbinde
@@ -470,6 +493,7 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
       ch.target = t;
       ch.shirt.color.setHex(t.color);
       setFounder(ch, founders.has(p.token), p.name);
+      setAgent(ch, p.agent ? (p.agentUrl || DEFAULT_AGENT) : null);
     }
     pickableSet = new Set(data.pickable ? data.people.filter(p => !p.teamId && p.token !== meToken).map(p => p.token) : []);
     turnToken = data.turnToken ?? null;
@@ -695,5 +719,12 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
     ch.bubble.scale.set(2.6, 2.6 * aspect, 1);
   }
 
-  return { update, playEntrance, setView, getView: () => mode, setBubble, dispose };
+  // Agentenmodus für die eigene Sicht: Himmel und Licht werden rot und düster
+  let agentMood = false;
+  function setAgentMode(on) {
+    if (agentMood === !!on) return;
+    agentMood = !!on; world.setMood(agentMood);
+  }
+
+  return { update, playEntrance, setView, getView: () => mode, setBubble, setAgentMode, dispose };
 }

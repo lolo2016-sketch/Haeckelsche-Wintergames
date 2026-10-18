@@ -17,9 +17,9 @@
       collection, getDocs
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261018";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261018";
-    import { startDraft, finishPairs, founderCount, ranked, isPerson, teamColor, DEFAULT_FOUNDERS } from "./draft.js?v=20261018";
+    import { playSnake, playReplay } from "./minigame.js?v=20261018b";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261018b";
+    import { startDraft, finishPairs, founderCount, ranked, isPerson, teamColor, DEFAULT_FOUNDERS } from "./draft.js?v=20261018b";
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
@@ -47,8 +47,9 @@
         return (await r.json()).filter(f => f.type === 'file').map(f => f.path);
       };
       try {
-        const [photos, faces, videos] = await Promise.all([list('photos'), list('faces'), list('videos')]);
+        const [photos, faces, videos, agents] = await Promise.all([list('photos'), list('faces'), list('videos'), list('agents')]);
         repoFiles = {
+          agents: agents.filter(f => /\.(png|webp)$/i.test(f)),
           photos: [...photos, ...faces].filter(f => /\.(png|jpe?g|webp|gif)$/i.test(f)),
           videos: videos.filter(f => /\.(mp4|webm|mov|m4v)$/i.test(f)), loaded: true, error: null
         };
@@ -56,7 +57,8 @@
     }
     function fileOptions() {
       return `<datalist id="photoFiles">${repoFiles.photos.map(f => `<option value="${f}">`).join('')}</datalist>
-        <datalist id="videoFiles">${repoFiles.videos.map(f => `<option value="${f}">`).join('')}</datalist>`;
+        <datalist id="videoFiles">${repoFiles.videos.map(f => `<option value="${f}">`).join('')}</datalist>
+        <datalist id="agentFiles">${(repoFiles.agents || []).map(f => `<option value="${f}">`).join('')}</datalist>`;
     }
     function filesHint() {
       if (!repoFiles.loaded) return 'Lade Dateiliste aus dem Repo …';
@@ -82,6 +84,8 @@
         ${x.photoUrl ? `<img src="${x.photoUrl}" alt="" style="height:54px" onerror="this.replaceWith('⚠️ Foto nicht gefunden')">` : ''}
         <input class="photoIn" list="photoFiles" data-token="${x.token}" placeholder="photos/name.png" value="${x.photoUrl ?? ''}" style="width:170px">
         <input class="videoIn" list="videoFiles" data-token="${x.token}" placeholder="videos/name.mp4" value="${x.videoUrl ?? ''}" style="width:170px">
+        <input class="agentIn" list="agentFiles" data-token="${x.token}" placeholder="Agentenbild (Standard agents/agent1.png)" value="${x.agentUrl ?? ''}" style="width:200px" title="Bild im Agentenmodus">
+        ${x.agent ? '<span title="ist gerade im Agentenmodus">🕶️</span>' : ''}
         <select class="hairIn" data-token="${x.token}" title="Frisur der 3D-Figur">
           <option value="kurz" ${x.hair !== 'lang' ? 'selected' : ''}>Haare kurz</option>
           <option value="lang" ${x.hair === 'lang' ? 'selected' : ''}>Haare lang</option>
@@ -275,7 +279,7 @@
         if (!confirm('Alles für das Event frisch machen?\n\n• Halle leer, QR-Codes wie neu (Einlauf + Intro-Video)\n• Snake- und Biathlon-Ergebnisse gelöscht\n• Teams gelöscht\n• Chat gelöscht\n• Phase zurück auf "setup"\n\nPersonen, Namen, Bilder, Videos und QR-Codes bleiben erhalten.')) return;
         for (const p of participants.filter(x => x.role !== 'admin')) {
           await updateDoc(doc(db, 'participants', p.token), {
-            arrivedAt: null, videoViews: 0, teamId: null, pickedAt: null,
+            arrivedAt: null, videoViews: 0, teamId: null, pickedAt: null, agent: false,
             minigamePlayed: false, minigameScore: null, minigameAt: null, snakeReplay: null, biathlon: null
           });
         }
@@ -292,9 +296,10 @@
           const photoUrl = document.querySelector(`.photoIn[data-token="${t}"]`).value.trim() || null;
           const videoUrl = document.querySelector(`.videoIn[data-token="${t}"]`).value.trim() || null;
           const hair = document.querySelector(`.hairIn[data-token="${t}"]`).value;
+          const agentUrl = document.querySelector(`.agentIn[data-token="${t}"]`).value.trim() || null;
           const name = document.querySelector(`.nameIn[data-token="${t}"]`).value.trim();
           if (!name) { alert('Der Name darf nicht leer sein.'); return; }
-          await updateDoc(doc(db, 'participants', t), { name, photoUrl, videoUrl, hair });
+          await updateDoc(doc(db, 'participants', t), { name, photoUrl, videoUrl, hair, agentUrl });
           const teamIn = document.querySelector(`.teamIn[data-token="${t}"]`);
           if (teamIn && teamIn.value.trim()) await updateDoc(doc(db, 'teams', teamIn.dataset.team), { name: teamIn.value.trim() });
           loadAll();

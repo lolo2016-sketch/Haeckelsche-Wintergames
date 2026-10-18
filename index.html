@@ -30,6 +30,7 @@
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; background:rgba(255,255,255,.9); color:#0f172a; }
   .my-msg b { color:#16a34a; }
   #side { right:8px; top:calc(50% - 50px); display:flex; flex-direction:column; gap:8px; }
+  .round.agent-on { background:rgba(185,28,28,.9); box-shadow:0 0 16px rgba(239,68,68,.8); }
   .round { width:48px; height:48px; border-radius:50%; font-size:1.3rem; display:flex; align-items:center; justify-content:center;
     cursor:pointer; margin:0; padding:0; }
   #bottom { left:8px; right:8px; bottom:calc(8px + var(--sb)); display:flex; flex-direction:column; gap:6px; }
@@ -94,10 +95,10 @@
       getFirestore, doc, getDoc, getDocs, updateDoc, collection, onSnapshot, addDoc, query, orderBy, limit
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261018";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261018";
-    import { createHall } from "./hall.js?v=20261018";
-    import { compareRank, playedGame, finishPairs, planPairs, teamColor, isPerson, DEFAULT_FOUNDERS } from "./draft.js?v=20261018";
+    import { playSnake, playReplay } from "./minigame.js?v=20261018b";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261018b";
+    import { createHall } from "./hall.js?v=20261018b";
+    import { compareRank, playedGame, finishPairs, planPairs, teamColor, isPerson, DEFAULT_FOUNDERS } from "./draft.js?v=20261018b";
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
@@ -287,7 +288,9 @@
     }
     function updateHall() {
       if (!hall) return;
-      if (hall.is3d) hall.update(hallData3d());
+      const ab = document.getElementById('agentBtn');
+      if (ab) { ab.classList.toggle('agent-on', !!S.me.agent); ab.title = S.me.agent ? 'Agentenmodus beenden' : 'Agentenmodus'; }
+      if (hall.is3d) { hall.update(hallData3d()); hall.setAgentMode(!!S.me.agent); }
       else hall.update(hallData2d(), { pickable: isMyTurn(S) });
     }
 
@@ -297,7 +300,8 @@
       hallStarting = true;
       const wrap = document.getElementById('stage');
       const side = document.getElementById('side');
-      side.innerHTML = `<button class="round glass" id="viewBtn" style="display:none" title="Ansicht wechseln"></button>
+      side.innerHTML = `<button class="round glass" id="agentBtn" style="display:none" title="Agentenmodus">🕶️</button>
+        <button class="round glass" id="viewBtn" style="display:none" title="Ansicht wechseln"></button>
         ${DEMO ? '<button class="round glass" id="replayIntro" title="Einlauf nochmal">▶</button>' : ''}`;
       const tapToken = t => {
         const p = S.people.find(x => x.token === t);
@@ -309,7 +313,7 @@
       // 3D, wenn möglich, sonst die einfache 2D-Halle
       let use3d = false;
       try {
-        hall3dMod ??= await import('./hall3d.js?v=20261018');
+        hall3dMod ??= await import('./hall3d.js?v=20261018b');
         use3d = hall3dMod.webglAvailable();
       } catch (e) { use3d = false; }
 
@@ -335,6 +339,11 @@
           hall.setView(hall.getView() === 'orbit' ? 'first' : 'orbit'); setBtn();
           hint.style.opacity = '1'; clearTimeout(hint._t); hint._t = setTimeout(() => { hint.style.opacity = '0'; }, 4000);
         };
+        // Agentenmodus an/aus: alle sehen das Agentenbild, man selbst sieht die Welt rot
+        const ab = document.getElementById('agentBtn');
+        ab.style.display = '';
+        ab.onclick = () => toggleAgent();
+        updateHall();
         if (needsEntrance) runEntrance(setBtn);
         const rb = document.getElementById('replayIntro');
         if (rb) rb.onclick = () => runEntrance(setBtn);
@@ -347,6 +356,16 @@
         if (rb) rb.onclick = () => hall.playIntro();
       }
       hallStarting = false;
+    }
+    async function toggleAgent() {
+      const on = !S.me.agent;
+      // sofort lokal umschalten, Firebase verteilt es an alle anderen
+      const me = { ...S.me, agent: on };
+      S = { ...S, me, people: S.people.map(p => p.token === token ? me : p) };
+      updateHall();
+      if (DEMO) return;
+      try { await updateDoc(doc(db, 'participants', token), { agent: on }); }
+      catch (err) { alert('Umschalten fehlgeschlagen: ' + err.message); }
     }
     async function runEntrance(setBtn) {
       needsEntrance = false;
