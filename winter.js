@@ -27,6 +27,8 @@ const trackPoint = (t, off = 0) => new THREE.Vector3(
 
 // Skisprungschanze (Seitenprofil: z nach vorne, y nach oben), steht vorne hinter den Kapitänen
 const JUMP_X = -1.6;
+// Agentenmodus: riesiger Eis-Pokal hinter dem Kreis (gegenüber dem Tor), Finaltür unten in der Mitte
+export const EIS_X = 25, EIS_H = 22;
 const PROFILE = [ // [z, y]
   [24, 0], [32, 0.4], [44, 3.2], [56, 7.5], [60, 9.2], [62, 10.2], [63.5, 10.6],
   [64.5, 10.8], [80, 21], [92, 29], [95, 29], [97, 0]
@@ -384,7 +386,7 @@ export function buildWinterWorld(scene, floorTex) {
 
     // Schriftzug: mehrere Schichten hintereinander ergeben die Tiefe (vorne hell, dahinter dunkel-glühend)
     const logoTex = load('agents/welt/logo.png');
-    const LW = 9, LH = LW * 853 / 1024;
+    const LW = 10, LH = LW * 853 / 1024;
     const logo = new THREE.Group();
     logo.position.set(17, 4 + LH / 2, 0); logo.rotation.y = -Math.PI / 2;   // schaut zur Mitte der runden Bank
     const LAYERS = 9;
@@ -401,7 +403,7 @@ export function buildWinterWorld(scene, floorTex) {
 
     // Schwebende Objekte mit 4 Ansichten
     const VIEWS = ['vorne', 'links', 'hinten', 'rechts'];   // gegen den Uhrzeigersinn um das Objekt herum
-    function floater(name, pos, H, aspect, glowColor, emberColor) {
+    function floater(name, pos, H, aspect, glowColor, emberColor, grounded = false) {
       const texs = VIEWS.map(v => load(`agents/welt/${name}_${v}.png`));
       const W = H * aspect;
       const grp = new THREE.Group(); grp.position.copy(pos);
@@ -420,7 +422,7 @@ export function buildWinterWorld(scene, floorTex) {
       const frontYaw = Math.atan2(-pos.x, -pos.z);          // Vorderseite zeigt zur Mitte
       const baseY = pos.y, phase = R() * 6;
       return (dt, time, cam) => {
-        grp.position.y = baseY + Math.sin(time * 0.8 + phase) * 0.35;
+        if (!grounded) grp.position.y = baseY + Math.sin(time * 0.8 + phase) * 0.35;
         const camYaw = Math.atan2(cam.position.x - grp.position.x, cam.position.z - grp.position.z);
         face.rotation.y = camYaw;
         // Blickwinkel relativ zur Vorderseite -> passende Ansicht, weich überblendet
@@ -440,13 +442,16 @@ export function buildWinterWorld(scene, floorTex) {
       };
     }
     // links und rechts (von der Mitte aus Richtung Tor gesehen), hinten bleibt frei
+    // Alle Bilder gleich hoch (FH); von der Mitte aus gesehen überall 9° Lücke: Schriftzug | Zauberer/Balkon | Besen/Schädel
+    const FH = 13.5, FY = FH / 2 + 1.4;
     const floaters = [
-      // ganz außen: Besen (links) und Schädel-Pokal (rechts)
-      floater('besen', new THREE.Vector3(-7.2, 7.6, -19.7), 12, 378 / 465, 'rgba(255,90,20,0.85)', 0xffa040),
-      floater('schaedel', new THREE.Vector3(-7.2, 7.6, 19.7), 12, 378 / 465, 'rgba(90,255,60,0.7)', 0x9dff5a),
-      // dazwischen, näher am Tor: die Zauberer (halb links) und die Balkon-Szene (halb rechts), noch größer
-      floater('zauberer', new THREE.Vector3(11.73, 7.9, -17.33), 12.5, 1012 / 754, 'rgba(255,110,30,0.7)', 0xffb050),
-      floater('balkon', new THREE.Vector3(11.73, 7.6, 17.33), 11, 800 / 520, 'rgba(80,255,70,0.55)', 0xa6ff6a)
+      floater('besen', new THREE.Vector3(-1.65, FY, -21.44), FH, 378 / 465, 'rgba(255,90,20,0.85)', 0xffa040),
+      floater('schaedel', new THREE.Vector3(-3.83, FY, 21.16), FH, 378 / 465, 'rgba(90,255,60,0.7)', 0x9dff5a),
+      floater('zauberer', new THREE.Vector3(14.32, FY, -16.04), FH, 1012 / 754, 'rgba(255,110,30,0.7)', 0xffb050),
+      floater('balkon', new THREE.Vector3(13.48, FY, 16.75), FH, 800 / 520, 'rgba(80,255,70,0.55)', 0xa6ff6a),
+      // hinter dem Kreis, gegenüber dem Tor: der riesige Eis-Pokal mit den beiden Skifahrern, steht auf dem Boden
+      // (unten in der Mitte sitzt die Finaltür, siehe hall3d.js AGENT_DOOR)
+      floater('eispokal', new THREE.Vector3(-EIS_X, EIS_H / 2, 0), EIS_H, 480 / 1072, 'rgba(90,180,255,0.75)', 0xbfe6ff, true)
     ];
     scene.add(g);
     return { group: g, update: (dt, time, cam) => {

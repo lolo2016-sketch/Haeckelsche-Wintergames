@@ -4,7 +4,7 @@
 // Wer ins selbe Team kommt, bekommt dieselbe Farbe und setzt sich neben die anderen Teammitglieder.
 // Die eigene Figur läuft in der Third-Person-Ansicht ein, danach sieht man die Runde aus ihren Augen.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js';
-import { buildWinterWorld } from './winter.js?v=20261019e';
+import { buildWinterWorld, EIS_X } from './winter.js?v=20261019g';
 
 const BENCH_SHIRT = 0xe2e8f0;
 const HAIR = 0x4a2f1b;
@@ -403,10 +403,16 @@ function buildShrine(scene) {
   });
   const sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: signTex(true), depthWrite: false })); sign.scale.set(1.9, 0.48, 1); sign.position.y = 3.25; door.add(sign);
   door.traverse(o => { o.userData.door = true; });
-  g.add(door);
+  scene.add(door);
   scene.add(g);
   let active = false;
   return {
+    // Agentenmodus: verhüllter Pokal verschwindet, die Tür wandert groß unten in die Mitte des Eis-Pokals
+    setAgent(on) {
+      g.visible = !on;
+      if (on) { door.position.set(-(EIS_X - 0.9), 0, 0); door.rotation.y = Math.PI / 2; door.scale.setScalar(1.8); }
+      else { door.position.copy(DOOR_POS); door.rotation.y = Math.atan2(-DOOR_POS.x, -DOOR_POS.z); door.scale.setScalar(1); }
+    },
     setActive(on) { if (active === !!on) return; active = !!on; sign.material.map.dispose(); sign.material.map = signTex(!active); sign.material.needsUpdate = true; },
     update(t) {
       glow.material.opacity = active ? 0.35 + Math.sin(t * 3) * 0.2 : 0;
@@ -429,6 +435,7 @@ export function createHall3D(container, { meToken, onPersonTap, onDoorTap } = {}
   const camera = new THREE.PerspectiveCamera(68, 1, 0.05, 500);
   const world = buildWinterWorld(scene, floorTexture());
   const shrine = buildShrine(scene);
+  const organizers = [];
   // die beiden Organisatoren links und rechts vom Pokal (Gesichter faces/face1.png und face2.png)
   for (const [i, z] of [[1, -2.3], [2, 2.3]]) {
     const ch = makeCharacter({ token: 'org' + i, name: '', photoUrl: `faces/face${i}.png`, hair: 'kurz' });
@@ -436,7 +443,7 @@ export function createHall3D(container, { meToken, onPersonTap, onDoorTap } = {}
     ch.root.position.set(SHRINE.x + 0.4, 0, z); ch.yaw = Math.PI / 2; ch.shirt.color.setHex(0x111827);
     ch.arms[i === 1 ? 1 : 0].sh.rotation.z = (i === 1 ? 1 : -1) * 0.5;   // Arm Richtung Pokal
     applyPose(ch); ch.root.rotation.y = Math.PI / 2;
-    ch.noLabel = true; scene.add(ch.root);
+    ch.noLabel = true; scene.add(ch.root); organizers.push(ch.root);
   }
   let benches = null, ring = null;
 
@@ -802,6 +809,7 @@ export function createHall3D(container, { meToken, onPersonTap, onDoorTap } = {}
   function setAgentMode(on) {
     if (agentMood === !!on) return;
     agentMood = !!on; world.setMood(agentMood);
+    shrine.setAgent(agentMood); organizers.forEach(o => { o.visible = !agentMood; });
   }
 
   return {
