@@ -5,7 +5,7 @@
 // Bonussekunden fürs Finale: richtig geraten (pro Person) + Snake-Platz 1–3.
 // Rollen aus früheren Versionen ("captain"/"player") spielen keine Rolle, nur "admin" wird ausgelassen.
 import { doc, collection, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { biathlonRank } from "./biathlon.js?v=20261019e";
+import { biathlonRank } from "./biathlon.js?v=20261019h";
 
 // Phasen in Reihenfolge
 export const PHASES = ['setup', 'snake', 'guess', 'pairs', 'biathlon', 'done', 'final'];
@@ -122,12 +122,54 @@ export const finalCaptain = (letter, people) => people.find(p => p.finalTeam ===
 export function finalBonus(letter, people, state) {
   return finalMembers(letter, people).reduce((s, p) => s + bonusOf(p, people, state, true).total, 0);
 }
-// gewertete Zeit in ms: verstrichene Zeit − Vorsprung + Strafsekunden (vor Ablauf des Vorsprungs negativ)
+// Ablauf im Finale: Raum 1 (Lager) → Tür → Raum 2 (Rätselkammer, HORCRUX) → Tür → Raum 3 (Schneeballwurf, VEREIST).
+// Zwischen gelöstem Raum und dem Öffnen der nächsten Tür steht die Uhr.
+export function finalStage(fin) {
+  if (!fin?.startedAt) return 0;
+  if (!fin.solved1At) return 1;
+  if (!fin.start2At) return 1.5;          // Raum 1 gelöst, Tür zu Raum 2 noch zu
+  if (!fin.solved2At) return 2;
+  if (!fin.start3At) return 2.5;
+  if (!fin.solved3At) return 3;
+  return 4;                               // alles geschafft
+}
+// gespielte Zeit (ohne Pausen zwischen den Räumen)
+export function finalPlayedMs(fin, now = Date.now()) {
+  if (!fin?.startedAt) return 0;
+  const seg = (a, b) => a ? Math.max(0, (b ?? now) - a) : 0;
+  return seg(fin.startedAt, fin.solved1At) + seg(fin.start2At, fin.solved2At) + seg(fin.start3At, fin.solved3At);
+}
+// gewertete Zeit in ms: gespielte Zeit − Vorsprung + Strafsekunden (vor Ablauf des Vorsprungs negativ)
 export function finalScoreMs(fin, bonusS, now = Date.now()) {
   if (!fin?.startedAt) return null;
-  const end = fin.solved1At ?? now;
-  return (end - fin.startedAt) - bonusS * 1000 + (fin.penalty || 0) * 1000;
+  return finalPlayedMs(fin, now) - bonusS * 1000 + (fin.penalty || 0) * 1000;
 }
+
+// ----- Raum 2: Rätselkammer -----
+export const WORD2 = 'HORCRUX';
+export const WORD2_TRIES = 3;
+// Jedes gelöste Rätsel deckt einen Buchstaben auf (das R gleich an beiden Stellen). Reihenfolge und Fragen hier änderbar.
+export const RIDDLES = [
+  { q: 'Ich habe Städte, aber keine Häuser. Wälder, aber keine Bäume. Wasser, aber keine Fische. Was bin ich?', a: ['karte', 'landkarte', 'weltkarte', 'stadtplan', 'atlas'], letter: 'H' },
+  { q: 'Je mehr man davon wegnimmt, desto größer wird es. Was ist das?', a: ['loch', 'ein loch', 'grube', 'graben'], letter: 'O' },
+  { q: 'Es läuft und läuft, hat aber keine Beine. Es hat ein Bett, schläft aber nie. Was ist es?', a: ['fluss', 'bach', 'strom', 'ein fluss'], letter: 'R' },
+  { q: 'Ich habe vier Beine, kann aber nicht gehen. Ich habe einen Rücken, aber keinen Bauch. Was bin ich?', a: ['stuhl', 'sessel', 'ein stuhl', 'hocker', 'bank'], letter: 'C' },
+  { q: 'Es gehört dir, aber andere benutzen es viel öfter als du selbst. Was ist es?', a: ['name', 'dein name', 'mein name', 'vorname', 'nachname'], letter: 'U' },
+  { q: 'Wer es macht, der braucht es nicht. Wer es kauft, der will es nicht. Wer es braucht, der weiß es nicht. Was ist es?', a: ['sarg', 'ein sarg', 'grab', 'urne'], letter: 'X' }
+];
+export const normAnswer = s => String(s ?? '').trim().toLowerCase().replace(/ß/g, 'ss').replace(/[^a-zäöü ]/g, '').replace(/\s+/g, ' ');
+export const riddleRight = (i, answer) => {
+  const n = normAnswer(answer).replace(/^(der|die|das|ein|eine|einen) /, '');
+  return RIDDLES[i].a.map(x => normAnswer(x).replace(/^(der|die|das|ein|eine|einen) /, '')).includes(n);
+};
+// angezeigtes Wort: aufgedeckte Buchstaben, sonst "_"
+export const word2Shown = solvedIdx => WORD2.split('').map(ch => RIDDLES.some((r, i) => r.letter === ch && (solvedIdx || []).includes(i)) ? ch : '_');
+
+// ----- Raum 3: Schneeball auf Dosen -----
+export const WORD3 = 'VEREIST';
+// Dosen von links nach rechts: Buchstabe oder '' (leere Dose = nur Schnee); Buchstaben gemischt
+export const CANS = ['E', '', 'S', 'R', '', 'T', 'V', '', 'I', 'E'];
+
 export const fmtClock = ms => {
   const neg = ms < 0, a = Math.abs(ms);
   return `${neg ? '−' : ''}${Math.floor(a / 60000)}:${String(Math.floor((a % 60000) / 1000)).padStart(2, '0')}`;

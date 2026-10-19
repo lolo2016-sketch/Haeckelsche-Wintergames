@@ -17,10 +17,10 @@
       collection, getDocs
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261019e";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261019e";
+    import { playSnake, playReplay } from "./minigame.js?v=20261019h";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261019h";
     import { PHASES, PHASE_NAMES, phaseIndex, settings, DEFAULTS, COUNTRIES, country, isPerson, teamColor, snakeRanking,
-      guessedRight, teamBonus, teamBiathlon, revealTeams, FINAL_TEAMS, finalMembers, finalBonus, finalScoreMs, fmtClock, WEAPONS, weaponName } from "./draft.js?v=20261019e";
+      guessedRight, teamBonus, teamBiathlon, revealTeams, FINAL_TEAMS, finalMembers, finalBonus, finalScoreMs, fmtClock, WEAPONS, weaponName } from "./draft.js?v=20261019h";
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
@@ -305,7 +305,8 @@
           const caps = mem.filter(m => m.finalCaptain);
           return `<div style="margin:6px 0"><strong>Team ${L}</strong>: ${mem.map(m => (m.finalCaptain ? '★ ' : '') + m.name).join(', ')}
             ${caps.length !== 1 ? '<span style="color:#b91c1c;font-weight:600"> ⚠️ genau einen Kapitän wählen</span>' : ''}
-            <br><span style="font-size:.9rem">Vorsprung ${bonus} s · ${fin?.solved1At ? `✅ gelöst mit ${weaponName(fin.solvedWeapon)}, Wertung ${fmtClock(sc)}` : fin?.startedAt ? `⏳ läuft seit ${new Date(fin.startedAt).toLocaleTimeString('de-DE')}` : 'nicht gestartet'}
+            <br><span style="font-size:.9rem">Vorsprung ${bonus} s · ${fin?.solved3At ? `🏁 fertig, Wertung <b>${fmtClock(sc)}</b>` : fin?.startedAt ? `⏳ gestartet ${new Date(fin.startedAt).toLocaleTimeString('de-DE')}, Zeit bisher ${fmtClock(sc)}` : 'nicht gestartet'}
+            ${fin?.startedAt ? `<br>Raum 1: ${fin.solved1At ? '✅ ' + weaponName(fin.solvedWeapon) : '…'} · Raum 2: ${fin.solved2At ? '✅' : fin.start2At ? `${(fin.riddles || []).length}/6 Rätsel, ${fin.wordTries || 0}/3 Rateversuche` : '–'} · Raum 3: ${fin.solved3At ? '✅' : fin.start3At ? `${(fin.cans || []).length} Dosen getroffen` : '–'}` : ''}
             ${fin?.penalty ? ` · Strafe +${fin.penalty} s (${(fin.wrong || []).map(weaponName).join(', ')})` : ''}</span>
             ${fin ? `<button class="secondary resetFinal" data-team="${L}" style="padding:4px 10px">Zurücksetzen</button>` : ''}</div>`;
         }).join('')}</div>
