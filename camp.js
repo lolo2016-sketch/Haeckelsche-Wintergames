@@ -3,9 +3,9 @@
 // Pfeile am Boden antippen = einen Schritt gehen, wischen = umschauen. Von der Mitte gehen 5 Wege ab, je 4 Schritte.
 // Am Ende eines Weges: die Figur "Hilf unserem Papa" und links daneben der Waffenschrank.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js';
-import { WEAPONS } from './draft.js?v=20261019d';
+import { WEAPONS } from './draft.js?v=20261019e';
 
-const STEP = 4.5;            // Abstand der Wegpunkte (m)
+const STEP = 6.5;            // Abstand der Wegpunkte (m)
 const STEPS = 4;             // Schritte pro Weg
 const PATHS = 5;
 const PUZZLE_PATH = 2;       // auf diesem Weg steht am Ende die Figur mit dem Waffenschrank
@@ -66,11 +66,11 @@ const END_ID = `${PUZZLE_PATH}:${STEPS}`;
 const END = nodePos(PUZZLE_PATH, STEPS);
 const END_DIR = dirFromHeading(HEAD[PUZZLE_PATH][STEPS]);
 const CLEAR_DIR = dirFromHeading(HEAD[PUZZLE_PATH][STEPS] + 82 * Math.PI / 180);   // Lichtung links um die Ecke
-const CLEAR = END.clone().add(CLEAR_DIR.clone().multiplyScalar(5.2));              // Mitte der Lichtung
+const CLEAR = END.clone().add(CLEAR_DIR.clone().multiplyScalar(6.6));              // Mitte der Lichtung
 const FIG_POS = CLEAR.clone().add(CLEAR_DIR.clone().multiplyScalar(1.2));
 const PSIDE = leftOf(CLEAR_DIR);                                                    // links, wenn man in die Lichtung schaut
-const CAB_POS = FIG_POS.clone().add(PSIDE.clone().multiplyScalar(2.5)).add(CLEAR_DIR.clone().multiplyScalar(-0.4));
-const CAB_VIEW = CAB_POS.clone().add(END.clone().sub(CAB_POS).normalize().multiplyScalar(2.7));
+const CAB_POS = FIG_POS.clone().add(PSIDE.clone().multiplyScalar(3.6)).add(CLEAR_DIR.clone().multiplyScalar(-1.0));   // frei stehend links
+const CAB_VIEW = CAB_POS.clone().add(END.clone().sub(CAB_POS).normalize().multiplyScalar(4.0));
 function neighbors(id) {
   if (id === 'c') return Array.from({ length: PATHS }, (_, k) => ({ id: nodeId(k, 1), k, s: 1 }));
   if (id === 'cab') return [{ id: END_ID }];
@@ -264,6 +264,14 @@ function weaponMesh(id) {
     case 'sturmgewehr': add(box(0.08, 0.5, 0.06), M.black, 0, 0.05); add(cyl(0.015, 0.015, 0.35), M.iron, 0, 0.45); add(box(0.06, 0.18, 0.05), M.black, 0.06, -0.05, 0, 0, 0, 0.3); add(box(0.07, 0.25, 0.05), M.black, -0.02, -0.33, 0, 0, 0, -0.15); break;
     case 'granate': add(new THREE.SphereGeometry(0.11, 10, 8), M.green, 0, 0).scale.set(1, 1.3, 1); add(cyl(0.03, 0.03, 0.06), M.iron, 0, 0.16); add(box(0.02, 0.15, 0.02), M.iron, 0.05, 0.08, 0, 0, 0, -0.3); break;
     case 'schlaeger': add(cyl(0.05, 0.018, 0.95, 10), lam(0xc8935a), 0, 0.02); break;
+    case 'duellpistole': add(cyl(0.02, 0.026, 0.5), M.steel, 0.05, 0.1, 0, 0, 0, Math.PI / 2); add(box(0.07, 0.3, 0.05), lam(0x6b3a1a), -0.22, -0.06, 0, 0, 0, 0.7); add(box(0.08, 0.02, 0.02), M.gold, -0.12, 0.12); break;
+    case 'pistole9': add(box(0.36, 0.08, 0.05), M.black, 0.04, 0.1); add(box(0.08, 0.24, 0.05), M.black, -0.08, -0.04, 0, 0, 0, 0.25); add(box(0.04, 0.05, 0.03), M.iron, 0.0, 0.0); break;
+    case 'derringer': add(box(0.16, 0.05, 0.04), M.steel, 0.04, 0.05); add(box(0.06, 0.12, 0.04), lam(0xf5f0e0), -0.05, -0.02, 0, 0, 0, 0.5); break;
+    case 'karabiner': add(cyl(0.016, 0.02, 0.6), M.iron, 0, 0.35); add(box(0.07, 0.55, 0.05), M.wood, 0, -0.15, 0, 0, 0, 0.1); add(box(0.05, 0.08, 0.04), M.iron, 0.04, 0.12); break;
+    case 'jagdgewehr': add(cyl(0.017, 0.02, 0.75), M.iron, 0, 0.3); add(box(0.08, 0.5, 0.05), lam(0x7a4a22), 0, -0.3, 0, 0, 0, 0.15); add(cyl(0.025, 0.025, 0.25), M.black, 0.05, 0.12); break;
+    case 'schrotflinte': add(cyl(0.022, 0.022, 0.65), M.iron, -0.015, 0.3); add(cyl(0.022, 0.022, 0.65), M.iron, 0.015, 0.3); add(box(0.08, 0.45, 0.05), M.wood, 0, -0.22, 0, 0, 0, 0.12); break;
+    case 'scharfschuetzen': add(cyl(0.015, 0.02, 0.8), M.black, 0, 0.32); add(cyl(0.035, 0.035, 0.3), M.black, 0.07, 0.1); add(box(0.08, 0.45, 0.06), lam(0x4a5a3a), 0, -0.3, 0, 0, 0, 0.12); break;
+    case 'blunderbuss': add(cyl(0.06, 0.025, 0.55, 10), lam(0xb08d57), 0, 0.25); add(box(0.08, 0.45, 0.05), M.wood, 0, -0.25, 0, 0, 0, 0.15); break;
   }
   return g;
 }
@@ -287,7 +295,7 @@ export function createCamp(container, { onWeapon, onLeave } = {}) {
   }) }));
   scene.add(sky);
   scene.background = new THREE.Color(0xd9a06a);
-  scene.fog = new THREE.Fog(0xb88a6a, 25, 70);
+  scene.fog = new THREE.Fog(0xb88a6a, 30, 95);
   scene.add(new THREE.HemisphereLight(0xffe2c0, 0x4a3a2a, 1.3));
   const sun = new THREE.DirectionalLight(0xffc890, 1.3); sun.position.set(-30, 20, 10); scene.add(sun);
 
@@ -310,7 +318,7 @@ export function createCamp(container, { onWeapon, onLeave } = {}) {
     const spot = new THREE.Mesh(new THREE.CircleGeometry(1.3, 14), M.dirt); spot.rotation.x = -Math.PI / 2;
     spot.position.set(NODES[k][s].x, 0.013, NODES[k][s].z); scene.add(spot);
   }
-  const clearing = new THREE.Mesh(new THREE.CircleGeometry(3.4, 20), M.dirt); clearing.rotation.x = -Math.PI / 2;
+  const clearing = new THREE.Mesh(new THREE.CircleGeometry(5.6, 24), M.dirt); clearing.rotation.x = -Math.PI / 2;
   clearing.position.set(CLEAR.x, 0.014, CLEAR.z); scene.add(clearing);
 
   // Mitte: Lagerfeuer und Fahnenmast
@@ -319,14 +327,15 @@ export function createCamp(container, { onWeapon, onLeave } = {}) {
 
   const place = (obj, pos, faceTo) => { obj.position.copy(pos); if (faceTo) obj.rotation.y = Math.atan2(faceTo.x - pos.x, faceTo.z - pos.z); scene.add(obj); return obj; };
   const tents = [];       // Mittelpunkte, damit sich Zelte nicht ineinander schieben
+  const staticTents = []; // werden am Ende zu wenigen großen Meshes zusammengefasst (viel flüssiger auf dem Handy)
   const freeSpot = (p, minPath, minTent) => distToPaths(p) >= minPath && p.length() > 5.2
-    && p.distanceTo(CLEAR) > 4.6 && tents.every(t => t.distanceTo(p) >= minTent);
+    && p.distanceTo(CLEAR) > 7.4 && tents.every(t => t.distanceTo(p) >= minTent);
   const putTent = (p, faceTo, kind) => {
     tents.push(p.clone());
     const r = R();
     const t = kind === 'bell' || (kind == null && r < 0.22) ? bellTent() : tent(r < 0.6 ? M.canvas : M.canvasDark);
     t.scale.setScalar(kind === 'bell' ? 1.15 : 1.3);
-    place(t, p, faceTo);
+    place(t, p, faceTo); staticTents.push(t);
   };
 
   // Zeltgassen: dicht an beiden Seiten jedes Abschnitts, damit man nicht weit sehen kann
@@ -370,22 +379,44 @@ export function createCamp(container, { onWeapon, onLeave } = {}) {
     }
   }
   // Lichtung: Ring aus hohen Rundzelten, offen nur zum Weg hin
-  for (let i = 0; i < 9; i++) {
-    const ang = Math.atan2(CLEAR_DIR.x, CLEAR_DIR.z) + (i / 9) * Math.PI * 2;
+  for (let i = 0; i < 12; i++) {
+    const ang = Math.atan2(CLEAR_DIR.x, CLEAR_DIR.z) + (i / 12) * Math.PI * 2;
     const dir = dirFromHeading(ang);
     if (dir.dot(CLEAR_DIR.clone().negate()) > 0.72) continue;     // Eingang zur Lichtung
-    const p = CLEAR.clone().add(dir.multiplyScalar(5.3));
-    tents.push(p.clone()); const t = bellTent(); t.scale.setScalar(1.2); place(t, p, CLEAR);
+    const p = CLEAR.clone().add(dir.multiplyScalar(7.6));
+    tents.push(p.clone()); const t = bellTent(); t.scale.setScalar(1.2); place(t, p, CLEAR); staticTents.push(t);
   }
   // Füllzelte im Rest des Lagers (zwischen den Wegen), damit es überall dicht wirkt
-  for (let i = 0; i < 260; i++) {
-    const a = R() * Math.PI * 2, r = 6 + R() * 20, p = new THREE.Vector3(Math.sin(a) * r, 0, Math.cos(a) * r);
-    if (freeSpot(p, 3.4, 3.0)) putTent(p, p.clone().add(new THREE.Vector3(R() - 0.5, 0, R() - 0.5)));
+  for (let i = 0; i < 420; i++) {
+    const a = R() * Math.PI * 2, r = 6 + R() * 30, p = new THREE.Vector3(Math.sin(a) * r, 0, Math.cos(a) * r);
+    // nur dort, wo man sie von den Wegen aus sehen kann (spart Leistung)
+    if (distToPaths(p) < 10 && freeSpot(p, 3.4, 3.0)) putTent(p, p.clone().add(new THREE.Vector3(R() - 0.5, 0, R() - 0.5)));
   }
+  // Zelte zusammenfassen: alle Teile mit gleichem Material zu einem Mesh
+  import('https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/utils/BufferGeometryUtils.js').then(({ mergeGeometries }) => {
+    const buckets = new Map();
+    for (const g of staticTents) {
+      g.updateMatrixWorld(true);
+      g.traverse(o => {
+        if (!o.isMesh) return;
+        let geo = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+        for (const name of Object.keys(geo.attributes)) if (!['position', 'normal', 'uv'].includes(name)) geo.deleteAttribute(name);
+        if (!geo.attributes.uv) geo.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
+        geo.applyMatrix4(o.matrixWorld);
+        const key = o.material.uuid;
+        if (!buckets.has(key)) buckets.set(key, { mat: o.material, geos: [] });
+        buckets.get(key).geos.push(geo);
+      });
+    }
+    const merged = [];
+    for (const { mat, geos } of buckets.values()) { const g = mergeGeometries(geos, false); if (!g) return; merged.push(new THREE.Mesh(g, mat)); }
+    staticTents.forEach(g => scene.remove(g));
+    merged.forEach(m => scene.add(m));
+  }).catch(() => {});
   // ein paar Soldaten am Feuer
   for (let i = 0; i < 3; i++) { const a = i / 3 * Math.PI * 2 + 0.5; place(soldier(updaters, R, { musket: i === 1 }), new THREE.Vector3(Math.cos(a) * 1.6, 0, Math.sin(a) * 1.6), new THREE.Vector3()); }
   // Wald: Waldränder an den Wegenden und ringsum
-  for (let i = 0; i < 110; i++) { const a = R() * Math.PI * 2, r = 30 + R() * 25; forestSpots.push([new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r), 0.8 + R() * 0.8]); }
+  for (let i = 0; i < 130; i++) { const a = R() * Math.PI * 2, r = 42 + R() * 25; forestSpots.push([new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r), 0.8 + R() * 0.8]); }
   const treeGeo = new THREE.ConeGeometry(1.4, 4.5, 7), trunkGeo = new THREE.CylinderGeometry(0.18, 0.22, 1.2, 5);
   const trees = new THREE.InstancedMesh(treeGeo, lam(0x2f4a2a), forestSpots.length), trunks = new THREE.InstancedMesh(trunkGeo, M.woodDark, forestSpots.length);
   const mm = new THREE.Matrix4();
@@ -443,13 +474,12 @@ export function createCamp(container, { onWeapon, onLeave } = {}) {
 
   // Waffenschrank
   const cab = new THREE.Group();
-  const CW = 2.1, CH = 2.6, COLS = 4, ROWS = 4;
+  const CW = 3.1, CH = 2.6, COLS = 6, ROWS = 4;
   const back = new THREE.Mesh(new THREE.BoxGeometry(CW, CH, 0.12), lam(0x3a2414)); back.position.set(0, CH / 2 + 0.3, -0.2); cab.add(back);
   const frameM = lam(0x6b4423);
   for (const x of [-CW / 2, CW / 2]) { const sd = new THREE.Mesh(new THREE.BoxGeometry(0.12, CH + 0.1, 0.5), frameM); sd.position.set(x, CH / 2 + 0.3, 0); cab.add(sd); }
   for (const y of [0.3, 0.3 + CH / 2, 0.3 + CH]) { const sh = new THREE.Mesh(new THREE.BoxGeometry(CW + 0.12, 0.08, 0.5), frameM); sh.position.set(0, y, 0); cab.add(sh); }
   const crown = new THREE.Mesh(new THREE.BoxGeometry(CW + 0.3, 0.25, 0.6), frameM); crown.position.y = CH + 0.45; cab.add(crown);
-  const cabSign = textSprite('Waffenkammer', { size: 60, scale: 1.8 }); cabSign.position.y = CH + 0.95; cab.add(cabSign);
   const weapons = {};
   const slotW = CW / COLS, slotH = CH / ROWS;
   WEAPONS.forEach((w, i) => {

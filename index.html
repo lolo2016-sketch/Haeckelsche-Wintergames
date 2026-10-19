@@ -95,12 +95,12 @@
       getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, addDoc, query, orderBy, limit
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261019d";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261019d";
-    import { createHall } from "./hall.js?v=20261019d";
+    import { playSnake, playReplay } from "./minigame.js?v=20261019e";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261019e";
+    import { createHall } from "./hall.js?v=20261019e";
     import { PHASE_NAMES, phaseIndex, settings, country, teamColor, isPerson, playedSnake, compareSnake, snakeRanking,
       playedBiathlon, teamBiathlon, bonusOf, teamBonus, guessedRight, planTeams,
-      FINAL_TEAMS, PENALTY_S, finalMembers, finalCaptain, finalBonus, finalScoreMs, fmtClock, weaponName } from "./draft.js?v=20261019d";
+      FINAL_TEAMS, PENALTY_S, finalMembers, finalCaptain, finalBonus, finalScoreMs, fmtClock, weaponName } from "./draft.js?v=20261019e";
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
@@ -346,7 +346,7 @@
       // 3D, wenn möglich, sonst die einfache 2D-Halle
       let use3d = false;
       try {
-        hall3dMod ??= await import('./hall3d.js?v=20261019d');
+        hall3dMod ??= await import('./hall3d.js?v=20261019e');
         use3d = hall3dMod.webglAvailable();
       } catch (e) { use3d = false; }
 
@@ -725,7 +725,7 @@
       setTimeout(() => { const h = document.getElementById('finHint'); if (h) h.style.display = 'none'; }, 7000);
       document.getElementById('finBack').onclick = leaveFinal;
       try {
-        campMod ??= await import('./camp.js?v=20261019d');
+        campMod ??= await import('./camp.js?v=20261019e');
         camp = campMod.createCamp(stage, { onWeapon: chooseWeapon });
       } catch (err) { alert('Das Finale konnte nicht geladen werden: ' + err.message); return leaveFinal(); }
       clearInterval(finHudTimer); finHudTimer = setInterval(renderFinHud, 250);

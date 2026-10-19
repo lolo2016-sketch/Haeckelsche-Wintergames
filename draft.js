@@ -5,7 +5,7 @@
 // Bonussekunden fürs Finale: richtig geraten (pro Person) + Snake-Platz 1–3.
 // Rollen aus früheren Versionen ("captain"/"player") spielen keine Rolle, nur "admin" wird ausgelassen.
 import { doc, collection, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { biathlonRank } from "./biathlon.js?v=20261019d";
+import { biathlonRank } from "./biathlon.js?v=20261019e";
 
 // Phasen in Reihenfolge
 export const PHASES = ['setup', 'snake', 'guess', 'pairs', 'biathlon', 'done', 'final'];
@@ -135,9 +135,9 @@ export const fmtClock = ms => {
 
 // Waffen im Waffenschrank (Rätsel 1); die richtige wird in admin.html gewählt
 export const WEAPONS = [
-  ['muskete', 'Muskete'], ['bajonett', 'Bajonett'], ['saebel', 'Säbel'], ['degen', 'Degen'],
-  ['pistole', 'Steinschlosspistole'], ['kanonenkugel', 'Kanonenkugel'], ['lanze', 'Lanze'], ['axt', 'Axt'],
-  ['dolch', 'Dolch'], ['armbrust', 'Armbrust'], ['bogen', 'Pfeil und Bogen'], ['hellebarde', 'Hellebarde'],
-  ['revolver', 'Revolver'], ['sturmgewehr', 'Sturmgewehr'], ['granate', 'Handgranate'], ['schlaeger', 'Baseballschläger']
+  ['muskete', 'Muskete'], ['duellpistole', 'Duellpistole'], ['saebel', 'Säbel'], ['karabiner', 'Karabiner'], ['degen', 'Degen'], ['pistole', 'Steinschlosspistole'],
+  ['jagdgewehr', 'Jagdgewehr'], ['bajonett', 'Bajonett'], ['revolver', 'Revolver'], ['kanonenkugel', 'Kanonenkugel'], ['schrotflinte', 'Schrotflinte'], ['lanze', 'Lanze'],
+  ['pistole9', 'Pistole (9 mm)'], ['axt', 'Axt'], ['scharfschuetzen', 'Scharfschützengewehr'], ['dolch', 'Dolch'], ['blunderbuss', 'Donnerbüchse'], ['armbrust', 'Armbrust'],
+  ['derringer', 'Taschenpistole'], ['bogen', 'Pfeil und Bogen'], ['sturmgewehr', 'Sturmgewehr'], ['hellebarde', 'Hellebarde'], ['granate', 'Handgranate'], ['schlaeger', 'Baseballschläger']
 ].map(([id, name]) => ({ id, name }));
 export const weaponName = id => WEAPONS.find(w => w.id === id)?.name ?? id;
