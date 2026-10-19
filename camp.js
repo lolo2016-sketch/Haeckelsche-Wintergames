@@ -3,7 +3,7 @@
 // Pfeile am Boden antippen = einen Schritt gehen, wischen = umschauen. Von der Mitte gehen 5 Wege ab, je 4 Schritte.
 // Am Ende eines Weges: die Figur "Hilf unserem Papa" und links daneben der Waffenschrank.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js';
-import { WEAPONS } from './draft.js?v=20261019b';
+import { WEAPONS } from './draft.js?v=20261019c';
 
 const STEP = 4.5;            // Abstand der Wegpunkte (m)
 const STEPS = 4;             // Schritte pro Weg
@@ -36,16 +36,40 @@ function textSprite(text, { size = 64, color = '#fff', bg = 'rgba(20,12,4,.78)',
 }
 
 // ---------- Wegpunkte ----------
+// Jeder Weg schlängelt sich zwischen Zelten hindurch: vor jedem Schritt eine Richtungsänderung (Grad, + = links).
+// Vier Wege enden am Waldrand. Der Rätselweg biegt am Ende in eine von Zelten umschlossene Lichtung ab,
+// erst dort sieht man die Figur ("Hilf unserem Papa") und die Waffenkammer.
+const TURNS = [
+  [0, 32, -38, 30],
+  [0, -34, 36, -28],
+  [0, 30, -34, 32],
+  [0, -30, 34, -36],
+  [0, 36, -30, 28]
+];
 const pathAngle = k => k / PATHS * Math.PI * 2;             // Weg 0 zeigt nach +z (Startblick)
-const dirOf = k => new THREE.Vector3(Math.sin(pathAngle(k)), 0, Math.cos(pathAngle(k)));
-const nodePos = (k, s) => dirOf(k).multiplyScalar(s * STEP);
+const dirFromHeading = h => new THREE.Vector3(Math.sin(h), 0, Math.cos(h));
+const leftOf = d => new THREE.Vector3(d.z, 0, -d.x);
+const NODES = [];      // NODES[k][s] = Position, s = 0 … STEPS (0 = Mitte)
+const HEAD = [];       // Laufrichtung des Abschnitts, der bei Knoten s ankommt
+for (let k = 0; k < PATHS; k++) {
+  let h = pathAngle(k), p = new THREE.Vector3();
+  NODES[k] = [p.clone()]; HEAD[k] = [h];
+  for (let s = 1; s <= STEPS; s++) {
+    h += TURNS[k][s - 1] * Math.PI / 180;
+    p = p.clone().add(dirFromHeading(h).multiplyScalar(STEP));
+    NODES[k].push(p); HEAD[k].push(h);
+  }
+}
+const nodePos = (k, s) => NODES[k][s].clone();
 const nodeId = (k, s) => s === 0 ? 'c' : `${k}:${s}`;
-// Rätselweg: Figur geradeaus am Ende, Waffenschrank links davon; "cab" = Standpunkt direkt vor dem Schrank
-const PD = dirOf(PUZZLE_PATH), PSIDE = new THREE.Vector3(PD.z, 0, -PD.x);    // PSIDE = links in Blickrichtung
 const END_ID = `${PUZZLE_PATH}:${STEPS}`;
 const END = nodePos(PUZZLE_PATH, STEPS);
-const FIG_POS = END.clone().add(PD.clone().multiplyScalar(6));
-const CAB_POS = END.clone().add(PD.clone().multiplyScalar(5.6)).add(PSIDE.clone().multiplyScalar(2.6));
+const END_DIR = dirFromHeading(HEAD[PUZZLE_PATH][STEPS]);
+const CLEAR_DIR = dirFromHeading(HEAD[PUZZLE_PATH][STEPS] + 82 * Math.PI / 180);   // Lichtung links um die Ecke
+const CLEAR = END.clone().add(CLEAR_DIR.clone().multiplyScalar(5.2));              // Mitte der Lichtung
+const FIG_POS = CLEAR.clone().add(CLEAR_DIR.clone().multiplyScalar(1.2));
+const PSIDE = leftOf(CLEAR_DIR);                                                    // links, wenn man in die Lichtung schaut
+const CAB_POS = FIG_POS.clone().add(PSIDE.clone().multiplyScalar(2.5)).add(CLEAR_DIR.clone().multiplyScalar(-0.4));
 const CAB_VIEW = CAB_POS.clone().add(END.clone().sub(CAB_POS).normalize().multiplyScalar(2.7));
 function neighbors(id) {
   if (id === 'c') return Array.from({ length: PATHS }, (_, k) => ({ id: nodeId(k, 1), k, s: 1 }));
@@ -57,6 +81,18 @@ function neighbors(id) {
   return res;
 }
 const posOf = id => id === 'c' ? new THREE.Vector3() : id === 'cab' ? CAB_VIEW.clone() : nodePos(...id.split(':').map(Number));
+// Abstand eines Punktes zu allen Wegen (Strecken) – damit nichts auf den Wegen steht
+const SEGS = [];
+for (let k = 0; k < PATHS; k++) for (let s = 1; s <= STEPS; s++) SEGS.push([NODES[k][s - 1], NODES[k][s]]);
+SEGS.push([END, CLEAR]);
+function distToPaths(p) {
+  let best = Infinity;
+  for (const [a, b] of SEGS) {
+    const ab = b.clone().sub(a), t = Math.max(0, Math.min(1, p.clone().sub(a).dot(ab) / ab.lengthSq()));
+    best = Math.min(best, a.clone().add(ab.multiplyScalar(t)).distanceTo(p));
+  }
+  return best;
+}
 
 // ---------- Bausteine ----------
 const M = {
@@ -239,65 +275,115 @@ export function createCamp(container, { onWeapon, onLeave } = {}) {
     const t = canvasTex(256, 256, (g, w, h) => { g.fillStyle = '#5f6b34'; g.fillRect(0, 0, w, h); for (let i = 0; i < 2500; i++) { g.fillStyle = `rgba(${60 + Math.random() * 60},${70 + Math.random() * 50},${30 + Math.random() * 20},.5)`; g.fillRect(Math.random() * w, Math.random() * h, 2, 2); } });
     t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(30, 30); return t; })() }));
   ground.rotation.x = -Math.PI / 2; scene.add(ground);
+  const forestSpots = [];
   const plaza = new THREE.Mesh(new THREE.CircleGeometry(4.2, 24), M.dirt); plaza.rotation.x = -Math.PI / 2; plaza.position.y = 0.01; scene.add(plaza);
-  for (let k = 0; k < PATHS; k++) {
-    const len = STEP * STEPS + 3;
-    const p = new THREE.Mesh(new THREE.PlaneGeometry(2.2, len), M.dirt);
-    p.rotation.x = -Math.PI / 2; p.rotation.z = -pathAngle(k) + Math.PI;
-    const c = dirOf(k).multiplyScalar(len / 2); p.position.set(c.x, 0.012, c.z); scene.add(p);
+  // Erdwege als Streifen entlang der Abschnitte (plus runde Flecken an den Knicken)
+  const strip = (a, b, w = 2.2) => {
+    const d = b.clone().sub(a), len = d.length() + 0.6;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, len), M.dirt);
+    m.rotation.order = 'YXZ'; m.rotation.y = Math.atan2(d.x, d.z); m.rotation.x = -Math.PI / 2;
+    const c = a.clone().add(b).multiplyScalar(0.5); m.position.set(c.x, 0.012, c.z); scene.add(m);
+  };
+  for (const [a, b] of SEGS) strip(a, b);
+  for (let k = 0; k < PATHS; k++) for (let s = 1; s <= STEPS; s++) {
+    const spot = new THREE.Mesh(new THREE.CircleGeometry(1.3, 14), M.dirt); spot.rotation.x = -Math.PI / 2;
+    spot.position.set(NODES[k][s].x, 0.013, NODES[k][s].z); scene.add(spot);
   }
+  const clearing = new THREE.Mesh(new THREE.CircleGeometry(3.4, 20), M.dirt); clearing.rotation.x = -Math.PI / 2;
+  clearing.position.set(CLEAR.x, 0.014, CLEAR.z); scene.add(clearing);
 
   // Mitte: Lagerfeuer und Fahnenmast
   scene.add(campfire(updaters));
   const fp = flagpole(updaters, 7); fp.position.set(2.6, 0, -2.2); scene.add(fp);
 
-  // Entlang der Wege: Zelte, Soldaten, Kram (die Wege selbst bleiben frei)
   const place = (obj, pos, faceTo) => { obj.position.copy(pos); if (faceTo) obj.rotation.y = Math.atan2(faceTo.x - pos.x, faceTo.z - pos.z); scene.add(obj); return obj; };
+  const tents = [];       // Mittelpunkte, damit sich Zelte nicht ineinander schieben
+  const freeSpot = (p, minPath, minTent) => distToPaths(p) >= minPath && p.length() > 5.2
+    && p.distanceTo(CLEAR) > 4.6 && tents.every(t => t.distanceTo(p) >= minTent);
+  const putTent = (p, faceTo, kind) => {
+    tents.push(p.clone());
+    const r = R();
+    const t = kind === 'bell' || (kind == null && r < 0.22) ? bellTent() : tent(r < 0.6 ? M.canvas : M.canvasDark);
+    t.scale.setScalar(kind === 'bell' ? 1.15 : 1.3);
+    place(t, p, faceTo);
+  };
+
+  // Zeltgassen: dicht an beiden Seiten jedes Abschnitts, damit man nicht weit sehen kann
   for (let k = 0; k < PATHS; k++) {
-    const d = dirOf(k), side = new THREE.Vector3(d.z, 0, -d.x);
     for (let s = 1; s <= STEPS; s++) {
-      const base = nodePos(k, s);
-      for (const sgn of [-1, 1]) {
-        if (k === PUZZLE_PATH && s === STEPS) continue;     // Platz für Figur und Waffenschrank
-        const openPlaza = s === 1;                           // um das Lagerfeuer herum bleibt es offen (nur Kleinkram)
-        const off = side.clone().multiplyScalar(sgn * (3.6 + R() * 0.8)).add(d.clone().multiplyScalar((R() - 0.5) * 1.5));
-        const pos = base.clone().add(off);
-        const facePos = base.clone();
-        const r = R();
-        if (!openPlaza) place(r < 0.25 ? bellTent() : tent(r < 0.6 ? M.canvas : M.canvasDark), pos, facePos);
-        // Kleinkram und Leute zwischen Zelt und Weg
-        const near = base.clone().add(side.clone().multiplyScalar(sgn * 1.9)).add(d.clone().multiplyScalar((R() - 0.5) * 2));
-        const q = R();
-        if (q < 0.3) place(soldier(updaters, R, { musket: R() < 0.5 }), near, base.clone().add(d.clone().multiplyScalar(-2)));
-        else if (q < 0.45) place(barrel(), near);
-        else if (q < 0.6) place(crate(), near);
-        else if (q < 0.72) place(musketStack(), near);
-        else if (q < 0.8) { const c = cannon(); place(c, near.clone().add(side.clone().multiplyScalar(sgn * 0.6)), near.clone().add(side.clone().multiplyScalar(sgn * 5))); }
+      const a = NODES[k][s - 1], b = NODES[k][s], d = b.clone().sub(a), len = d.length(); d.normalize();
+      const side = leftOf(d);
+      for (let u = (s === 1 ? 3.2 : 0.6); u <= len + 0.6; u += 3.1) {
+        for (const sgn of [-1, 1]) {
+          const base = a.clone().add(d.clone().multiplyScalar(u));
+          const p = base.clone().add(side.clone().multiplyScalar(sgn * (3.0 + R() * 0.4)));
+          if (freeSpot(p, 2.7, 2.7)) putTent(p, base);
+        }
+      }
+      // Kleinkram und Leute am Wegrand
+      const mid = a.clone().add(b).multiplyScalar(0.5), sgn = R() < 0.5 ? -1 : 1;
+      const near = mid.clone().add(side.clone().multiplyScalar(sgn * 1.65)).add(d.clone().multiplyScalar((R() - 0.5) * 2));
+      const q = R();
+      if (q < 0.4) place(soldier(updaters, R, { musket: R() < 0.5 }), near, mid);
+      else if (q < 0.55) place(barrel(), near);
+      else if (q < 0.7) place(crate(), near);
+      else if (q < 0.85) place(musketStack(), near);
+      else place(cannon(), near.clone().add(side.clone().multiplyScalar(sgn * 0.5)), near.clone().add(side.clone().multiplyScalar(sgn * 5)));
+    }
+    // Ende des Weges: Waldrand (außer beim Rätselweg, der biegt in die Lichtung ab)
+    const end = NODES[k][STEPS], ed = dirFromHeading(HEAD[k][STEPS]);
+    if (k !== PUZZLE_PATH) {
+      for (let i = 0; i < 9; i++) {
+        const p = end.clone().add(ed.clone().multiplyScalar(4 + (i % 3) * 1.6 + R())).add(leftOf(ed).multiplyScalar((Math.floor(i / 3) - 1) * 2.2 + (R() - 0.5)));
+        forestSpots.push([p, 0.9 + R() * 0.5]);
+      }
+    } else {
+      // geradeaus geht es nicht weiter: Zelte quer, die Lichtung liegt links um die Ecke
+      putTent(end.clone().add(ed.clone().multiplyScalar(3.4)), end, 'bell');
+      putTent(end.clone().add(ed.clone().multiplyScalar(3.0)).add(leftOf(ed).multiplyScalar(-3.0)), end);
+      // dahinter ebenfalls Wald, damit dieser Weg von weitem genauso aussieht wie die anderen
+      for (let i = 0; i < 9; i++) {
+        const p = end.clone().add(ed.clone().multiplyScalar(6.5 + (i % 3) * 1.6 + R())).add(leftOf(ed).multiplyScalar((Math.floor(i / 3) - 1.4) * 2.2));
+        if (p.distanceTo(CLEAR) > 6) forestSpots.push([p, 0.9 + R() * 0.5]);
       }
     }
-    // am Wegende ein Abschluss (außer beim Rätselweg): Zelt quer
-    if (k !== PUZZLE_PATH) place(bellTent(), nodePos(k, STEPS).add(d.clone().multiplyScalar(4.2)), nodePos(k, STEPS));
+  }
+  // Lichtung: Ring aus hohen Rundzelten, offen nur zum Weg hin
+  for (let i = 0; i < 9; i++) {
+    const ang = Math.atan2(CLEAR_DIR.x, CLEAR_DIR.z) + (i / 9) * Math.PI * 2;
+    const dir = dirFromHeading(ang);
+    if (dir.dot(CLEAR_DIR.clone().negate()) > 0.72) continue;     // Eingang zur Lichtung
+    const p = CLEAR.clone().add(dir.multiplyScalar(5.3));
+    tents.push(p.clone()); const t = bellTent(); t.scale.setScalar(1.2); place(t, p, CLEAR);
+  }
+  // Füllzelte im Rest des Lagers (zwischen den Wegen), damit es überall dicht wirkt
+  for (let i = 0; i < 260; i++) {
+    const a = R() * Math.PI * 2, r = 6 + R() * 20, p = new THREE.Vector3(Math.sin(a) * r, 0, Math.cos(a) * r);
+    if (freeSpot(p, 3.4, 3.0)) putTent(p, p.clone().add(new THREE.Vector3(R() - 0.5, 0, R() - 0.5)));
   }
   // ein paar Soldaten am Feuer
   for (let i = 0; i < 3; i++) { const a = i / 3 * Math.PI * 2 + 0.5; place(soldier(updaters, R, { musket: i === 1 }), new THREE.Vector3(Math.cos(a) * 1.6, 0, Math.sin(a) * 1.6), new THREE.Vector3()); }
-  // Wald und Hügel ringsum
+  // Wald: Waldränder an den Wegenden und ringsum
+  for (let i = 0; i < 110; i++) { const a = R() * Math.PI * 2, r = 30 + R() * 25; forestSpots.push([new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r), 0.8 + R() * 0.8]); }
   const treeGeo = new THREE.ConeGeometry(1.4, 4.5, 7), trunkGeo = new THREE.CylinderGeometry(0.18, 0.22, 1.2, 5);
-  const trees = new THREE.InstancedMesh(treeGeo, lam(0x2f4a2a), 90), trunks = new THREE.InstancedMesh(trunkGeo, M.woodDark, 90);
+  const trees = new THREE.InstancedMesh(treeGeo, lam(0x2f4a2a), forestSpots.length), trunks = new THREE.InstancedMesh(trunkGeo, M.woodDark, forestSpots.length);
   const mm = new THREE.Matrix4();
-  for (let i = 0; i < 90; i++) {
-    const a = R() * Math.PI * 2, r = 30 + R() * 25, sc = 0.8 + R() * 0.8;
-    mm.makeScale(sc, sc, sc).setPosition(Math.cos(a) * r, 2.25 * sc + 1.1 * sc, Math.sin(a) * r); trees.setMatrixAt(i, mm);
-    mm.makeScale(sc, sc, sc).setPosition(Math.cos(a) * r, 0.6 * sc, Math.sin(a) * r); trunks.setMatrixAt(i, mm);
-  }
+  forestSpots.forEach(([p, sc], i) => {
+    mm.makeScale(sc, sc, sc).setPosition(p.x, 2.25 * sc + 1.1 * sc, p.z); trees.setMatrixAt(i, mm);
+    mm.makeScale(sc, sc, sc).setPosition(p.x, 0.6 * sc, p.z); trunks.setMatrixAt(i, mm);
+  });
   scene.add(trees, trunks);
 
   // ----- Rätselweg: Figur "Hilf unserem Papa" und Waffenschrank links daneben -----
   const endPos = END, figPos = FIG_POS;
-  const figure = new THREE.Group(); place(figure, figPos, endPos);
+  const figure = new THREE.Group(); place(figure, figPos, END.clone().add(CLEAR).multiplyScalar(0.5));
   // Platzhalter, bis riddle/papa.glb hochgeladen ist
   const placeholder = soldier(updaters, R, { coat: lam(0x3b3b6b) }); placeholder.scale.setScalar(1.12); figure.add(placeholder);
   const sign = textSprite('Hilf unserem Papa', { size: 70, scale: 3.4 }); sign.position.set(0, 2.75, 0); figure.add(sign);
-  updaters.push((dt, t) => { sign.position.y = 2.75 + Math.sin(t * 1.5) * 0.05; });
+  updaters.push((dt, t) => {
+    sign.position.y = 2.75 + Math.sin(t * 1.5) * 0.05;
+    sign.visible = cur === END_ID || cur === 'cab';      // erst am letzten Schritt zu sehen
+  });
   import('https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) => {
     new GLTFLoader().load(MODEL_URL, gltf => {
       const m = gltf.scene;
@@ -381,16 +467,20 @@ export function createCamp(container, { onWeapon, onLeave } = {}) {
     if (moving) return;
     const from = posOf(cur), to = posOf(id);
     const dir = to.clone().sub(from); const travelYaw = Math.atan2(dir.x, dir.z);
-    moving = { from, to, t: 0, yaw0: yaw, yaw1: yaw + Math.atan2(Math.sin(travelYaw - yaw), Math.cos(travelYaw - yaw)), id };
+    const stepOf = x => x === 'c' ? 0 : x === 'cab' ? STEPS + 1 : Number(x.split(':')[1]);
+    moving = { from, to, t: 0, yaw0: yaw, yaw1: yaw + Math.atan2(Math.sin(travelYaw - yaw), Math.cos(travelYaw - yaw)), id, fwd: stepOf(id) > stepOf(cur) };
     arrows.visible = false;
   }
-  function arrive(id) {
+  function arrive(id, fwd) {
     cur = id; moving = null; buildArrows(); arrows.visible = true;
     // am Wegende: Blick auf Figur und Schrank; vor dem Schrank: Blick in den Schrank
-    const lookAtP = id === END_ID ? FIG_POS.clone().add(PSIDE.clone().multiplyScalar(1.5)) : id === 'cab' ? CAB_POS.clone() : null;
+    // unterwegs vorwärts: Blick schon in die nächste Gasse drehen (wie bei Street View)
+    let next = null;
+    if (fwd && id !== 'cab' && id !== END_ID) { const [k, st] = id.split(':').map(Number); if (st < STEPS) next = nodePos(k, st + 1); }
+    const lookAtP = id === END_ID ? FIG_POS.clone().add(PSIDE.clone().multiplyScalar(1.2)) : id === 'cab' ? CAB_POS.clone() : next ? next.setY(EYE) : null;
     if (lookAtP) {
       const tgt = lookAtP.sub(posOf(id)); const want = Math.atan2(tgt.x, tgt.z);
-      moving = { look: true, t: 0, yaw0: yaw, yaw1: yaw + Math.atan2(Math.sin(want - yaw), Math.cos(want - yaw)), pitch1: id === 'cab' ? 0.02 : -0.1, pitch0: pitch };
+      moving = { look: true, t: 0, yaw0: yaw, yaw1: yaw + Math.atan2(Math.sin(want - yaw), Math.cos(want - yaw)), pitch1: id === 'cab' ? 0.02 : next ? -0.17 : -0.1, pitch0: pitch };
     }
   }
 
@@ -455,7 +545,7 @@ export function createCamp(container, { onWeapon, onLeave } = {}) {
       if (moving.pitch1 != null) pitch = moving.pitch0 + (moving.pitch1 - moving.pitch0) * e;
       if (!moving.look) {
         camPos.lerpVectors(moving.from, moving.to, e); camPos.y = EYE + Math.abs(Math.sin(e * Math.PI * 3)) * 0.04;
-        if (k >= 1) arrive(moving.id);
+        if (k >= 1) arrive(moving.id, moving.fwd);
       } else if (k >= 1) moving = null;
     }
     // Pfeile leicht pulsieren
