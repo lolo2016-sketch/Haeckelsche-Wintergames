@@ -3,7 +3,7 @@
 // Pfeile am Boden antippen = einen Schritt gehen, wischen = umschauen. Von der Mitte gehen 5 Wege ab, je 4 Schritte.
 // Am Ende eines Weges: die Figur "Hilf unserem Papa" und links daneben der Waffenschrank.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js';
-import { WEAPONS } from './draft.js?v=20261019c';
+import { WEAPONS } from './draft.js?v=20261019d';
 
 const STEP = 4.5;            // Abstand der Wegpunkte (m)
 const STEPS = 4;             // Schritte pro Weg
@@ -203,15 +203,36 @@ function soldier(updaters, R, opts = {}) {
   for (const x of [-0.05, 0.05]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.018, 5, 4), eyeM); e.position.set(x, 0.02, 0.14); head.add(e); }
   const mous = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.02, 0.02), lam(0x3b2414)); mous.position.set(0, -0.05, 0.145); head.add(mous);
   // Zweispitz (Bicorne)
+  if (opts.shako) {   // britischer Tschako statt Zweispitz
+    const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.13, 0.3, 12), M.black); sh.position.y = 0.24; head.add(sh);
+    const peak = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.02, 0.12), M.black); peak.position.set(0, 0.1, 0.15); head.add(peak);
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.01), M.gold); plate.position.set(0, 0.22, 0.15); head.add(plate);
+  }
   const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.06, 16, 1, false, 0, Math.PI), M.black);
   hat.rotation.set(Math.PI / 2, opts.sideways ? 0 : Math.PI / 2, 0); hat.scale.set(1, 1, 1.2);
-  hat.position.y = 0.16; head.add(hat);
+  hat.position.y = 0.16; head.add(hat); hat.visible = !opts.shako;
   const cock = new THREE.Mesh(new THREE.CircleGeometry(0.05, 10), new THREE.MeshBasicMaterial({ map: canvasTex(32, 32, (c) => { [['#1e3a8a', 16], ['#fff', 11], ['#dc2626', 6]].forEach(([col, r]) => { c.fillStyle = col; c.beginPath(); c.arc(16, 16, r, 0, 7); c.fill(); }); }) }));
   cock.position.set(0.12, 0.22, 0.04); head.add(cock);
+  if (opts.saber) {   // Säbel in der rechten Hand, Klinge nach vorn
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.9, 0.01), M.steel);   // Klinge verlängert den Arm
+    blade.position.set(0, -1.12, 0.03); blade.rotation.x = 0.12; arms[1].add(blade);
+    const guard = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.012, 4, 10), M.gold); guard.position.set(0, -0.66, 0.02); arms[1].add(guard);
+  }
   if (opts.musket) {
     const m = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 1.5, 5), M.woodDark); m.position.set(0, -0.3, 0.1); arms[1].add(m);
   }
   const ph = R() * 10, sp = 0.6 + R() * 0.6;
+  if (opts.threaten) {   // steht drohend über jemandem: Säbelarm nach vorn, leichtes Wippen
+    if (opts.coat) cock.visible = false;
+    updaters.push((dt, t) => {
+      body.position.y = Math.sin(t * 1.6 + ph) * 0.012;
+      body.rotation.x = 0.12;
+      head.rotation.x = 0.35; head.rotation.y = Math.sin(t * 0.7) * 0.15;
+      arms[1].rotation.x = -1.15 + Math.sin(t * 2.2) * 0.06;
+      arms[0].rotation.x = 0.1;
+    });
+    return g;
+  }
   updaters.push((dt, t) => {
     body.position.y = Math.sin(t * 1.6 + ph) * 0.012;
     head.rotation.y = Math.sin(t * 0.4 * sp + ph) * 0.6;
@@ -377,8 +398,29 @@ export function createCamp(container, { onWeapon, onLeave } = {}) {
   // ----- Rätselweg: Figur "Hilf unserem Papa" und Waffenschrank links daneben -----
   const endPos = END, figPos = FIG_POS;
   const figure = new THREE.Group(); place(figure, figPos, END.clone().add(CLEAR).multiplyScalar(0.5));
-  // Platzhalter, bis riddle/papa.glb hochgeladen ist
-  const placeholder = soldier(updaters, R, { coat: lam(0x3b3b6b) }); placeholder.scale.setScalar(1.12); figure.add(placeholder);
+  // Napoleon sitzt verwundet am Boden (4 Ansichten, je nach Blickwinkel überblendet: wirkt dreidimensional)
+  const placeholder = new THREE.Group(); figure.add(placeholder);
+  const NAP_VIEWS = ['vorne', 'links', 'hinten', 'rechts'];   // gegen den Uhrzeigersinn um ihn herum
+  const napTex = NAP_VIEWS.map(v => { const t = new THREE.TextureLoader().load(`riddle/napoleon_${v}.png`); t.colorSpace = THREE.SRGBColorSpace; return t; });
+  const NAP_H = 1.5;
+  const napMk = () => { const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: napTex[0], transparent: true, depthWrite: false })); m.renderOrder = 2; return m; };
+  const napA = napMk(), napB = napMk(); napB.renderOrder = 3;
+  const napFace = new THREE.Group(); napFace.add(napA, napB); placeholder.add(napFace);
+  const sizeTo = (m, tex) => { const img = tex.image; const asp = img ? img.width / img.height : 1.2; m.scale.set(NAP_H * asp, NAP_H, 1); m.position.y = NAP_H / 2; };
+  updaters.push(() => {
+    const wp = figure.getWorldPosition(new THREE.Vector3());
+    const camYaw = Math.atan2(camera.position.x - wp.x, camera.position.z - wp.z);
+    napFace.rotation.y = camYaw - figure.rotation.y;
+    const rel = Math.atan2(Math.sin(camYaw - figure.rotation.y), Math.cos(camYaw - figure.rotation.y));
+    const u = ((rel / (Math.PI / 2)) % 4 + 4) % 4, i0 = Math.floor(u) % 4, i1 = (i0 + 1) % 4, f = u - Math.floor(u);
+    const w = Math.min(1, Math.max(0, (f - 0.35) / 0.3)), ws = w * w * (3 - 2 * w);
+    napA.material.map = napTex[i0]; napB.material.map = napTex[i1];
+    napA.material.opacity = 1 - ws; napB.material.opacity = ws;
+    sizeTo(napA, napTex[i0]); sizeTo(napB, napTex[i1]);
+  });
+  // britischer Rotrock steht mit gezogenem Säbel über ihm (aus Sicht des Ankommenden rechts von Napoleon)
+  const redcoat = soldier(updaters, R, { coat: lam(0xb4232a), shako: true, saber: true, threaten: true });
+  redcoat.position.set(1.3, 0, 0.3); redcoat.rotation.y = -Math.PI / 2 + 0.35; figure.add(redcoat);
   const sign = textSprite('Hilf unserem Papa', { size: 70, scale: 3.4 }); sign.position.set(0, 2.75, 0); figure.add(sign);
   updaters.push((dt, t) => {
     sign.position.y = 2.75 + Math.sin(t * 1.5) * 0.05;
@@ -477,7 +519,7 @@ export function createCamp(container, { onWeapon, onLeave } = {}) {
     // unterwegs vorwärts: Blick schon in die nächste Gasse drehen (wie bei Street View)
     let next = null;
     if (fwd && id !== 'cab' && id !== END_ID) { const [k, st] = id.split(':').map(Number); if (st < STEPS) next = nodePos(k, st + 1); }
-    const lookAtP = id === END_ID ? FIG_POS.clone().add(PSIDE.clone().multiplyScalar(1.2)) : id === 'cab' ? CAB_POS.clone() : next ? next.setY(EYE) : null;
+    const lookAtP = id === END_ID ? FIG_POS.clone().add(PSIDE.clone().multiplyScalar(0.6)) : id === 'cab' ? CAB_POS.clone() : next ? next.setY(EYE) : null;
     if (lookAtP) {
       const tgt = lookAtP.sub(posOf(id)); const want = Math.atan2(tgt.x, tgt.z);
       moving = { look: true, t: 0, yaw0: yaw, yaw1: yaw + Math.atan2(Math.sin(want - yaw), Math.cos(want - yaw)), pitch1: id === 'cab' ? 0.02 : next ? -0.17 : -0.1, pitch0: pitch };
