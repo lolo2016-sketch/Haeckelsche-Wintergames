@@ -2,6 +2,52 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
+<script>
+// Ladefehler sichtbar machen (z. B. fehlende oder veraltete Datei nach dem Hochladen)
+window.APP_VERSION = '20261019i';
+(function () {
+  var shown = {};
+  window.showLoadError = function (what) {
+    if (shown[what]) return; shown[what] = 1;
+    var add = function () {
+      var box = document.getElementById('loadErr');
+      if (!box) {
+        box = document.createElement('div'); box.id = 'loadErr';
+        box.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;z-index:99999;background:#7f1d1d;color:#fff;font:13px/1.4 system-ui,sans-serif;padding:10px 12px;border-radius:10px;box-shadow:0 4px 18px rgba(0,0,0,.4);max-height:40vh;overflow:auto';
+        box.innerHTML = '<b>⚠️ Ein Teil der Seite konnte nicht geladen werden</b> (Version ' + window.APP_VERSION + ')<br>Meist fehlt eine Datei auf GitHub oder sie ist noch alt. Bitte alle Dateien neu hochladen, 2 Minuten warten, Seite neu laden.<div id="loadErrList" style="margin-top:6px;font-family:ui-monospace,monospace;font-size:12px;opacity:.9"></div>';
+        document.body.appendChild(box);
+      }
+      var li = document.createElement('div'); li.textContent = '• ' + what; document.getElementById('loadErrList').appendChild(li);
+    };
+    document.body ? add() : document.addEventListener('DOMContentLoaded', add);
+  };
+  window.addEventListener('error', function (e) {
+    var t = e.target;
+    if (t && t !== window && (t.src || t.href)) {
+      if (t.tagName === 'SCRIPT' || t.tagName === 'LINK') showLoadError('Datei nicht geladen: ' + (t.src || t.href).split('/').pop());
+      return;
+    }
+    if (e.message) showLoadError(e.message + (e.filename ? ' (' + e.filename.split('/').pop() + ')' : ''));
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) {
+    var m = (e.reason && (e.reason.message || e.reason)) + '';
+    if (/import|module|export|fetch/i.test(m)) showLoadError(m);
+  });
+  // Wächter: lädt die Seite nach 12 s nicht, jede eigene Datei einzeln prüfen und das Ergebnis anzeigen
+  setTimeout(async function () {
+    if (window.APP_READY) return;
+    var src = Array.prototype.map.call(document.querySelectorAll('script[type=module]'), function (s) { return s.textContent; }).join('\n');
+    var re = /(?:from\s*|import\s*\(\s*)["'](\.\/[^"']+)["']/g, m, urls = [];
+    while ((m = re.exec(src))) if (urls.indexOf(m[1]) < 0) urls.push(m[1]);
+    var bad = 0;
+    for (var i = 0; i < urls.length; i++) {
+      try { await import(new URL(urls[i], location.href).href); }
+      catch (e) { bad++; showLoadError(urls[i].replace('./', '') + ': ' + (e && e.message || e)); }
+    }
+    if (!bad) showLoadError('Seite hängt, aber alle Dateien sind da. Bitte Seite neu laden oder Internet prüfen.');
+  }, 12000);
+})();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Admin – Haeckelsche Wintergames</title>
 <link rel="stylesheet" href="style.css">
@@ -17,10 +63,11 @@
       collection, getDocs
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261019h";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261019h";
+    import { playSnake, playReplay } from "./minigame.js?v=20261019i";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261019i";
     import { PHASES, PHASE_NAMES, phaseIndex, settings, DEFAULTS, COUNTRIES, country, isPerson, teamColor, snakeRanking,
-      guessedRight, teamBonus, teamBiathlon, revealTeams, FINAL_TEAMS, finalMembers, finalBonus, finalScoreMs, fmtClock, WEAPONS, weaponName } from "./draft.js?v=20261019h";
+      guessedRight, teamBonus, teamBiathlon, revealTeams, FINAL_TEAMS, finalMembers, finalBonus, finalScoreMs, fmtClock, WEAPONS, weaponName } from "./draft.js?v=20261019i";
+    window.APP_READY = true;   // alle Dateien geladen
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
@@ -306,7 +353,7 @@
           return `<div style="margin:6px 0"><strong>Team ${L}</strong>: ${mem.map(m => (m.finalCaptain ? '★ ' : '') + m.name).join(', ')}
             ${caps.length !== 1 ? '<span style="color:#b91c1c;font-weight:600"> ⚠️ genau einen Kapitän wählen</span>' : ''}
             <br><span style="font-size:.9rem">Vorsprung ${bonus} s · ${fin?.solved3At ? `🏁 fertig, Wertung <b>${fmtClock(sc)}</b>` : fin?.startedAt ? `⏳ gestartet ${new Date(fin.startedAt).toLocaleTimeString('de-DE')}, Zeit bisher ${fmtClock(sc)}` : 'nicht gestartet'}
-            ${fin?.startedAt ? `<br>Raum 1: ${fin.solved1At ? '✅ ' + weaponName(fin.solvedWeapon) : '…'} · Raum 2: ${fin.solved2At ? '✅' : fin.start2At ? `${(fin.riddles || []).length}/6 Rätsel, ${fin.wordTries || 0}/3 Rateversuche` : '–'} · Raum 3: ${fin.solved3At ? '✅' : fin.start3At ? `${(fin.cans || []).length} Dosen getroffen` : '–'}` : ''}
+            ${fin?.startedAt ? `<br>Raum 1: ${fin.solved1At ? '✅ ' + weaponName(fin.solvedWeapon) : '…'} · Raum 2: ${fin.solved2At ? '✅' : fin.start2At ? `${(fin.riddles || []).length}/6 Rätsel, ${fin.wordTries || 0}/5 Rateversuche` : '–'} · Raum 3: ${fin.solved3At ? '✅' : fin.start3At ? `${(fin.cans || []).length} Dosen getroffen` : '–'}` : ''}
             ${fin?.penalty ? ` · Strafe +${fin.penalty} s (${(fin.wrong || []).map(weaponName).join(', ')})` : ''}</span>
             ${fin ? `<button class="secondary resetFinal" data-team="${L}" style="padding:4px 10px">Zurücksetzen</button>` : ''}</div>`;
         }).join('')}</div>

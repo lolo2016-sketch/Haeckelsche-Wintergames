@@ -5,7 +5,7 @@
 // Bonussekunden fürs Finale: richtig geraten (pro Person) + Snake-Platz 1–3.
 // Rollen aus früheren Versionen ("captain"/"player") spielen keine Rolle, nur "admin" wird ausgelassen.
 import { doc, collection, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { biathlonRank } from "./biathlon.js?v=20261019h";
+import { biathlonRank } from "./biathlon.js?v=20261019i";
 
 // Phasen in Reihenfolge
 export const PHASES = ['setup', 'snake', 'guess', 'pairs', 'biathlon', 'done', 'final'];
@@ -147,15 +147,15 @@ export function finalScoreMs(fin, bonusS, now = Date.now()) {
 
 // ----- Raum 2: Rätselkammer -----
 export const WORD2 = 'HORCRUX';
-export const WORD2_TRIES = 3;
+export const WORD2_TRIES = 5;
 // Jedes gelöste Rätsel deckt einen Buchstaben auf (das R gleich an beiden Stellen). Reihenfolge und Fragen hier änderbar.
 export const RIDDLES = [
-  { q: 'Ich habe Städte, aber keine Häuser. Wälder, aber keine Bäume. Wasser, aber keine Fische. Was bin ich?', a: ['karte', 'landkarte', 'weltkarte', 'stadtplan', 'atlas'], letter: 'H' },
-  { q: 'Je mehr man davon wegnimmt, desto größer wird es. Was ist das?', a: ['loch', 'ein loch', 'grube', 'graben'], letter: 'O' },
-  { q: 'Es läuft und läuft, hat aber keine Beine. Es hat ein Bett, schläft aber nie. Was ist es?', a: ['fluss', 'bach', 'strom', 'ein fluss'], letter: 'R' },
-  { q: 'Ich habe vier Beine, kann aber nicht gehen. Ich habe einen Rücken, aber keinen Bauch. Was bin ich?', a: ['stuhl', 'sessel', 'ein stuhl', 'hocker', 'bank'], letter: 'C' },
-  { q: 'Es gehört dir, aber andere benutzen es viel öfter als du selbst. Was ist es?', a: ['name', 'dein name', 'mein name', 'vorname', 'nachname'], letter: 'U' },
-  { q: 'Wer es macht, der braucht es nicht. Wer es kauft, der will es nicht. Wer es braucht, der weiß es nicht. Was ist es?', a: ['sarg', 'ein sarg', 'grab', 'urne'], letter: 'X' }
+  { q: 'Ich habe Städte, aber keine Häuser. Wälder, aber keine Bäume. Wasser, aber keine Fische. Was bin ich?', a: ['karte', 'landkarte', 'weltkarte', 'stadtplan', 'atlas'], letter: 'U' },
+  { q: 'Je mehr man davon wegnimmt, desto größer wird es. Was ist das?', a: ['loch', 'ein loch', 'grube', 'graben'], letter: 'X' },
+  { q: 'Es läuft und läuft, hat aber keine Beine. Es hat ein Bett, schläft aber nie. Was ist es?', a: ['fluss', 'bach', 'strom', 'ein fluss'], letter: 'H' },
+  { q: 'Ich habe vier Beine, kann aber nicht gehen. Ich habe einen Rücken, aber keinen Bauch. Was bin ich?', a: ['stuhl', 'sessel', 'ein stuhl', 'hocker', 'bank'], letter: 'R' },
+  { q: 'Es gehört dir, aber andere benutzen es viel öfter als du selbst. Was ist es?', a: ['name', 'dein name', 'mein name', 'vorname', 'nachname'], letter: 'C' },
+  { q: 'Wer es macht, der braucht es nicht. Wer es kauft, der will es nicht. Wer es braucht, der weiß es nicht. Was ist es?', a: ['sarg', 'ein sarg', 'grab', 'urne'], letter: 'O' }
 ];
 export const normAnswer = s => String(s ?? '').trim().toLowerCase().replace(/ß/g, 'ss').replace(/[^a-zäöü ]/g, '').replace(/\s+/g, ' ');
 export const riddleRight = (i, answer) => {
@@ -163,6 +163,10 @@ export const riddleRight = (i, answer) => {
   return RIDDLES[i].a.map(x => normAnswer(x).replace(/^(der|die|das|ein|eine|einen) /, '')).includes(n);
 };
 // angezeigtes Wort: aufgedeckte Buchstaben, sonst "_"
+// Buchstaben-Kärtchen der gelösten Rätsel (gemischt, nicht nach Position im Wort); kommt ein Buchstabe
+// mehrfach im Wort vor (R in HORCRUX), gibt das Rätsel entsprechend viele Kärtchen
+export const word2Tiles = solvedIdx => RIDDLES.flatMap((r, i) => (solvedIdx || []).includes(i)
+  ? Array(WORD2.split('').filter(c => c === r.letter).length).fill(r.letter) : []);
 export const word2Shown = solvedIdx => WORD2.split('').map(ch => RIDDLES.some((r, i) => r.letter === ch && (solvedIdx || []).includes(i)) ? ch : '_');
 
 // ----- Raum 3: Schneeball auf Dosen -----

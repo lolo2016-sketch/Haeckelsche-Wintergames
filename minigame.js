@@ -1,5 +1,5 @@
 // ===== Snake – Bildschirm, Steuerung, Tutorial, Aufnahme & Wiedergabe =====
-import { createGame, step, speedFor, drawGame, loadFaces, loadHead, DIR } from './snake.js?v=20261019h';
+import { createGame, step, speedFor, drawGame, loadFaces, loadHead, DIR } from './snake.js?v=20261019i';
 
 // Fotos der Veranstalter (in den Ordner "faces" im Repo hochladen)
 export const FACE_URLS = ['faces/face1.png', 'faces/face2.png'];

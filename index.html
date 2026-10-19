@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <script>
 // Ladefehler sichtbar machen (z. B. fehlende oder veraltete Datei nach dem Hochladen)
-window.APP_VERSION = '20261019h';
+window.APP_VERSION = '20261019i';
 (function () {
   var shown = {};
   window.showLoadError = function (what) {
@@ -141,13 +141,13 @@ window.APP_VERSION = '20261019h';
       getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, addDoc, query, orderBy, limit, arrayUnion, increment
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261019h";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261019h";
-    import { createHall } from "./hall.js?v=20261019h";
+    import { playSnake, playReplay } from "./minigame.js?v=20261019i";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261019i";
+    import { createHall } from "./hall.js?v=20261019i";
     import { PHASE_NAMES, phaseIndex, settings, country, teamColor, isPerson, playedSnake, compareSnake, snakeRanking,
       playedBiathlon, teamBiathlon, bonusOf, teamBonus, guessedRight, planTeams,
       FINAL_TEAMS, PENALTY_S, finalMembers, finalCaptain, finalBonus, finalScoreMs, fmtClock, weaponName,
-      finalStage, RIDDLES, WORD2, WORD2_TRIES, riddleRight, word2Shown, normAnswer, WORD3, CANS } from "./draft.js?v=20261019h";
+      finalStage, RIDDLES, WORD2, WORD2_TRIES, riddleRight, word2Shown, word2Tiles, normAnswer, WORD3, CANS } from "./draft.js?v=20261019i";
     window.APP_READY = true;   // alle Dateien geladen
 
     const app = initializeApp(firebaseConfig);
@@ -394,7 +394,7 @@ window.APP_VERSION = '20261019h';
       // 3D, wenn möglich, sonst die einfache 2D-Halle
       let use3d = false;
       try {
-        hall3dMod ??= await import('./hall3d.js?v=20261019h');
+        hall3dMod ??= await import('./hall3d.js?v=20261019i');
         use3d = hall3dMod.webglAvailable();
       } catch (e) { use3d = false; console.error(e); window.showLoadError?.('3D-Halle: ' + (e?.message || e)); }
 
@@ -718,6 +718,7 @@ window.APP_VERSION = '20261019h';
     // Raum 1: Napoleons Lager (Waffe wählen) · Raum 2: Rätselkammer (HORCRUX) · Raum 3: Schneeballwurf (VEREIST)
     // Der Kapitän öffnet jede Tür; alle im Team folgen automatisch. Zwischen den Räumen steht die Uhr.
     let scene3d = null, sceneNo = 0, sceneMods = {}, inFinal = false, leftFinal = false, finHudTimer = null, lastStarted = null, switching = false;
+    let built2 = [];   // Raum 2: angetippte Kärtchen (Index in word2Tiles)
     let built3 = [];   // Raum 3: in dieser Reihenfolge angetippte Buchstaben (Dosen-Index)
     const myFin = () => S.finals?.[S.me.finalTeam] ?? null;
     const isCaptain = () => finalCaptain(S.me.finalTeam, S.people)?.token === S.me.token;
@@ -795,7 +796,7 @@ window.APP_VERSION = '20261019h';
       const st = finalStage(fin);
       if (sceneNo === 1) { scene3d.markWrong(fin.wrong || []); if (fin.solved1At && fin.solvedWeapon) scene3d.markSolved(fin.solvedWeapon); scene3d.setDoor2(st === 1.5); }
       if (sceneNo === 2) { scene3d.setSolved(fin.riddles || [], RIDDLES.map(r => r.letter)); scene3d.setDoor(st === 2.5); }
-      if (sceneNo === 3) scene3d.setHits(fin.cans || []);
+      if (sceneNo === 3) { scene3d.setHits(fin.cans || []); if (fin.lastThrower !== S.me.token) scene3d.setThrower?.(fin.lastThrower, fin.lastThrowAt); }
       if (st === 4 && !document.getElementById('finDone')) showFinished();
     }
     async function enterFinal() {
@@ -818,22 +819,22 @@ window.APP_VERSION = '20261019h';
     }
     async function loadScene(n) {
       switching = true;
-      scene3d?.dispose(); scene3d = null; sceneNo = n; built3 = [];
+      scene3d?.dispose(); scene3d = null; sceneNo = n; built2 = []; built3 = [];
       const box = document.getElementById('finScene'); if (!box) { switching = false; return; }
       const hint = document.getElementById('finHint');
       try {
         if (n === 1) {
-          sceneMods.c ??= await import('./camp.js?v=20261019h');
+          sceneMods.c ??= await import('./camp.js?v=20261019i');
           scene3d = sceneMods.c.createCamp(box, { onWeapon: chooseWeapon, onDoor2: () => nextDoor(2) });
           hint.textContent = '👆 Pfeile antippen = gehen · wischen = umschauen';
         } else if (n === 2) {
-          sceneMods.r2 ??= await import('./room2.js?v=20261019h');
+          sceneMods.r2 ??= await import('./room2.js?v=20261019i');
           scene3d = sceneMods.r2.createRiddleRoom(box, { onPlaque: openRiddle, onDoor: () => nextDoor(3) });
           hint.textContent = '👆 wischen = umschauen · Tafel antippen = Rätsel';
         } else {
-          sceneMods.r3 ??= await import('./room3.js?v=20261019h');
-          const mates = finalMembers(S.me.finalTeam, S.people).filter(p => p.token !== S.me.token).map(p => ({ name: p.name, photoUrl: p.photoUrl }));
-          scene3d = sceneMods.r3.createSnowRange(box, { cans: CANS, hits: myFin()?.cans || [], mates, onHit: hitCan });
+          sceneMods.r3 ??= await import('./room3.js?v=20261019i');
+          const mates = finalMembers(S.me.finalTeam, S.people).filter(p => p.token !== S.me.token).map(p => ({ token: p.token, name: p.name, photoUrl: p.photoUrl }));
+          scene3d = sceneMods.r3.createSnowRange(box, { cans: CANS, hits: myFin()?.cans || [], mates, onHit: hitCan, canThrow: canThrow3, onThrow: onThrow3 });
           hint.textContent = '👆 antippen = Schneeball werfen · wischen = zielen';
         }
       } catch (err) { switching = false; window.showLoadError?.('Raum ' + n + ': ' + err.message); alert('Der Raum konnte nicht geladen werden: ' + err.message); return leaveFinal(); }
@@ -865,9 +866,9 @@ window.APP_VERSION = '20261019h';
       const task = {
         1: `Raum 1 · <strong>Hilf unserem Papa!</strong> Findet ihn im Lager und wählt die richtige Waffe aus der Waffenkammer. ${isCaptain() ? '<br><strong>Du bist Kapitän:</strong> nur du kannst eine Waffe wählen (falsch = +' + PENALTY_S + ' s).' : `<br>Nur ${escapeHtml(cap?.name ?? 'euer Kapitän')} kann eine Waffe wählen.`}`,
         1.5: `✅ Raum 1 geschafft – die Uhr steht. Rechts neben Napoleon ist eine Tür erschienen. ${isCaptain() ? '<strong>Öffne sie</strong>, wenn alle bereit sind.' : `${escapeHtml(cap?.name ?? 'Euer Kapitän')} öffnet sie.`}`,
-        2: `Raum 2 · <strong>Die Rätselkammer.</strong> Jedes gelöste Rätsel deckt einen Buchstaben auf. Ihr könnt das Wort auch vorher raten (${WORD2_TRIES} Versuche fürs Team).`,
+        2: `Raum 2 · <strong>Die Rätselkammer.</strong> Jedes gelöste Rätsel gibt einen Buchstaben (gemischt!). Tippt sie unten in die richtige Reihenfolge und ratet das Wort (${WORD2_TRIES} Versuche fürs Team).`,
         2.5: `✅ Raum 2 geschafft – die Uhr steht. Die Tür gegenüber leuchtet. ${isCaptain() ? '<strong>Öffne sie</strong>, wenn alle bereit sind.' : `${escapeHtml(cap?.name ?? 'Euer Kapitän')} öffnet sie.`}`,
-        3: `Raum 3 · <strong>Schneeballschlacht!</strong> Trefft die Dosen – manche verbergen Buchstaben. Tippt die Buchstaben unten in der richtigen Reihenfolge an.`,
+        3: `Raum 3 · <strong>Schneeballwurf!</strong> Reihum wirft jeder einmal. Manche Dosen verbergen Buchstaben – tippt sie unten in der richtigen Reihenfolge an.<br>${turnText(fin)}`,
         4: `🏆 <strong>Geschafft!</strong>`
       }[st] ?? '';
       hud.innerHTML = `<div class="chip glass" style="font-size:1.05rem">${time}${fin.penalty ? ` <span style="color:#fca5a5">(+${fin.penalty} s Strafe)</span>` : ''}</div>
@@ -875,19 +876,26 @@ window.APP_VERSION = '20261019h';
       // Leiste unten
       if (!bar) return;
       let h = '';
+      // Kärtchen-Stil: benutzte Buchstaben bleiben stehen, sind aber durchgestrichen
+      const tile = (cls, i, ch, used) => `<button class="${cls}" data-i="${i}" ${used ? 'disabled' : ''} style="margin:0;padding:6px 12px;font:bold 1.2rem Georgia,serif;${used ? 'text-decoration:line-through;text-decoration-thickness:3px;opacity:.45' : ''}">${ch}</button>`;
+      const slot = (ch, color) => `<span style="display:inline-block;width:28px;height:36px;border-radius:6px;background:${ch ? color : 'rgba(255,255,255,.14)'};color:#fff;font:bold 1.3rem Georgia,serif;line-height:36px">${ch || ''}</span>`;
       if (sceneNo === 2) {
-        const shown = word2Shown(fin.riddles);
+        const tiles = word2Tiles(fin.riddles);
+        built2 = built2.filter(k => k < tiles.length);
         const left = WORD2_TRIES - (fin.wordTries || 0);
-        h = `<div class="glass" style="border-radius:14px;padding:8px 12px;display:flex;gap:6px;align-items:center;pointer-events:auto">
-          ${shown.map(c => `<span style="display:inline-block;width:30px;height:38px;border-radius:6px;background:${c === '_' ? 'rgba(255,255,255,.12)' : '#b8860b'};color:#fff;font:bold 1.4rem Georgia,serif;text-align:center;line-height:38px">${c === '_' ? '' : c}</span>`).join('')}
-          ${st === 2 && left > 0 ? `<button id="guessWord" style="margin:0 0 0 6px;padding:8px 12px">Raten (${left})</button>` : ''}</div>`;
+        h = `<div class="glass" style="border-radius:14px;padding:8px 10px;pointer-events:auto;text-align:center">
+          <div style="display:flex;gap:5px;justify-content:center;margin-bottom:6px">${WORD2.split('').map((_, k) => slot(built2[k] != null ? tiles[built2[k]] : '', '#b8860b')).join('')}</div>
+          <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;align-items:center">${tiles.length ? tiles.map((ch, k) => tile('l2', k, ch, built2.includes(k))).join('')
+            : '<span style="color:#cbd5e1;font-size:.85rem">Noch keine Buchstaben – löst die Rätsel!</span>'}
+            ${built2.length ? '<button id="l2clear" class="secondary" style="margin:0;padding:6px 10px">↺</button>' : ''}
+            ${st === 2 && left > 0 ? `<button id="guessWord" style="margin:0 0 0 4px;padding:6px 12px">Raten (${left})</button>` : ''}</div></div>`;
       } else if (sceneNo === 3 && st === 3) {
         const hits = (fin.cans || []).filter(i => CANS[i]);
         h = `<div class="glass" style="border-radius:14px;padding:8px 10px;pointer-events:auto;text-align:center">
           <div style="display:flex;gap:5px;justify-content:center;margin-bottom:6px">${WORD3.split('').map((_, k) => {
-            const i = built3[k]; return `<span style="display:inline-block;width:28px;height:36px;border-radius:6px;background:${i != null ? '#2563eb' : 'rgba(255,255,255,.14)'};color:#fff;font:bold 1.3rem Georgia,serif;line-height:36px">${i != null ? CANS[i] : ''}</span>`;
+            const i = built3[k]; return slot(i != null ? CANS[i] : '', '#2563eb');
           }).join('')}</div>
-          <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap">${hits.length ? hits.map(i => `<button class="l3" data-i="${i}" ${built3.includes(i) ? 'disabled' : ''} style="margin:0;padding:6px 12px;font:bold 1.2rem Georgia,serif">${CANS[i]}</button>`).join('')
+          <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap">${hits.length ? hits.map(i => tile('l3', i, CANS[i], built3.includes(i))).join('')
             : '<span style="color:#cbd5e1;font-size:.85rem">Noch keine Buchstaben – werft!</span>'}
             ${built3.length ? '<button id="l3clear" class="secondary" style="margin:0;padding:6px 10px">↺</button>' : ''}</div></div>`;
       }
@@ -895,6 +903,8 @@ window.APP_VERSION = '20261019h';
         bar.dataset.h = h; bar.innerHTML = h;
         document.getElementById('guessWord')?.addEventListener('click', guessWord2);
         bar.querySelectorAll('.l3').forEach(b => b.addEventListener('click', () => tapLetter3(Number(b.dataset.i))));
+        bar.querySelectorAll('.l2').forEach(b => b.addEventListener('click', () => { const k = Number(b.dataset.i); if (!built2.includes(k) && built2.length < WORD2.length) { built2.push(k); renderFinHud(); } }));
+        document.getElementById('l2clear')?.addEventListener('click', () => { built2 = []; renderFinHud(); });
         document.getElementById('l3clear')?.addEventListener('click', () => { built3 = []; renderFinHud(); });
       }
     }
@@ -944,11 +954,11 @@ window.APP_VERSION = '20261019h';
         if (!riddleRight(i, inp.value)) { inp.value = ''; inp.placeholder = '❌ Leider nicht – nochmal!'; inp.focus(); return; }
         bg.remove();
         const now = myFin(), solved = [...new Set([...(now.riddles || []), i])];
-        const all = RIDDLES.every((_, k) => solved.includes(k));
+        const all = RIDDLES.every((_, k) => solved.includes(k)) && (now.wordTries || 0) >= WORD2_TRIES;
         try {
           await finUpdate({ riddles: arrayUnion(i), ...(all ? { solved2At: Date.now() } : {}) }, () => ({ riddles: solved, ...(all ? { solved2At: Date.now() } : {}) }));
         } catch (err) { return alert('Speichern fehlgeschlagen: ' + err.message); }
-        toast(all ? `✅ Alle Rätsel gelöst: ${WORD2}!` : `✅ Richtig! Buchstabe ${r.letter}`);
+        toast(all ? `✅ Alle Rätsel gelöst: ${WORD2}!` : `✅ Richtig! Neuer Buchstabe: ${r.letter}`);
       };
       if (inp) { inp.focus(); inp.addEventListener('keydown', e => { if (e.key === 'Enter') check(); }); bg.querySelector('[data-a=yes]').onclick = check; }
     }
@@ -956,23 +966,70 @@ window.APP_VERSION = '20261019h';
       const fin = myFin(); if (!fin || fin.solved2At) return;
       const left = WORD2_TRIES - (fin.wordTries || 0);
       if (left <= 0) return toast('Keine Rateversuche mehr – löst die Rätsel!');
-      const bg = modal(`<h2 style="margin:0 0 6px">Lösungswort raten</h2><p style="margin:0 0 10px;color:#555">Noch ${left} Versuch${left === 1 ? '' : 'e'} für euer Team.</p>
+      const bg = modal(`<h2 style="margin:0 0 6px">Lösungswort raten</h2><p style="margin:0 0 10px;color:#555">Noch ${left} Versuch${left === 1 ? '' : 'e'} für euer Team. Fehlende Buchstaben könnt ihr selbst eintippen.</p>
         <input id="wAns" autocomplete="off" style="width:100%;font-size:16px;margin-bottom:8px;text-transform:uppercase">
         <button class="secondary" data-a="no">Abbrechen</button><button data-a="yes">Raten!</button>`);
       const inp = bg.querySelector('#wAns'); inp.focus();
+      const tiles = word2Tiles(fin.riddles); inp.value = built2.map(k => tiles[k]).join('');
       bg.querySelector('[data-a=no]').onclick = () => bg.remove();
       const go = async () => {
         const right = normAnswer(inp.value).replace(/ /g, '') === WORD2.toLowerCase();
+        // letzter Versuch daneben, aber alle Rätsel schon gelöst: Tür öffnet sich trotzdem (sonst käme man nicht weiter)
+        const stuck = !right && left === 1 && RIDDLES.every((_, k) => (myFin().riddles || []).includes(k));
         bg.remove();
+        if (stuck) {
+          try { await finUpdate({ wordTries: increment(1), solved2At: Date.now() }, f => ({ wordTries: (f.wordTries || 0) + 1, solved2At: Date.now() })); } catch (err) { return alert('Speichern fehlgeschlagen: ' + err.message); }
+          return toast(`❌ Falsch – aber alle Rätsel sind gelöst. Das Wort war ${WORD2}.`);
+        }
         try {
           await finUpdate(right ? { solved2At: Date.now() } : { wordTries: increment(1) }, f => right ? { solved2At: Date.now() } : { wordTries: (f.wordTries || 0) + 1 });
         } catch (err) { return alert('Speichern fehlgeschlagen: ' + err.message); }
-        toast(right ? `✅ Richtig: ${WORD2}!` : `❌ Falsch. Noch ${left - 1} Versuch${left - 1 === 1 ? '' : 'e'}.`);
+        if (!right) { built2 = []; renderFinHud(); }
+        toast(right ? `✅ Richtig: ${WORD2}!` : left - 1 > 0 ? `❌ Falsch. Noch ${left - 1} Versuch${left - 1 === 1 ? '' : 'e'}.` : '❌ Falsch. Keine Versuche mehr – löst alle Rätsel, dann öffnet sich die Tür.');
       };
       bg.querySelector('[data-a=yes]').onclick = go; inp.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
     }
 
     // ----- Raum 3: Dosen und Wort -----
+    // Reihum werfen: jeder einmal, dann der Nächste. Wer 15 s nicht wirft, wird übersprungen (z. B. Handy aus).
+    const TURN_MS = 15000;
+    function turnInfo(fin, now = Date.now()) {
+      const members = finalMembers(S.me.finalTeam, S.people).slice().sort((a, b) => String(a.token).localeCompare(String(b.token)));
+      if (members.length < 2) return { idx: fin.turn || 0, who: S.me, mine: true, left: 0 };
+      const base = fin.lastThrowAt || fin.start3At || now, el = Math.max(0, now - base);
+      const idx = (fin.turn || 0) + Math.floor(el / TURN_MS), who = members[idx % members.length];
+      return { idx, who, mine: who.token === S.me.token, left: Math.ceil((TURN_MS - (el % TURN_MS)) / 1000) };
+    }
+    function turnText(fin) {
+      if (finalMembers(S.me.finalTeam, S.people).length < 2) return '🎯 Du wirfst.';
+      const t = turnInfo(fin);
+      return t.mine ? `🎯 <strong>Du bist dran!</strong> (noch ${t.left} s)` : `⏳ <strong>${escapeHtml(t.who.name)}</strong> wirft gerade (noch ${t.left} s)`;
+    }
+    function canThrow3() {
+      const fin = myFin(); if (!fin || fin.solved3At) return false;
+      const t = turnInfo(fin);
+      if (!t.mine) { toast(`⏳ ${t.who.name} ist dran – danach kommst du.`, 1600); return false; }
+      return true;
+    }
+    function onThrow3() {
+      const fin = myFin(); if (!fin) return;
+      const t = turnInfo(fin), upd = { turn: t.idx + 1, lastThrowAt: Date.now(), lastThrower: S.me.token };
+      finUpdate(upd, () => upd).catch(() => {});
+    }
+    // „wer ist dran“ jede Sekunde auffrischen
+    setInterval(() => { if (inFinal && sceneNo === 3) { renderFinHud(); if (DEMO) demoMates3(); } }, 1000);
+    // Demo: die anderen aus dem Team werfen nach ein paar Sekunden selbst (manchmal mit Treffer)
+    let demoThrowAt = 0;
+    function demoMates3() {
+      const fin = myFin(); if (!fin || fin.solved3At) return;
+      const t = turnInfo(fin); if (t.mine) { demoThrowAt = 0; return; }
+      if (!demoThrowAt) { demoThrowAt = Date.now() + 2500 + Math.random() * 2000; return; }
+      if (Date.now() < demoThrowAt) return;
+      demoThrowAt = 0;
+      const free = CANS.map((_, i) => i).filter(i => !(fin.cans || []).includes(i));
+      const hit = Math.random() < 0.35 && free.length ? free[Math.floor(Math.random() * free.length)] : null;
+      finUpdate({}, f => ({ turn: t.idx + 1, lastThrowAt: Date.now(), lastThrower: t.who.token, ...(hit != null ? { cans: [...new Set([...(f.cans || []), hit])] } : {}) }));
+    }
     async function hitCan(i) {
       const fin = myFin(); if (!fin || (fin.cans || []).includes(i)) return;
       try { await finUpdate({ cans: arrayUnion(i) }, f => ({ cans: [...new Set([...(f.cans || []), i])] })); } catch (err) {}

@@ -2,7 +2,7 @@
 import {
   createLevel, createSim, step, replayRunner, draw, loadAssets, elapsedMs, target, scaleFor,
   DT, TICKS_PER_SEC, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, TYPES
-} from './biathlon-core.js?v=20261019h';
+} from './biathlon-core.js?v=20261019i';
 
 const CSS = `
 .bg-ov{position:fixed;inset:0;background:#0b1220;z-index:1000;display:flex;flex-direction:column;align-items:center;

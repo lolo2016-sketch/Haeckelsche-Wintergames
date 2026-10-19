@@ -21,7 +21,7 @@ function letterSprite(ch) {
     g.fillStyle = ch === '❄' ? '#60a5fa' : '#7c2d12'; g.font = `bold ${ch === '❄' ? 120 : 150}px Georgia, serif`;
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(ch, w / 2, h / 2 + 8);
   });
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false })); s.scale.set(0.7, 0.7, 1); return s;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false })); s.scale.set(1.5, 1.5, 1); return s;
 }
 
 // einfache Teamfigur mit Fotogesicht
@@ -41,11 +41,12 @@ function mate(photoUrl, coat) {
   });
   const arm = new THREE.Group(); arm.position.set(0.28, 1.42, 0); body.add(arm);
   const am = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.4, 4, 8), lam(coat)); am.position.y = -0.25; arm.add(am);
-  const arm2 = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.4, 4, 8), lam(coat)); arm2.position.set(-0.28, 1.17, 0); body.add(arm2);
-  return { g, body, arm };
+  const arm2 = new THREE.Group(); arm2.position.set(-0.28, 1.42, 0); body.add(arm2);
+  const am2 = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.4, 4, 8), lam(coat)); am2.position.y = -0.25; arm2.add(am2);
+  return { g, body, arm, arm2 };
 }
 
-export function createSnowRange(container, { cans = [], hits = [], mates = [], onHit } = {}) {
+export function createSnowRange(container, { cans = [], hits = [], mates = [], onHit, canThrow, onThrow } = {}) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -72,19 +73,19 @@ export function createSnowRange(container, { cans = [], hits = [], mates = [], o
   }
   const tg = new THREE.ConeGeometry(1.2, 4, 7), tm = lam(0x1f5135), sm = lam(0xf8fbff);
   for (let i = 0; i < 60; i++) {
-    const x = (R() - 0.5) * 120, z = -20 - R() * 60; if (Math.abs(x) < 6 && z > -25) continue;
+    const x = (R() - 0.5) * 120, z = -20 - R() * 60; if (Math.abs(x) < 9 && z > -30) continue;
     const t = new THREE.Mesh(tg, tm); const s = 0.7 + R() * 0.9; t.scale.setScalar(s); t.position.set(x, 2 * s, z); scene.add(t);
     const cap = new THREE.Mesh(tg, sm); cap.scale.setScalar(s * 0.55); cap.position.set(x, 3.1 * s, z); scene.add(cap);
   }
   // Schneemann am Rand
   [[0.6, 0.6], [0.45, 1.45], [0.3, 2.1]].forEach(([r, y]) => { const b = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), sm); b.position.set(-4.5, y, -7); scene.add(b); });
 
-  // Brett mit Dosen
-  const CAN_Z = -4.6, SP = 0.56, CAM_Z = 3.4;
-  const plank = new THREE.Mesh(new THREE.BoxGeometry(cans.length * SP + 0.8, 0.12, 0.6), lam(0x8b5a2b)); plank.position.set(0, 1.0, CAN_Z); scene.add(plank);
-  for (const x of [-(cans.length * SP) / 2, 0, (cans.length * SP) / 2]) { const c = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.94, 0.6), lam(0x6b4423)); c.position.set(x, 0.47, CAN_Z); scene.add(c); }
+  // Brett mit Dosen: 24 m entfernt (dreimal so weit wie früher); Dosen dafür etwas größer, damit man sie am Handy noch trifft
+  const CAM_Z = 3.4, DIST = 24, CAN_Z = CAM_Z - DIST, SP = 0.8;
+  const plank = new THREE.Mesh(new THREE.BoxGeometry(cans.length * SP + 0.8, 0.12, 0.8), lam(0x8b5a2b)); plank.position.set(0, 1.0, CAN_Z); scene.add(plank);
+  for (const x of [-(cans.length * SP) / 2, 0, (cans.length * SP) / 2]) { const c = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.94, 0.7), lam(0x6b4423)); c.position.set(x, 0.47, CAN_Z); scene.add(c); }
   const canCols = [0xdc2626, 0x2563eb, 0x16a34a, 0xf59e0b, 0x9ca3af];
-  const CAN_R = 0.16, CAN_HH = 0.19;
+  const CAN_R = 0.24, CAN_HH = 0.28;
   const canGeo = new THREE.CylinderGeometry(CAN_R, CAN_R, CAN_HH * 2, 16);
   const CAN_Y = 1.06 + CAN_HH;
   const canObjs = cans.map((ch, i) => {
@@ -98,21 +99,31 @@ export function createSnowRange(container, { cans = [], hits = [], mates = [], o
     c.down = true;
     c.vel = fromHere ? new THREE.Vector3((impact?.x ?? 0) * 0.5 + (Math.random() - 0.5), 2.2, -2.5) : new THREE.Vector3((Math.random() - 0.5), 1.8, -2);
     c.spin = (Math.random() - 0.5) * 12;
-    c.sprite = letterSprite(c.ch || '❄'); c.sprite.position.set(c.x, CAN_Y + 0.1, CAN_Z + 0.2); c.sprite.userData.rise = 0; scene.add(c.sprite);
+    c.sprite = letterSprite(c.ch || '❄'); c.sprite.position.set(c.x, CAN_Y + 0.1, CAN_Z + 0.3); c.sprite.userData.rise = 0; scene.add(c.sprite);
+    cheer = Math.max(cheer, 2.2);
   }
-  hits.forEach(i => knock(i, false));
+  let cheer = 0;
+  hits.forEach(i => knock(i, false)); cheer = 0;
 
-  // Mitspieler links und rechts
+  // Mitspieler links und rechts (man sieht sie von hinten); sie werfen, wenn sie dran sind
   const mateObjs = mates.slice(0, 3).map((m, i) => {
     const o = mate(m.photoUrl, [0x0f766e, 0x7c3aed, 0xb45309][i]);
-    const x = [-1.75, 1.75, -2.8][i];   // stehen vor einem, etwas seitlich (man sieht sie von hinten)
-    o.g.position.set(x, 0, i === 2 ? -0.4 : -1.1); o.g.rotation.y = Math.PI + (x > 0 ? -0.1 : 0.1);
-    scene.add(o.g); return { ...o, next: 2 + R() * 4, t: 0 };
+    const [x, z] = [[-2.0, -5.6], [2.0, -5.6], [-2.6, -8.6]][i];   // seitlich neben der Wurfbahn, verdecken die Dosen nicht
+    o.g.position.set(x, 0, z); o.g.rotation.y = Math.PI + (x > 0 ? -0.1 : 0.1);
+    scene.add(o.g); return { ...o, token: m.token, t: 0 };
   });
+  // die beiden Organisatoren (face1/face2) stehen links und rechts an der Bahn und feuern an
+  const fans = [[-4.9, 1], [4.9, 2]].map(([x, k]) => {
+    const o = mate(`faces/face${k}.png`, k === 1 ? 0x111827 : 0x7f1d1d);
+    o.g.scale.setScalar(1.3); o.g.position.set(x, 0, CAN_Z + 5); o.g.rotation.y = x < 0 ? 0.45 : -0.45;   // schauen zum Werfer
+    scene.add(o.g); return { ...o, ph: k * 1.7 };
+  });
+  let lastThrowSeen = 0;
 
   // Schneebälle
   const balls = [];
-  const ballGeo = new THREE.SphereGeometry(0.09, 10, 8), ballMat = lam(0xffffff);
+  const BALL_R = 0.11;
+  const ballGeo = new THREE.SphereGeometry(BALL_R, 10, 8), ballMat = lam(0xffffff);
   const G = 9.8;
   function throwAt(target, origin) {
     const T = 0.6 + origin.distanceTo(target) * 0.02;
@@ -145,20 +156,22 @@ export function createSnowRange(container, { cans = [], hits = [], mates = [], o
   let cooldown = 0;
   function tap(e) {
     if (cooldown > 0) return;
+    if (canThrow && !canThrow()) return;          // nicht dran: index.html zeigt, wer wirft
     const r = el.getBoundingClientRect();
     ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
     // Zielpunkt: Schnittpunkt mit der Ebene der Dosen (oder in die Ferne)
     const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -CAN_Z);
     let tgt = ray.ray.intersectPlane(plane, new THREE.Vector3());
-    if (!tgt || tgt.z > -1) tgt = ray.ray.at(15, new THREE.Vector3());
+    if (!tgt || tgt.z > -1) tgt = ray.ray.at(DIST + 6, new THREE.Vector3());
     const origin = camera.position.clone().add(new THREE.Vector3(0.25, -0.2, -0.3));
     throwAt(tgt, origin);
-    cooldown = 0.45;
+    onThrow?.();
+    cooldown = 1.2;
   }
 
   function resize() {
     const w = container.clientWidth || 360, h = container.clientHeight || 640;
-    renderer.setSize(w, h, false); camera.aspect = w / h; camera.fov = w / h < 0.8 ? 70 : 55; camera.updateProjectionMatrix();
+    renderer.setSize(w, h, false); camera.aspect = w / h; camera.fov = w / h < 0.8 ? 60 : 46; camera.updateProjectionMatrix();
   }
   const ro = new ResizeObserver(resize); ro.observe(container); resize();
   const clock = new THREE.Clock(); let raf = 0, time = 0;
@@ -168,17 +181,21 @@ export function createSnowRange(container, { cans = [], hits = [], mates = [], o
     // Bälle fliegen
     for (let k = balls.length - 1; k >= 0; k--) {
       const b = balls[k]; b.life -= dt;
+      const prev = b.m.position.clone();
       b.v.y -= G * dt; b.m.position.addScaledVector(b.v, dt);
       const p = b.m.position;
       let done = p.y < 0.05 || b.life <= 0;
-      if (!done && Math.abs(p.z - CAN_Z) < 0.2) {
+      // schnelle Bälle: prüfen, ob die Flugbahn in diesem Bild die Dosenreihe gekreuzt hat
+      if (!done && prev.z > CAN_Z && p.z <= CAN_Z) {
+        const q = prev.clone().lerp(p, (prev.z - CAN_Z) / (prev.z - p.z));
         for (let i = 0; i < canObjs.length; i++) {
           const c = canObjs[i]; if (c.down) continue;
-          if (Math.abs(p.x - c.x) < CAN_R + 0.09 && Math.abs(p.y - CAN_Y) < CAN_HH + 0.09) {
-            knock(i, true, p.clone().sub(new THREE.Vector3(c.x, CAN_Y, CAN_Z))); if (b.own) onHit?.(i); done = true; break;
+          if (Math.abs(q.x - c.x) < CAN_R + BALL_R && Math.abs(q.y - CAN_Y) < CAN_HH + BALL_R) {
+            knock(i, true, q.clone().sub(new THREE.Vector3(c.x, CAN_Y, CAN_Z))); if (b.own) onHit?.(i); done = true; break;
           }
         }
-        if (!done && Math.abs(p.y - 1.0) < 0.1 && Math.abs(p.x) < (cans.length * SP) / 2 + 0.4) done = true;   // Brett getroffen
+        if (!done && q.y < 1.1 && q.y > 0.9 && Math.abs(q.x) < (cans.length * SP) / 2 + 0.4) done = true;   // Brett getroffen
+        if (done) p.copy(q);
       }
       if (done) { splat(p); scene.remove(b.m); balls.splice(k, 1); }
     }
@@ -194,18 +211,23 @@ export function createSnowRange(container, { cans = [], hits = [], mates = [], o
       }
       if (c.sprite) {
         c.sprite.userData.rise = Math.min(1, c.sprite.userData.rise + dt * 1.2);
-        c.sprite.position.y = CAN_Y + 0.15 + c.sprite.userData.rise * 0.45 + Math.sin(time * 2 + c.x) * 0.04;
+        c.sprite.position.y = CAN_Y + 0.3 + c.sprite.userData.rise * 0.9 + Math.sin(time * 2 + c.x) * 0.06;
       }
     }
-    // Mitspieler werfen ab und zu (nur Bewegung)
+    // Mitspieler: Wurfbewegung, wenn sie gerade geworfen haben
     for (const m of mateObjs) {
-      m.next -= dt;
-      if (m.next < 0) { m.t = 0.6; m.next = 3 + R() * 5; }
       if (m.t > 0) { m.t -= dt; m.arm.rotation.x = -Math.sin((0.6 - m.t) / 0.6 * Math.PI) * 2.4; } else m.arm.rotation.x = 0;
       m.body.position.y = Math.sin(time * 1.5 + m.g.position.x) * 0.01;
     }
+    // Fans hüpfen und winken, nach einem Treffer noch wilder
+    cheer = Math.max(0, cheer - dt);
+    for (const f of fans) {
+      const k = 1 + Math.min(1, cheer) * 1.2, w = time * (5 + k * 2) + f.ph;
+      f.body.position.y = Math.abs(Math.sin(w * 0.5)) * 0.12 * k;
+      f.arm.rotation.z = 2.5 + Math.sin(w) * 0.35 * k; f.arm2.rotation.z = -2.5 - Math.sin(w + 1.3) * 0.35 * k;
+    }
     camera.position.set(0, 1.7, CAM_Z);
-    camera.lookAt(Math.sin(yaw) * Math.cos(pitch) * 10, 1.7 + Math.sin(pitch) * 10 - 0.75, CAM_Z - Math.cos(yaw) * Math.cos(pitch) * 10);
+    camera.lookAt(Math.sin(yaw) * Math.cos(pitch) * DIST, 1.7 + Math.sin(pitch) * DIST - 1.3, CAM_Z - Math.cos(yaw) * Math.cos(pitch) * DIST);
     renderer.render(scene, camera);
   }
   loop();
@@ -213,6 +235,12 @@ export function createSnowRange(container, { cans = [], hits = [], mates = [], o
   return {
     // Treffer anderer Mitspieler (aus Firebase) nachziehen
     setHits(list) { (list || []).forEach(i => knock(i, false)); },
+    // ein anderer aus dem Team hat geworfen: seine Figur macht die Wurfbewegung
+    setThrower(tok, at) {
+      if (!at || at <= lastThrowSeen) return; const first = !lastThrowSeen; lastThrowSeen = at;
+      if (first && Date.now() - at > 3000) return;
+      const m = mateObjs.find(o => o.token === tok); if (m) m.t = 0.6;
+    },
     dispose() { cancelAnimationFrame(raf); ro.disconnect(); renderer.dispose(); el.remove(); }
   };
 }
