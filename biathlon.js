@@ -2,7 +2,7 @@
 import {
   createLevel, createSim, step, replayRunner, draw, loadAssets, elapsedMs, target, scaleFor,
   DT, TICKS_PER_SEC, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, TYPES
-} from './biathlon-core.js?v=20261018e';
+} from './biathlon-core.js?v=20261019';
 
 const CSS = `
 .bg-ov{position:fixed;inset:0;background:#0b1220;z-index:1000;display:flex;flex-direction:column;align-items:center;
@@ -59,12 +59,13 @@ function setupCanvas(canvas, wrap) {
 const TUTORIAL_PAGES = [
   { t: 'Biathlon-Sprint ⛷️', h: `<p><b>◀ ▶</b> fahren, <b>▲</b> springen, <b>▼</b> hinlegen – du rutschst dabei weiter und kannst gleichzeitig fahren.</p><p>Auf Schnee gleitest du weiter, wenn du loslässt. Gegenrichtung = bremsen.</p>` },
   { t: 'Hindernisse', h: `<p>Berührst du ein Hindernis, <b>stürzt</b> du und brauchst <b>2 Sekunden</b> zum Aufstehen.</p><p>Im Training gibt es Schneehaufen und Hürden. Im echten Lauf warten noch andere Hindernisse, die du selbst herausfinden musst.</p>` },
-  { t: 'Wertung', h: `<p>Überwinde alle Hindernisse bis ins Ziel. <b>Gewertet wird deine Zeit</b> – je schneller, desto weiter oben im Leaderboard und desto früher darfst du wählen.</p>` },
-  { t: 'Training', h: `<p>Übe so oft du willst, danach startest du deinen <b>einen echten Versuch</b>.</p>` }
+  { t: 'Wertung', h: `<p>Überwinde alle Hindernisse bis ins Ziel. <b>Gewertet wird deine beste Zeit</b>. Im Team werden die besten Zeiten von euch beiden zusammengezählt.</p>` },
+  { t: 'Training', h: `<p>Übe so oft du willst. Danach hast du eine begrenzte Zahl <b>echter Versuche</b>, dein bester zählt.</p>` }
 ];
 
 // ---------- Spielen ----------
-export function playBiathlon({ onFinish, onClose, testMode = false, photoUrl = null } = {}) {
+// attempts: Anzahl echter Versuche, best: bisher bestes Ergebnis, skipTutorial: direkt ins Menü
+export function playBiathlon({ onFinish, onClose, testMode = false, photoUrl = null, attempts = 1, best = null, skipTutorial = false } = {}) {
   injectCss();
   const assets = loadAssets(photoUrl);
   const ov = document.createElement('div');
@@ -96,6 +97,7 @@ export function playBiathlon({ onFinish, onClose, testMode = false, photoUrl = n
 
   // ----- Spielschleife mit festem Zeitschritt -----
   let sim = null, level = null, running = false, recording = null, official = false;
+  let left = attempts, bestRes = best;
   let cam = 0, camOff = 0, acc = 0, lastT = 0, raf = 0, clockS = 0;
   function frame(t) {
     raf = requestAnimationFrame(frame);
@@ -146,6 +148,8 @@ export function playBiathlon({ onFinish, onClose, testMode = false, photoUrl = n
 
   // ----- Echter Versuch: "Ready Player One" -----
   function readyPlayerOne() {
+    if (left <= 0) return menu();
+    left--;
     official = true; modeEl.textContent = 'ECHTER VERSUCH';
     newRun('main'); mask = 0;
     recording = { level: 'main', inputs: [], last: -1 };
@@ -162,23 +166,34 @@ export function playBiathlon({ onFinish, onClose, testMode = false, photoUrl = n
     next();
   }
 
+  // Menü zwischen den Läufen
+  function menu(head = '') {
+    modeEl.textContent = '';
+    const canPlay = left > 0;
+    show(`${head || '<h2>Biathlon-Sprint ⛷️</h2>'}
+      ${bestRes?.played ? `<p>Deine beste Zeit: <b>${bestRes.finished ? fmtTime(bestRes.timeMs) : 'nicht im Ziel'}</b></p>` : ''}
+      <p>${canPlay ? `Du hast noch <b>${left}</b> echte${left === 1 ? 'n' : ''} Versuch${left === 1 ? '' : 'e'}.` : 'Du hast keine echten Versuche mehr.'}</p>
+      <div class="bg-row">${canPlay ? '<button class="bg-btn" data-a="go">Echter Versuch</button>' : ''}
+      <button class="bg-btn sec" data-a="again">Training</button><button class="bg-btn sec" data-a="tut">Tutorial</button>
+      <button class="bg-btn sec" data-a="close">Fertig</button></div>`);
+    msg.querySelector('[data-a=go]')?.addEventListener('click', () => {
+      show(`<h2>Bereit?</h2><p>Dieser Lauf zählt und wird aufgezeichnet. Danach hast du noch ${left - 1} weitere.</p>
+        <div class="bg-row"><button class="bg-btn sec" data-a="no">Zurück</button><button class="bg-btn" data-a="yes">Los!</button></div>`);
+      msg.querySelector('[data-a=no]').onclick = () => menu();
+      msg.querySelector('[data-a=yes]').onclick = readyPlayerOne;
+    });
+    msg.querySelector('[data-a=again]').onclick = practice;
+    msg.querySelector('[data-a=tut]').onclick = () => { page = 0; newRun('tutorial'); tutorial(); };
+    msg.querySelector('[data-a=close]').onclick = close;
+  }
+
   function finish() {
     const s = sim;
     if (!official) {
-      show(`<h2>${s.dnf ? 'Zeit abgelaufen' : 'Training geschafft! 🎉'}</h2>
-        <p>Zeit: <b>${fmtTime(elapsedMs(s))}</b> · Stürze: ${s.falls}</p>
-        <p>Dein echter Versuch zählt für die Wahlreihenfolge – du hast nur <b>einen</b>.</p>
-        <div class="bg-row"><button class="bg-btn sec" data-a="again">Nochmal üben</button>
-        <button class="bg-btn" data-a="go">Echten Versuch starten</button></div>`);
-      msg.querySelector('[data-a=again]').onclick = practice;
-      msg.querySelector('[data-a=go]').onclick = () => {
-        show(`<h2>Bereit?</h2><p>Nur dieser eine Versuch zählt. Er wird aufgezeichnet und alle können ihn im Leaderboard ansehen.</p>
-          <div class="bg-row"><button class="bg-btn sec" data-a="no">Doch noch üben</button><button class="bg-btn" data-a="yes">Los!</button></div>`);
-        msg.querySelector('[data-a=no]').onclick = practice;
-        msg.querySelector('[data-a=yes]').onclick = readyPlayerOne;
-      };
-      return;
+      return menu(`<h2>${s.dnf ? 'Zeit abgelaufen' : 'Training geschafft! 🎉'}</h2>
+        <p>Zeit: <b>${fmtTime(elapsedMs(s))}</b> · Stürze: ${s.falls} (zählt nicht)</p>`);
     }
+    official = false;
     const result = {
       played: true, finished: !s.dnf, timeMs: elapsedMs(s), score: s.score, target: target(s),
       route: s.route < 0 ? 'rueck' : 'vor', falls: s.falls, penaltyMs: s.penaltyMs,
@@ -188,10 +203,10 @@ export function playBiathlon({ onFinish, onClose, testMode = false, photoUrl = n
       <p>${s.score}/${result.target} Hindernisse · Stürze: ${s.falls}${s.penaltyMs ? ` · Strafe +${s.penaltyMs / 1000} s` : ''}${result.route === 'rueck' ? '<br>↩️ Geheime Rückwärtsstrecke gefunden!' : ''}</p>`;
     show(`<h2>${s.dnf ? 'Nicht im Ziel' : 'Im Ziel! 🏁'}</h2>${summary}<p>Wird gespeichert …</p>`);
     Promise.resolve(onFinish?.(result)).then(() => {
-      show(`<h2>${testMode ? 'Test beendet' : 'Gespeichert!'}</h2>${summary}
-        <p>${testMode ? 'Testmodus: nichts wurde gespeichert.' : 'Dein Lauf ist jetzt im Leaderboard.'}</p>
-        <button class="bg-btn" data-a="close">Fertig</button>`);
-      msg.querySelector('[data-a=close]').onclick = close;
+      const record = !bestRes?.played || biathlonRank(result) < biathlonRank(bestRes);
+      if (record) bestRes = result;
+      menu(`<h2>${s.dnf ? 'Nicht im Ziel' : 'Im Ziel! 🏁'}</h2>${summary}
+        <p>${testMode ? 'Testmodus: nichts wurde gespeichert.' : record ? '🎉 Neue Bestzeit, ist jetzt im Leaderboard!' : 'Gespeichert. Deine Bestzeit bleibt im Leaderboard.'}</p>`);
     }).catch(err => show(`<h2>Fehler beim Speichern</h2><p>${err.message}</p><p>Bitte Seite NICHT schließen und dem Organisator Bescheid geben. Zeit: ${fmtTime(result.timeMs)}</p>`));
   }
 
@@ -204,7 +219,7 @@ export function playBiathlon({ onFinish, onClose, testMode = false, photoUrl = n
   }
 
   newRun('tutorial');
-  tutorial();
+  if (skipTutorial) menu(); else tutorial();
 }
 
 // ---------- Wiedergabe fürs Leaderboard ----------

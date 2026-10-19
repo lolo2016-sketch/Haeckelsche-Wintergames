@@ -1,11 +1,46 @@
-// ===== Teamwahl ohne Kapitäne =====
-// Alle spielen das Minispiel. Die Besten (Standard: Top 7) gründen je ein Team und wählen nacheinander
-// eine Person dazu. Wer danach noch ohne Team ist, wird zufällig zu Zweierteams gepaart.
-// Rollen aus früheren Versionen ("captain"/"player") spielen keine Rolle mehr, nur "admin" wird ausgelassen.
+// ===== Ablauf der Wintergames =====
+// Runde 1: Alle spielen Snake (beliebig viele Versuche, der beste zählt). Danach rät jede Person, wer dieselbe
+//          (geheime) Nationalflagge hat. Auflösung: Personen mit gleicher Flagge bilden ein Team.
+// Runde 2: Biathlon, jede Person hat ein paar echte Versuche; die Bestzeiten im Team werden addiert.
+// Bonussekunden fürs Finale: richtig geraten (pro Person) + Snake-Platz 1–3.
+// Rollen aus früheren Versionen ("captain"/"player") spielen keine Rolle, nur "admin" wird ausgelassen.
 import { doc, collection, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { biathlonRank } from "./biathlon.js?v=20261018e";
+import { biathlonRank } from "./biathlon.js?v=20261019";
 
-export const DEFAULT_FOUNDERS = 7;
+// Phasen in Reihenfolge
+export const PHASES = ['setup', 'snake', 'guess', 'pairs', 'biathlon', 'done'];
+export const PHASE_NAMES = {
+  setup: 'Vorbereitung', snake: 'Runde 1: Snake', guess: 'Runde 1: Raten', pairs: 'Zweierteams stehen',
+  biathlon: 'Runde 2: Biathlon', done: 'Biathlon beendet'
+};
+export const phaseIndex = ph => Math.max(0, PHASES.indexOf(ph === 'minigame' ? 'snake' : ph === 'draft' ? 'guess' : ph));
+
+// Standardwerte (in admin.html änderbar)
+export const DEFAULTS = { guessBonus: 4, snakeBonus: [6, 4, 2], biathlonAttempts: 3 };
+export const settings = state => ({
+  guessBonus: Number(state.guessBonus ?? DEFAULTS.guessBonus),
+  snakeBonus: Array.isArray(state.snakeBonus) ? state.snakeBonus.map(Number) : DEFAULTS.snakeBonus,
+  biathlonAttempts: Number(state.biathlonAttempts ?? DEFAULTS.biathlonAttempts)
+});
+
+// Nationalflaggen
+export const COUNTRIES = [
+  ['de', 'Deutschland', '🇩🇪'], ['at', 'Österreich', '🇦🇹'], ['ch', 'Schweiz', '🇨🇭'], ['it', 'Italien', '🇮🇹'],
+  ['fr', 'Frankreich', '🇫🇷'], ['es', 'Spanien', '🇪🇸'], ['pt', 'Portugal', '🇵🇹'], ['nl', 'Niederlande', '🇳🇱'],
+  ['be', 'Belgien', '🇧🇪'], ['gb', 'Großbritannien', '🇬🇧'], ['ie', 'Irland', '🇮🇪'], ['se', 'Schweden', '🇸🇪'],
+  ['no', 'Norwegen', '🇳🇴'], ['fi', 'Finnland', '🇫🇮'], ['dk', 'Dänemark', '🇩🇰'], ['is', 'Island', '🇮🇸'],
+  ['pl', 'Polen', '🇵🇱'], ['cz', 'Tschechien', '🇨🇿'], ['hu', 'Ungarn', '🇭🇺'], ['gr', 'Griechenland', '🇬🇷'],
+  ['hr', 'Kroatien', '🇭🇷'], ['tr', 'Türkei', '🇹🇷'], ['ua', 'Ukraine', '🇺🇦'], ['us', 'USA', '🇺🇸'],
+  ['ca', 'Kanada', '🇨🇦'], ['mx', 'Mexiko', '🇲🇽'], ['br', 'Brasilien', '🇧🇷'], ['ar', 'Argentinien', '🇦🇷'],
+  ['jm', 'Jamaika', '🇯🇲'], ['jp', 'Japan', '🇯🇵'], ['cn', 'China', '🇨🇳'], ['kr', 'Südkorea', '🇰🇷'],
+  ['in', 'Indien', '🇮🇳'], ['th', 'Thailand', '🇹🇭'], ['au', 'Australien', '🇦🇺'], ['nz', 'Neuseeland', '🇳🇿'],
+  ['za', 'Südafrika', '🇿🇦'], ['eg', 'Ägypten', '🇪🇬'], ['ke', 'Kenia', '🇰🇪'], ['ma', 'Marokko', '🇲🇦']
+];
+export const country = code => {
+  const c = COUNTRIES.find(x => x[0] === code);
+  return c ? { code, name: c[1], emoji: c[2] } : null;
+};
+
 // Teamfarben (Reihenfolge = Reihenfolge der Teams)
 export const TEAM_COLORS = ['#dc2626', '#2563eb', '#16a34a', '#facc15', '#9333ea', '#06b6d4', '#ec4899',
   '#f97316', '#84cc16', '#78350f', '#1e293b', '#14b8a6', '#f472b6', '#a3e635'];
@@ -13,98 +48,65 @@ export const teamColor = i => TEAM_COLORS[((i % TEAM_COLORS.length) + TEAM_COLOR
 
 export const isPerson = p => p && p.role !== 'admin';
 
-// ----- Ranking -----
-export function playedGame(game, p) {
-  return game === 'biathlon' ? !!p.biathlon?.played : !!p.minigamePlayed;
+// ----- Snake: beste Leistung pro Person -----
+export const playedSnake = p => !!p.minigamePlayed;
+export function compareSnake(a, b) {
+  return ((b.minigameScore ?? -1) - (a.minigameScore ?? -1)) || ((a.minigameAt ?? 9e15) - (b.minigameAt ?? 9e15))
+    || String(a.name).localeCompare(String(b.name), 'de');
 }
-// kleiner = besser
-function rankKey(game, p) {
-  if (game === 'biathlon') return [biathlonRank(p.biathlon), 0];
-  return p.minigamePlayed ? [-(p.minigameScore ?? 0), p.minigameAt ?? 9e15] : [Infinity, 0];
-}
-export function compareRank(game) {
-  return (a, b) => {
-    const ka = rankKey(game, a), kb = rankKey(game, b);
-    return (ka[0] - kb[0]) || (ka[1] - kb[1]) || String(a.name).localeCompare(String(b.name), 'de');
-  };
-}
-export function ranked(game, people) {
-  return people.filter(p => playedGame(game, p)).sort(compareRank(game));
-}
-// Wie viele dürfen wählen? Höchstens die Hälfte aller Personen (sonst bleibt niemand zum Wählen übrig)
-export function founderCount(state, people, game) {
-  const want = Number(state.founders) || DEFAULT_FOUNDERS;
-  return Math.max(0, Math.min(want, Math.floor(people.length / 2), ranked(game, people).length));
+export const snakeRanking = people => people.filter(playedSnake).sort(compareSnake);
+
+// ----- Biathlon: Bestzeit pro Person, Summe pro Team -----
+export const playedBiathlon = p => !!p.biathlon?.played;
+export const compareBiathlon = (a, b) => biathlonRank(a.biathlon) - biathlonRank(b.biathlon) || String(a.name).localeCompare(String(b.name), 'de');
+// Team-Zeit: Summe der Bestzeiten; nur vollständig, wenn alle Mitglieder im Ziel waren
+export function teamBiathlon(team, people) {
+  const mem = people.filter(p => p.teamId === team.id);
+  const done = mem.filter(p => p.biathlon?.played && p.biathlon.finished);
+  return { members: mem, complete: mem.length > 0 && done.length === mem.length, timeMs: done.reduce((s, p) => s + p.biathlon.timeMs, 0), done: done.length };
 }
 
-// ----- Teamwahl starten (admin.html) -----
-// Löscht alte Teams, legt für jeden Gründer ein Team an und setzt die Wahlreihenfolge.
-export async function startDraft(db, people, state) {
-  const game = state.activeGame || 'snake';
-  const F = founderCount(state, people, game);
-  if (F < 1) throw new Error('Noch hat niemand das Minispiel gespielt.');
-  const founders = ranked(game, people).slice(0, F);
+// ----- Bonussekunden fürs Finale -----
+// richtig geraten: nur sichtbar/gültig nach der Auflösung (revealed = true)
+export function guessedRight(p, people) {
+  if (!p.guess || !p.flag) return false;
+  return people.find(x => x.token === p.guess)?.flag === p.flag;
+}
+export function bonusOf(p, people, state, revealed) {
+  const st = settings(state);
+  const rank = snakeRanking(people).findIndex(x => x.token === p.token);
+  const snake = rank >= 0 && rank < st.snakeBonus.length && phaseIndex(state.phase) >= phaseIndex('guess') ? st.snakeBonus[rank] : 0;
+  const guess = revealed && guessedRight(p, people) ? st.guessBonus : 0;
+  return { snake, guess, total: snake + guess };
+}
+export function teamBonus(team, people, state, revealed) {
+  return people.filter(p => p.teamId === team.id).reduce((s, p) => {
+    const b = bonusOf(p, people, state, revealed);
+    return { snake: s.snake + b.snake, guess: s.guess + b.guess, total: s.total + b.total };
+  }, { snake: 0, guess: 0, total: 0 });
+}
+
+// ----- Auflösung: gleiche Flagge = ein Team -----
+// Rein rechnerisch (auch für die Demo): Gruppen nach Flagge, Reihenfolge nach Ländername
+export function planTeams(people) {
+  const groups = {};
+  for (const p of people) groups[p.flag || '?'] ??= [], groups[p.flag || '?'].push(p);
+  return Object.entries(groups)
+    .sort(([a], [b]) => (country(a)?.name ?? 'zzz').localeCompare(country(b)?.name ?? 'zzz', 'de'))
+    .map(([flag, members], order) => {
+      const c = country(flag);
+      return { flag, order, name: c ? `${c.emoji} ${c.name}` : '❓ Ohne Flagge', members };
+    });
+}
+export async function revealTeams(db, people, state) {
   const batch = writeBatch(db);
   (await getDocs(collection(db, 'teams'))).forEach(d => batch.delete(d.ref));
-  for (const p of people) if (p.teamId || p.pickedAt) batch.update(doc(db, 'participants', p.token), { teamId: null, pickedAt: null });
   const now = Date.now();
-  const pickOrder = founders.map((f, i) => {
+  planTeams(people).forEach(t => {
     const id = 'team_' + Math.random().toString(36).slice(2, 10);
-    batch.set(doc(db, 'teams', id), { name: 'Team ' + f.name, captainToken: f.token, order: i });
-    batch.update(doc(db, 'participants', f.token), { teamId: id, pickedAt: now + i });
-    return id;
+    batch.set(doc(db, 'teams', id), { name: t.name, flag: t.flag, captainToken: null, order: t.order });
+    t.members.forEach((m, i) => batch.update(doc(db, 'participants', m.token), { teamId: id, pickedAt: now + i }));
   });
-  batch.set(doc(db, 'state', 'current'), { ...state, phase: 'draft', pickOrder, turnIndex: 0, activeGame: game });
-  await batch.commit();
-  return pickOrder;
-}
-
-// ----- Rest zufällig paaren -----
-// Rein rechnerisch (auch für die Demo): liefert neue Teams und Zuordnungen.
-// Ungerade Anzahl: die letzte Person kommt zufällig in eines der neuen Zweierteams (dann ein Dreierteam).
-export function planPairs(remaining, teamCount, rand = Math.random) {
-  const list = remaining.slice();
-  for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
-  const newTeams = [];
-  while (list.length >= 2) {
-    const a = list.shift(), b = list.shift();
-    newTeams.push({ order: teamCount + newTeams.length, members: [a, b] });
-  }
-  let extra = null;
-  if (list.length === 1) {
-    extra = list[0];
-    if (newTeams.length) newTeams[Math.floor(rand() * newTeams.length)].members.push(extra), extra = null;
-  }
-  for (const t of newTeams) t.name = t.members.map(m => m.name).join(' & ');
-  return { newTeams, extra };   // extra: einzelne Person ohne neues Team (kommt in ein bestehendes)
-}
-
-// Schreibt die Paare nach Firebase und setzt die Phase auf "done".
-// Gründer, die (z. B. bei vorzeitigem Beenden) noch niemanden gewählt haben, bekommen zuerst einen zufälligen Partner.
-export async function finishPairs(db, people, teams, state) {
-  let remaining = people.filter(p => !p.teamId);
-  const fills = [];
-  for (const t of Object.values(teams)) {
-    if (!remaining.length) break;
-    if (people.filter(p => p.teamId === t.id).length === 1) {
-      const k = Math.floor(Math.random() * remaining.length);
-      fills.push({ token: remaining[k].token, teamId: t.id });
-      remaining = remaining.filter((_, i) => i !== k);
-    }
-  }
-  const { newTeams, extra } = planPairs(remaining, Object.keys(teams).length);
-  const batch = writeBatch(db);
-  const now = Date.now();
-  newTeams.forEach((t, k) => {
-    const id = 'team_' + Math.random().toString(36).slice(2, 10);
-    batch.set(doc(db, 'teams', id), { name: t.name, captainToken: null, order: t.order, random: true });
-    t.members.forEach((m, i) => batch.update(doc(db, 'participants', m.token), { teamId: id, pickedAt: now + k * 10 + i }));
-  });
-  if (extra) {
-    const ids = Object.keys(teams);
-    if (ids.length) batch.update(doc(db, 'participants', extra.token), { teamId: ids[Math.floor(Math.random() * ids.length)], pickedAt: now + 9999 });
-  }
-  fills.forEach((f, i) => batch.update(doc(db, 'participants', f.token), { teamId: f.teamId, pickedAt: now - 1000 + i }));
-  batch.update(doc(db, 'state', 'current'), { phase: 'done' });
+  batch.set(doc(db, 'state', 'current'), { ...state, phase: 'pairs' });
   await batch.commit();
 }

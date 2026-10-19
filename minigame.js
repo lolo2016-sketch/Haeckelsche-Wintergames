@@ -1,5 +1,5 @@
 // ===== Snake – Bildschirm, Steuerung, Tutorial, Aufnahme & Wiedergabe =====
-import { createGame, step, speedFor, drawGame, loadFaces, loadHead, DIR } from './snake.js?v=20261018e';
+import { createGame, step, speedFor, drawGame, loadFaces, loadHead, DIR } from './snake.js?v=20261019';
 
 // Fotos der Veranstalter (in den Ordner "faces" im Repo hochladen)
 export const FACE_URLS = ['faces/face1.png', 'faces/face2.png'];
@@ -57,12 +57,14 @@ const TUTORIAL = [
   { title: 'Winter-Snake', text: 'Du bist der Kopf der Schlange – mit Weihnachtsmütze! Sammle so viele Gesichter wie möglich. Jedes Gesicht = 1 Punkt und hängt sich hinten an deine Schlange.' },
   { title: 'Steuerung', text: 'Unten sind die Pfeiltasten: hoch, links, rechts, runter. Du kannst auch auf dem Spielfeld wischen.' },
   { title: 'Vorsicht!', text: 'Nicht gegen den Rand, dich selbst oder Eisblöcke fahren. Im echten Spiel wird es mit jedem Gesicht schneller, und alle 3 Gesichter taucht ein neuer Eisblock auf.' },
-  { title: 'Übungsrunde', text: 'Jetzt kannst du in Ruhe üben – das zählt noch nicht. Wenn du bereit bist, startest du deinen einen echten Versuch.' }
+  { title: 'Übungsrunde', text: 'Jetzt kannst du in Ruhe üben – das zählt noch nicht. Wenn du bereit bist, startest du einen echten Versuch. Dein bester echter Versuch zählt.' }
 ];
 
 // ---------- Spielen (Kapitän) ----------
-// onFinish({score, replay}) wird nach dem echten Versuch aufgerufen
-export function playSnake({ onFinish, onClose, testMode = false, photoUrl = null }) {
+// onFinish({score, replay}) wird nach jedem echten Versuch aufgerufen.
+// attempts: Anzahl echter Versuche (Infinity = beliebig oft), best: bisher bester Score,
+// skipTutorial: wer schon gespielt hat, landet direkt im Menü (Tutorial dort weiter abrufbar).
+export function playSnake({ onFinish, onClose, testMode = false, photoUrl = null, attempts = 1, best = null, skipTutorial = false }) {
   injectCss();
   const faces = loadFaces(FACE_URLS);
   const head = loadHead(photoUrl);
@@ -86,6 +88,8 @@ export function playSnake({ onFinish, onClose, testMode = false, photoUrl = null
   let { ctx, size } = setupCanvas(canvas);
 
   let game = null, timer = null, queue = [], recording = null, official = false;
+  let left = attempts, bestScore = best;
+  const leftTxt = () => left === Infinity ? 'beliebig viele echte Versuche, der beste zählt' : `noch <strong>${left}</strong> echte${left === 1 ? 'r' : ''} Versuch${left === 1 ? '' : 'e'}`;
 
   // ---- Eingabe ----
   function input(d) {
@@ -164,6 +168,8 @@ export function playSnake({ onFinish, onClose, testMode = false, photoUrl = null
   }
 
   function startOfficial() {
+    if (left <= 0) return menu();
+    left--;
     official = true; modeEl.textContent = 'ECHTER VERSUCH';
     const seed = Math.floor(Math.random() * 1e9);
     game = createGame(seed);
@@ -172,34 +178,41 @@ export function playSnake({ onFinish, onClose, testMode = false, photoUrl = null
     countdown(() => { timer = setTimeout(loop, speedFor(game)); });
   }
 
+  // Menü zwischen den Runden: echter Versuch, üben, Tutorial, fertig
+  function menu(head = '') {
+    modeEl.textContent = 'Winter-Snake';
+    const canPlay = left > 0;
+    showMsg(`${head || '<h2>Winter-Snake 🎅</h2>'}
+      ${bestScore != null ? `<p>Dein bester Versuch: <strong>${bestScore} 🎅</strong></p>` : ''}
+      <p>${canPlay ? `Du hast ${leftTxt()}.` : 'Du hast keine echten Versuche mehr.'}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+        ${canPlay ? '<button class="sg-btn" data-a="go">Echter Versuch</button>' : ''}
+        <button class="sg-btn sec" data-a="practice">Üben</button>
+        <button class="sg-btn sec" data-a="tut">Tutorial</button>
+        <button class="sg-btn sec" data-a="close">Fertig</button>
+      </div>`);
+    msg.querySelector('[data-a=go]')?.addEventListener('click', () => {
+      showMsg(`<h2>Bereit?</h2><p>Dieser Versuch zählt und wird aufgezeichnet. Die besten Versuche kann man sich im Leaderboard ansehen.</p>
+        <div style="display:flex;gap:8px"><button class="sg-btn sec" data-a="no">Zurück</button>
+        <button class="sg-btn" data-a="yes">Los!</button></div>`);
+      msg.querySelector('[data-a=no]').onclick = () => menu();
+      msg.querySelector('[data-a=yes]').onclick = startOfficial;
+    });
+    msg.querySelector('[data-a=practice]').onclick = startPractice;
+    msg.querySelector('[data-a=tut]').onclick = () => { page = 0; showTutorial(); };
+    msg.querySelector('[data-a=close]').onclick = close;
+  }
+
   function gameOver() {
-    if (!official) {
-      showMsg(`<h2>Übung vorbei</h2><p>Du hattest ${game.score} 🎅.</p>
-        <p>Dein echter Versuch zählt für die Wahlreihenfolge – du hast nur <strong>einen</strong>.</p>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
-          <button class="sg-btn sec" data-a="again">Nochmal üben</button>
-          <button class="sg-btn" data-a="go">Echten Versuch starten</button>
-        </div>`);
-      msg.querySelector('[data-a=again]').onclick = startPractice;
-      msg.querySelector('[data-a=go]').onclick = () => {
-        showMsg(`<h2>Bereit?</h2><p>Es gibt nur diesen einen Versuch. Er wird aufgezeichnet und alle können ihn sich im Leaderboard ansehen.</p>
-          <div style="display:flex;gap:8px"><button class="sg-btn sec" data-a="no">Doch noch üben</button>
-          <button class="sg-btn" data-a="yes">Los!</button></div>`);
-        msg.querySelector('[data-a=no]').onclick = startPractice;
-        msg.querySelector('[data-a=yes]').onclick = startOfficial;
-      };
-      return;
-    }
+    if (!official) return menu(`<h2>Übung vorbei</h2><p>Du hattest ${game.score} 🎅 (zählt nicht).</p>`);
     recording.ticks = game.tick;
     const score = game.score;
+    official = false;
     showMsg(`<h2>Game Over</h2><div class="sg-big">${score} 🎅</div><p>Wird gespeichert…</p>`);
     Promise.resolve(onFinish({ score, replay: recording })).then(() => {
-      showMsg(testMode
-        ? `<h2>Test beendet</h2><div class="sg-big">${score} 🎅</div>
-           <p>Testmodus: nichts wurde gespeichert.</p><button class="sg-btn" data-a="close">Fertig</button>`
-        : `<h2>Gespeichert!</h2><div class="sg-big">${score} 🎅</div>
-           <p>Dein Versuch ist jetzt im Leaderboard.</p><button class="sg-btn" data-a="close">Fertig</button>`);
-      msg.querySelector('[data-a=close]').onclick = close;
+      const record = bestScore == null || score > bestScore;
+      if (record) bestScore = score;
+      menu(`<h2>${testMode ? 'Test: ' : ''}${score} 🎅</h2><p>${testMode ? 'Testmodus: nichts wurde gespeichert.' : record ? '🎉 Neue Bestleistung, ist jetzt im Leaderboard!' : 'Gespeichert. Deine Bestleistung bleibt im Leaderboard.'}</p>`);
     }).catch(err => {
       showMsg(`<h2>Fehler beim Speichern</h2><p>${err.message}</p><p>Bitte Seite NICHT schließen und dem Organisator Bescheid geben. Score: ${score}</p>`);
     });
@@ -213,7 +226,7 @@ export function playSnake({ onFinish, onClose, testMode = false, photoUrl = null
     onClose && onClose();
   }
 
-  showTutorial();
+  if (skipTutorial) menu(); else showTutorial();
 }
 
 // ---------- Wiedergabe (Leaderboard) ----------

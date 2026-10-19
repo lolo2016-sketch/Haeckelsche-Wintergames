@@ -4,7 +4,7 @@
 // Wer ins selbe Team kommt, bekommt dieselbe Farbe und setzt sich neben die anderen Teammitglieder.
 // Die eigene Figur läuft in der Third-Person-Ansicht ein, danach sieht man die Runde aus ihren Augen.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js';
-import { buildWinterWorld } from './winter.js?v=20261018e';
+import { buildWinterWorld } from './winter.js?v=20261019';
 
 const BENCH_SHIRT = 0xe2e8f0;
 const HAIR = 0x4a2f1b;
@@ -495,7 +495,8 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
       setFounder(ch, founders.has(p.token), p.name);
       setAgent(ch, p.agent ? (p.agentUrl || DEFAULT_AGENT) : null);
     }
-    pickableSet = new Set(data.pickable ? data.people.filter(p => !p.teamId && p.token !== meToken).map(p => p.token) : []);
+    // leuchtende Figuren: entweder ausdrücklich angegeben (z. B. der eigene Tipp beim Raten) oder alle Freien beim Wählen
+    pickableSet = new Set(data.pickTokens ?? (data.pickable ? data.people.filter(p => !p.teamId && p.token !== meToken).map(p => p.token) : []));
     turnToken = data.turnToken ?? null;
     if (first) {
       first = false;

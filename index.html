@@ -95,17 +95,18 @@
       getFirestore, doc, getDoc, getDocs, updateDoc, collection, onSnapshot, addDoc, query, orderBy, limit
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261018e";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261018e";
-    import { createHall } from "./hall.js?v=20261018e";
-    import { compareRank, playedGame, finishPairs, planPairs, teamColor, isPerson, DEFAULT_FOUNDERS } from "./draft.js?v=20261018e";
+    import { playSnake, playReplay } from "./minigame.js?v=20261019";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261019";
+    import { createHall } from "./hall.js?v=20261019";
+    import { PHASE_NAMES, phaseIndex, settings, country, teamColor, isPerson, playedSnake, compareSnake, snakeRanking,
+      playedBiathlon, teamBiathlon, bonusOf, teamBonus, guessedRight, planTeams } from "./draft.js?v=20261019";
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
     const params = new URLSearchParams(location.search);
-    // Demo: index.html?demo (einlaufen) oder index.html?demo=wahl (Teamwahl ausprobieren; ?demo=kapitaen geht weiterhin)
-    const DEMO = params.has('demo') ? (['wahl', 'kapitaen'].includes(params.get('demo')) ? 'pick' : 'enter') : null;
+    // Demo: index.html?demo (einlaufen) oder index.html?demo=raten (Flagge raten + Auflösung ausprobieren)
+    const DEMO = params.has('demo') ? (['raten', 'wahl', 'kapitaen'].includes(params.get('demo')) ? 'guess' : 'enter') : null;
     let token = DEMO ? 'demo-me' : params.get('t');
     const root = document.getElementById('app');
     const tabbar = document.getElementById('tabbar');
@@ -114,7 +115,8 @@
     let S = null;            // aktueller Datenstand: { me, state, teams, people }
     let hall = null;         // 3D- oder 2D-Halle
     let hall3dMod = null;    // wird nur geladen, wenn der Browser 3D kann
-    let picking = false;
+    let saving = false;
+    let showFlag = false, flagTimer = null;    // eigene Flagge nur auf Antippen zeigen (Sitznachbarn schauen mit!)
     // ---------- Chat ----------
     // Regel: Über dem Kopf steht immer die neueste Nachricht einer Person (bleibt stehen, bis sie etwas Neues schreibt).
     // Die letzten 5 Nachrichten pro Person sieht man durch Antippen der Figur, alles im Chatverlauf.
@@ -176,7 +178,7 @@
       }
       clearTimeout(renderTimer);
       renderTimer = setTimeout(() => {
-        if (picking) return;
+        if (saving) return;
         renderTabbar();
         renderTop(); updateHall();
         if (tab !== 'hall' || phaseChanged) renderTab();
@@ -187,37 +189,45 @@
     const teamList = s => Object.values(s.teams).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       .map((t, i) => ({ ...t, css: teamColor(t.order ?? i) }));
     const teamOf = (s, p) => p?.teamId ? teamList(s).find(t => t.id === p.teamId) ?? null : null;
-    const foundedTeamId = s => Object.keys(s.teams).find(id => s.teams[id].captainToken === s.me.token) || null;
-    const turnTeamId = s => s.state.phase === 'draft' && s.state.pickOrder ? s.state.pickOrder[s.state.turnIndex] : null;
-    const turnFounder = s => s.teams[turnTeamId(s)]?.captainToken ?? null;
-    const isMyTurn = s => s.state.phase === 'draft' && !!turnTeamId(s) && (DEMO === 'pick' || turnFounder(s) === s.me.token);
     const personName = (s, tok) => s.people.find(p => p.token === tok)?.name ?? '?';
     const teamMates = (s, p) => p?.teamId ? s.people.filter(x => x.teamId === p.teamId && x.token !== p.token) : [];
-    // Wie viele dürfen wählen (Anzeige während des Minispiels)
-    const foundersPlanned = s => Math.max(1, Math.min(Number(s.state.founders) || DEFAULT_FOUNDERS, Math.floor(s.people.length / 2) || 1));
+    const PH = s => phaseIndex(s.state.phase);                 // Phase als Zahl (alte Namen werden übersetzt)
+    const isPhase = (s, name) => PH(s) === phaseIndex(name);
+    const revealed = s => PH(s) >= phaseIndex('pairs');        // Flaggen/Teams aufgelöst?
+    const fmtS = ms => `${Math.floor(ms / 60000)}:${((ms % 60000) / 1000).toFixed(1).padStart(4, '0')}`;   // wie die Einzelzeiten, z. B. 1:29.9
     const dot = css => `<span style="display:inline-block;width:.75em;height:.75em;border-radius:50%;background:${css};vertical-align:-1px;margin-right:4px"></span>`;
+    const biathlonLeft = s => Math.max(0, settings(s.state).biathlonAttempts - (s.me.biathlonTries || 0));
 
     // ---------- Tabs ----------
     function tabsFor() {
       return [{ id: 'hall', icon: '🏟️', label: 'Halle' }, { id: 'game', icon: '🎮', label: 'Minispiel' }, { id: 'board', icon: '🏆', label: 'Leaderboard' }];
     }
     function renderTabbar() {
-      const needsPlay = S.state.phase === 'minigame' && !playedActive(S.me);
+      const needsPlay = (isPhase(S, 'snake') && !playedSnake(S.me)) || (isPhase(S, 'biathlon') && biathlonLeft(S) > 0)
+        || (isPhase(S, 'guess') && !S.me.guess);
       tabbar.innerHTML = tabsFor().map(t => `<button data-tab="${t.id}" class="glass ${t.id === tab ? 'active' : ''}">
-          <span>${t.icon}</span>${t.label}${t.id === 'game' && needsPlay ? '<i class="dot"></i>' : ''}</button>`).join('');
+          <span>${t.icon}</span>${t.label}${(t.id === 'game' && needsPlay && !isPhase(S, 'guess')) || (t.id === 'hall' && needsPlay && isPhase(S, 'guess')) ? '<i class="dot"></i>' : ''}</button>`).join('');
       tabbar.querySelectorAll('button').forEach(b => b.onclick = () => {
         tab = tab === b.dataset.tab ? 'hall' : b.dataset.tab;   // nochmal tippen = zurück zur Halle
         renderTabbar(); renderTab();
       });
     }
 
-    // Oben schwebend: Name/Team, Hinweis-Banner, eigene letzte Nachricht
+    // Oben schwebend: Name, eigene Flagge (geheim, auf Antippen), Team, Hinweis-Banner, eigene letzte Nachricht
     function renderTop() {
       const t = teamOf(S, S.me);
+      const c = country(S.me.flag);
       const demo = DEMO ? `<div class="chip glass demo">🧪 Demo · nichts wird gespeichert</div>` : '';
-      const star = foundedTeamId(S) ? '★ ' : '';
-      document.getElementById('top').innerHTML = `${demo}<div class="chip glass">👋 ${star}${escapeHtml(S.me.name)}${t ? ` · ${dot(t.css)}${escapeHtml(t.name)}` : ''}</div>
+      const flagChip = c && !revealed(S)
+        ? `<button class="chip glass" id="flagChip" style="margin:0;border:none;cursor:pointer">${showFlag ? `${c.emoji} ${escapeHtml(c.name)} · 🤫 geheim!` : '🤫 Meine Flagge zeigen'}</button>` : '';
+      document.getElementById('top').innerHTML = `${demo}<div style="display:flex;gap:6px;flex-wrap:wrap">
+        <div class="chip glass">👋 ${escapeHtml(S.me.name)}${t ? ` · ${dot(t.css)}${escapeHtml(t.name)}` : ''}</div>${flagChip}</div>
         <div id="banner">${bannerHtml()}</div><div class="my-msg" id="myMsg"></div>`;
+      const fc = document.getElementById('flagChip');
+      if (fc) fc.onclick = () => {
+        showFlag = !showFlag; renderTop();
+        clearTimeout(flagTimer); if (showFlag) flagTimer = setTimeout(() => { showFlag = false; renderTop(); }, 5000);   // nach 5 s wieder verdecken
+      };
       refreshBubbles();
     }
 
@@ -242,30 +252,36 @@
     // ---------- Banner ----------
     function bannerHtml() { return glassBanner(bannerHtmlRaw()); }
     function bannerHtmlRaw() {
-      const s = S, ph = s.state.phase, me = s.me, G = GAMES[activeGame()];
-      if (ph === 'setup') {
+      const s = S, me = s.me, st = settings(s.state);
+      const bonusTxt = () => { const b = teamOf(s, me) ? teamBonus(teamOf(s, me), s.people, s.state, true) : bonusOf(me, s.people, s.state, true); return b.total; };
+      if (isPhase(s, 'setup')) {
         const n = s.people.filter(p => p.arrivedAt).length;
         return `<div class="banner">Willkommen bei den Wintergames! <strong>${n}</strong> sitzen schon in der Runde. Gleich geht's los. 🏁</div>`;
       }
-      if (ph === 'minigame') {
-        const F = foundersPlanned(s);
-        if (!playedActive(me))
-          return `<div class="banner myturn">Alle spielen mit! <strong>Starte dein Minispiel</strong> im Tab 🎮 unten. Die besten ${F} dürfen sich danach einen Teamkollegen aussuchen.</div>`;
-        const done = s.people.filter(playedActive).length;
-        return `<div class="banner">${G.name}: <strong>${done} von ${s.people.length}</strong> haben gespielt. Die besten ${F} wählen danach. Schau im 🏆 Leaderboard zu!</div>`;
+      if (isPhase(s, 'snake')) {
+        const rank = snakeRanking(s.people).findIndex(p => p.token === me.token);
+        if (!playedSnake(me)) return `<div class="banner myturn">Runde 1: <strong>Winter-Snake</strong>! Spiel im Tab 🎮 so oft du willst, dein bester Versuch zählt. Platz 1–${st.snakeBonus.length} bekommen Bonussekunden fürs Finale.</div>`;
+        return `<div class="banner">Runde 1: Winter-Snake · dein Bestwert <strong>${me.minigameScore} 🎅</strong> (Platz ${rank + 1}). Du kannst es weiter versuchen!</div>`;
       }
-      if (ph === 'draft') {
-        const t = s.teams[turnTeamId(s)];
-        const fName = personName(s, t?.captainToken);
-        if (isMyTurn(s)) return `<div class="banner myturn">${DEMO ? `Für ${escapeHtml(fName)}: ` : 'Du bist dran! '}Tippe auf eine leuchtende Person, die in ${DEMO ? 'das' : 'dein'} Team soll.</div>`;
-        const mates = teamMates(s, me);
-        const mine = me.teamId && !foundedTeamId(s) ? ` Du bist im Team von <strong>${escapeHtml(personName(s, s.teams[me.teamId]?.captainToken))}</strong>. 🎉`
-          : foundedTeamId(s) && mates.length ? ` Du hast <strong>${escapeHtml(mates.map(m => m.name).join(', '))}</strong> gewählt. 🎉` : '';
-        return `<div class="banner">Teamwahl · am Zug: <strong>${escapeHtml(fName)}</strong> (Platz ${s.state.turnIndex + 1} von ${s.state.pickOrder.length}).${mine}
-          ${!me.teamId ? ' Wer nicht gewählt wird, bekommt danach zufällig einen Partner.' : ''}</div>`;
+      if (isPhase(s, 'guess')) {
+        const n = s.people.filter(p => p.guess).length;
+        if (!me.guess) return `<div class="banner myturn">Wer hat <strong>dieselbe Flagge</strong> wie du? Tippe die Person in der Halle an. 🤫 Deine Flagge niemandem verraten!</div>`;
+        return `<div class="banner">Dein Tipp: <strong>${escapeHtml(personName(s, me.guess))}</strong>. Bis zur Auflösung kannst du ihn noch ändern (andere Person antippen). ${n} von ${s.people.length} haben getippt.</div>`;
       }
-      const mates = teamMates(s, me);
-      return `<div class="banner">Die Teams stehen fest! 🎉${mates.length ? ` Du spielst mit <strong>${escapeHtml(mates.map(m => m.name).join(' & '))}</strong>.` : ''}</div>`;
+      const t = teamOf(s, me), mates = teamMates(s, me);
+      const right = guessedRight(me, s.people);
+      const teamTxt = t ? `Dein Team: <strong>${escapeHtml(t.name)}</strong>${mates.length ? ` mit <strong>${escapeHtml(mates.map(m => m.name).join(' & '))}</strong>` : ''}.` : '';
+      if (isPhase(s, 'pairs')) {
+        return `<div class="banner">Auflösung! 🎉 ${teamTxt} ${me.guess ? (right ? `Du hast richtig geraten ✅ (+${st.guessBonus} s).` : 'Dein Tipp war leider falsch ❌.') : ''}
+          Euer Vorsprung fürs Finale: <strong>${bonusTxt()} s</strong>.</div>`;
+      }
+      if (isPhase(s, 'biathlon')) {
+        const left = biathlonLeft(s);
+        return `<div class="banner ${left ? 'myturn' : ''}">Runde 2: <strong>Biathlon</strong>! ${left ? `Du hast noch <strong>${left}</strong> echte${left === 1 ? 'n Versuch' : ' Versuche'} (Tab 🎮).` : 'Deine Versuche sind verbraucht.'}
+          Eure beiden Bestzeiten werden addiert. ${teamTxt}</div>`;
+      }
+      const tb = t ? teamBiathlon(t, s.people) : null;
+      return `<div class="banner">Biathlon ist beendet. ${teamTxt}${tb?.done ? ` Eure Zeit: <strong>${fmtS(tb.timeMs)}</strong>.` : ''} Vorsprung fürs Finale: <strong>${bonusTxt()} s</strong>.</div>`;
     }
     // Banner-Klassen: halbdurchsichtig über der Halle
     const glassBanner = html => html.replace('class="banner"', 'class="banner glass"').replace('class="banner myturn"', 'class="banner glass myturn"');
@@ -277,21 +293,22 @@
     }
     function hallData3d() {
       const teams = teamList(S).map(t => ({ id: t.id, captainToken: t.captainToken, order: t.order ?? 0, color: parseInt(t.css.slice(1), 16) }));
-      return { people: present(), teams, turnToken: turnFounder(S), pickable: isMyTurn(S), benchSeats: S.state.benchSeats };
+      // Nach der Auflösung steht die Flagge vor dem Namen über dem Kopf
+      const people = present().map(p => revealed(S) && country(p.flag) ? { ...p, name: `${country(p.flag).emoji} ${p.name}` } : p);
+      const pickTokens = isPhase(S, 'guess') && S.me.guess ? [S.me.guess] : [];   // der eigene Tipp leuchtet (nur bei mir)
+      return { people, teams, pickTokens, turnToken: null, benchSeats: S.state.benchSeats };
     }
-    // Einfache 2D-Halle (sehr alte Handys): Gründer stehen vorne, ihre Teams dahinter
+    // Einfache 2D-Halle (sehr alte Handys)
     function hallData2d() {
-      const p = present();
-      const founders = new Set(Object.values(S.teams).map(t => t.captainToken).filter(Boolean));
-      const cols = teamList(S).map((t, j) => ({ teamId: t.id, captainToken: t.captainToken, color: t.css, j }));
-      return { players: p.filter(x => !founders.has(x.token)), captains: p.filter(x => founders.has(x.token)), columns: cols, turnTeamId: turnTeamId(S) };
+      const cols = teamList(S).map((t, j) => ({ teamId: t.id, captainToken: null, color: t.css, j }));
+      return { players: present(), captains: [], columns: cols, turnTeamId: null };
     }
     function updateHall() {
       if (!hall) return;
       const ab = document.getElementById('agentBtn');
       if (ab) { ab.classList.toggle('agent-on', !!S.me.agent); ab.title = S.me.agent ? 'Agentenmodus beenden' : 'Agentenmodus'; }
       if (hall.is3d) { hall.update(hallData3d()); hall.setAgentMode(!!S.me.agent); }
-      else hall.update(hallData2d(), { pickable: isMyTurn(S) });
+      else hall.update(hallData2d(), { pickable: false });
     }
 
     let hallStarting = false;
@@ -306,14 +323,14 @@
       const tapToken = t => {
         const p = S.people.find(x => x.token === t);
         if (!p) return;
-        if (!p.teamId && p.token !== token && isMyTurn(S)) return askPick(p);
+        if (isPhase(S, 'guess') && p.token !== token) return askGuess(p);
         showPersonMessages(p);
       };
 
       // 3D, wenn möglich, sonst die einfache 2D-Halle
       let use3d = false;
       try {
-        hall3dMod ??= await import('./hall3d.js?v=20261018e');
+        hall3dMod ??= await import('./hall3d.js?v=20261019');
         use3d = hall3dMod.webglAvailable();
       } catch (e) { use3d = false; }
 
@@ -433,12 +450,11 @@
     function showPersonMessages(p) {
       const mine = messages.filter(m => m.token === p.token).slice(0, 5);
       const t = teamOf(S, p);
-      const isFounder = Object.values(S.teams).some(x => x.captainToken === p.token);
       const bg = document.createElement('div');
       bg.className = 'modal-bg';
       bg.innerHTML = `<div class="modal">
         ${p.photoUrl ? `<img src="${escapeHtml(p.photoUrl)}" alt="" onerror="this.remove()">` : ''}
-        <h2 style="margin:0 0 4px">${isFounder ? '★ ' : ''}${escapeHtml(p.name)}</h2>
+        <h2 style="margin:0 0 4px">${revealed(S) && country(p.flag) ? country(p.flag).emoji + ' ' : ''}${escapeHtml(p.name)}</h2>
         <div style="color:#64748b;font-size:.9rem">${t ? dot(t.css) + escapeHtml(t.name) : 'Noch ohne Team'}</div>
         <div class="msgs5">${mine.length ? mine.map(m => `<div>${escapeHtml(m.text)} <span style="color:#94a3b8;font-size:.75rem">${fmtTime(m.at)}</span></div>`).join('')
           : '<div style="background:none;color:#94a3b8;text-align:center">Hat noch nichts geschrieben.</div>'}</div>
@@ -447,138 +463,175 @@
       bg.onclick = e => { if (e.target === bg || e.target.dataset.a === 'ok') bg.remove(); };
     }
 
-    // ---------- Wählen ----------
-    function askPick(player) {
-      if (!isMyTurn(S) || picking) return;
+    // ---------- Raten: wer hat dieselbe Flagge? ----------
+    function askGuess(p) {
+      if (!isPhase(S, 'guess') || saving) return;
+      const cur = S.me.guess && S.me.guess !== p.token ? personName(S, S.me.guess) : null;
+      const same = S.me.guess === p.token;
       const bg = document.createElement('div');
       bg.className = 'modal-bg';
       bg.innerHTML = `<div class="modal">
-        ${player.photoUrl ? `<img src="${escapeHtml(player.photoUrl)}" alt="" onerror="this.remove()">` : ''}
-        <h2 style="margin:0 0 6px">${escapeHtml(player.name)} wählen?</h2>
-        <p style="margin:0 0 12px;color:#555">Das lässt sich nicht rückgängig machen.</p>
-        <button class="secondary" data-a="no">Abbrechen</button><button data-a="yes">Ja, ins Team!</button></div>`;
+        ${p.photoUrl ? `<img src="${escapeHtml(p.photoUrl)}" alt="" onerror="this.remove()">` : ''}
+        <h2 style="margin:0 0 6px">${escapeHtml(p.name)}</h2>
+        <p style="margin:0 0 12px;color:#555">${same ? 'Das ist dein aktueller Tipp.' : `Hat ${escapeHtml(p.name)} dieselbe Flagge wie du?`}
+          ${cur ? `<br><span style="font-size:.85rem">Bisheriger Tipp: ${escapeHtml(cur)}</span>` : ''}</p>
+        <button class="secondary" data-a="no">${same ? 'Schließen' : 'Abbrechen'}</button>${same ? '' : '<button data-a="yes">Ja, mein Tipp!</button>'}
+        <button class="secondary" data-a="msgs" style="margin-top:6px">💬 Nachrichten ansehen</button></div>`;
       document.body.appendChild(bg);
       bg.querySelector('[data-a=no]').onclick = () => bg.remove();
+      bg.querySelector('[data-a=msgs]').onclick = () => { bg.remove(); showPersonMessages(p); };
       bg.onclick = e => { if (e.target === bg) bg.remove(); };
-      bg.querySelector('[data-a=yes]').onclick = async () => { bg.remove(); await pick(player); };
+      bg.querySelector('[data-a=yes]')?.addEventListener('click', async () => { bg.remove(); await saveGuess(p); });
     }
-
-    async function pick(player) {
-      if (DEMO) return demoPick(player);
-      picking = true;
+    async function saveGuess(p) {
+      if (DEMO) return demoGuess(p);
+      saving = true;
       try {
-        // frischen Stand prüfen: bin ich dran und ist die Person noch frei?
         const st = (await getDoc(doc(db, 'state', 'current'))).data();
-        const pl = (await getDoc(doc(db, 'participants', player.token))).data();
-        const teamId = foundedTeamId(S);
-        if (st.phase !== 'draft' || st.pickOrder[st.turnIndex] !== teamId || pl.teamId) {
-          alert('Das hat sich gerade geändert, bitte nochmal schauen.');
-          return;
-        }
-        await updateDoc(doc(db, 'participants', player.token), { teamId, pickedAt: Date.now() });
-        if (st.turnIndex + 1 < st.pickOrder.length) {
-          await updateDoc(doc(db, 'state', 'current'), { turnIndex: st.turnIndex + 1 });
-        } else {
-          // Letzte Wahl: alle anderen werden zufällig zu Zweierteams gepaart
-          const people = [], teams = {};
-          (await getDocs(collection(db, 'participants'))).forEach(d => { const p = { token: d.id, ...d.data() }; if (isPerson(p)) people.push(p); });
-          (await getDocs(collection(db, 'teams'))).forEach(d => { teams[d.id] = { id: d.id, ...d.data() }; });
-          await finishPairs(db, people, teams, st);
-        }
+        if (phaseIndex(st.phase) !== phaseIndex('guess')) { alert('Die Auflösung läuft schon, Tipps sind geschlossen.'); return; }
+        await updateDoc(doc(db, 'participants', token), { guess: p.token, guessAt: Date.now() });
       } catch (err) {
         alert('Speichern fehlgeschlagen: ' + err.message);
-      } finally {
-        picking = false;
-      }
-      // Die Live-Updates zeichnen die Halle neu; die gewählte Person setzt sich neben ihr Team.
+      } finally { saving = false; }
     }
 
-    // ---------- Minispiele: Snake und Biathlon-Sprint ----------
-    // Welches Spiel über die Teamwahl entscheidet, legt der Admin fest (state.activeGame).
+    // ---------- Minispiele: Snake (Runde 1) und Biathlon (Runde 2) ----------
     const GAMES = {
       snake: {
         name: 'Winter-Snake 🎅',
-        info: 'Sammle so viele Gesichter wie möglich – die Besten dürfen sich danach einen Teamkollegen aussuchen.',
-        played: p => playedGame('snake', p),
+        played: playedSnake,
         label: p => `${p.minigameScore} 🎅`,
         canWatch: p => !!p.snakeReplay,
         watch: p => playReplay({ name: p.name, score: p.minigameScore, replay: p.snakeReplay, photoUrl: p.photoUrl }),
-        play: (test, onDone) => playSnake({
-          testMode: test, onClose: onDone, photoUrl: S.me.photoUrl,
-          onFinish: test ? () => {} : async ({ score, replay }) =>
-            updateDoc(doc(db, 'participants', token), { minigameScore: score, minigamePlayed: true, minigameAt: Date.now(), snakeReplay: replay })
-        })
+        // beliebig viele echte Versuche; gespeichert wird nur der beste (mit Aufzeichnung)
+        play: (test, onDone) => {
+          let tries = S.me.snakeTries || 0;
+          playSnake({
+            testMode: test, onClose: onDone, photoUrl: S.me.photoUrl, attempts: Infinity,
+            best: test ? null : S.me.minigameScore ?? null, skipTutorial: !test && tries > 0,
+            onFinish: test ? () => {} : async ({ score, replay }) => {
+              tries++;
+              const upd = { snakeTries: tries };
+              if (!S.me.minigamePlayed || score > (S.me.minigameScore ?? -1))
+                Object.assign(upd, { minigameScore: score, minigamePlayed: true, minigameAt: Date.now(), snakeReplay: replay });
+              await updateDoc(doc(db, 'participants', token), upd);
+            }
+          });
+        }
       },
       biathlon: {
         name: 'Biathlon-Sprint ⛷️',
-        info: 'Fahre über die Hindernisse ins Ziel – die schnellsten Zeiten dürfen sich einen Teamkollegen aussuchen.',
-        played: p => playedGame('biathlon', p),
+        played: playedBiathlon,
         label: p => formatBiathlon(p.biathlon),
         canWatch: p => !!p.biathlon?.replay,
         watch: p => playBiathlonReplay({ name: p.name, result: p.biathlon, photoUrl: p.photoUrl }),
-        play: (test, onDone) => playBiathlon({
-          testMode: test, photoUrl: S.me.photoUrl, onClose: onDone,
-          onFinish: test ? () => {} : async result => updateDoc(doc(db, 'participants', token), { biathlon: result })
-        })
+        // begrenzte echte Versuche; gespeichert wird die Bestzeit (mit Aufzeichnung)
+        play: (test, onDone) => {
+          let tries = S.me.biathlonTries || 0;
+          playBiathlon({
+            testMode: test, photoUrl: S.me.photoUrl, onClose: onDone,
+            attempts: test ? 3 : biathlonLeft(S), best: test ? null : S.me.biathlon ?? null, skipTutorial: !test && tries > 0,
+            onFinish: test ? () => {} : async result => {
+              tries++;
+              const upd = { biathlonTries: tries };
+              const better = !S.me.biathlon?.played || (result.finished && (!S.me.biathlon.finished || result.timeMs < S.me.biathlon.timeMs))
+                || (!result.finished && !S.me.biathlon.finished && result.score > (S.me.biathlon.score || 0));
+              if (better) upd.biathlon = result;
+              await updateDoc(doc(db, 'participants', token), upd);
+            }
+          });
+        }
       }
     };
-    const activeGame = () => GAMES[S?.state.activeGame] ? S.state.activeGame : 'snake';
-    const playedActive = p => GAMES[activeGame()].played(p);
 
-    // ---------- Minispiel-Tab (für alle) ----------
+    // ---------- Minispiel-Tab ----------
     function renderGameTab() {
-      const s = S, ph = s.state.phase, gk = activeGame(), G = GAMES[gk];
+      const s = S, me = s.me;
       let h = '';
       if (DEMO) {
-        // Demo: beide Spiele zum Ausprobieren (nichts wird gespeichert)
-        for (const [k, g] of Object.entries(GAMES)) {
-          h += `<div class="card"><h2>${g.name}</h2><p>${g.info}</p><button class="playGame" data-g="${k}">Ausprobieren</button></div>`;
-        }
-      } else if (ph === 'setup') {
-        h += `<div class="card"><h2>Minispiel: ${G.name}</h2><p>Das Minispiel wird freigeschaltet, sobald es losgeht.</p></div>`;
-      } else if (ph === 'minigame' && !G.played(s.me)) {
-        h += `<div class="card"><h2>Minispiel: ${G.name}</h2><p>${G.info}</p>
-          <p>Erst kommt ein kurzes Tutorial mit Übungsrunde, danach hast du <strong>einen</strong> echten Versuch.</p>
-          <button class="playGame" data-g="${gk}">Minispiel starten</button></div>`;
-      } else if (G.played(s.me)) {
-        h += `<div class="card"><h2>Dein Ergebnis (${G.name}): ${G.label(s.me)}</h2>
-          <p>${ph === 'minigame' ? 'Warte, bis alle gespielt haben.' : 'Das Minispiel ist vorbei.'}</p>
-          ${G.canWatch(s.me) ? '<button class="secondary" id="watchMe">▶ Meinen Versuch ansehen</button>' : ''}</div>`;
+        for (const [k, g] of Object.entries(GAMES))
+          h += `<div class="card"><h2>${g.name}</h2><p>Zum Ausprobieren, nichts wird gespeichert.</p><button class="playGame" data-g="${k}">Ausprobieren</button></div>`;
+      } else if (isPhase(s, 'setup')) {
+        h += `<div class="card"><h2>Gleich geht's los</h2><p>Die Minispiele werden freigeschaltet, sobald die Runde startet.</p></div>`;
+      } else if (isPhase(s, 'snake')) {
+        h += `<div class="card"><h2>Runde 1: ${GAMES.snake.name}</h2>
+          <p>Sammle so viele Gesichter wie möglich. Du hast <strong>beliebig viele Versuche</strong>, dein bester zählt.
+          Platz 1–${settings(s.state).snakeBonus.length} bekommen Bonussekunden fürs Finale (${settings(s.state).snakeBonus.map(x => x + ' s').join(' / ')}).</p>
+          ${playedSnake(me) ? `<p>Dein Bestwert: <strong>${me.minigameScore} 🎅</strong> · Versuche: ${me.snakeTries || 1}</p>` : ''}
+          <button class="playGame" data-g="snake">${playedSnake(me) ? 'Nochmal spielen' : 'Snake spielen'}</button>
+          ${GAMES.snake.canWatch(me) ? '<button class="secondary watchMe" data-g="snake">▶ Meinen besten Versuch ansehen</button>' : ''}</div>`;
+      } else if (isPhase(s, 'biathlon')) {
+        const left = biathlonLeft(s);
+        h += `<div class="card"><h2>Runde 2: ${GAMES.biathlon.name}</h2>
+          <p>Fahre über die Hindernisse ins Ziel. Du hast <strong>${settings(s.state).biathlonAttempts} echte Versuche</strong>, deine Bestzeit zählt.
+          Im Team werden eure beiden Bestzeiten addiert.</p>
+          ${playedBiathlon(me) ? `<p>Deine Bestzeit: <strong>${GAMES.biathlon.label(me)}</strong></p>` : ''}
+          <p>Noch <strong>${left}</strong> von ${settings(s.state).biathlonAttempts} Versuchen.</p>
+          ${left ? `<button class="playGame" data-g="biathlon">${playedBiathlon(me) ? 'Weiter versuchen' : 'Biathlon starten'}</button>` : ''}
+          ${GAMES.biathlon.canWatch(me) ? '<button class="secondary watchMe" data-g="biathlon">▶ Meinen besten Lauf ansehen</button>' : ''}</div>`;
       } else {
-        h += `<div class="card"><p>Das Minispiel ist vorbei.</p></div>`;
+        h += `<div class="card"><h2>Gerade kein Minispiel</h2><p>${isPhase(s, 'guess') ? 'Jetzt wird geraten: Tippe in der Halle die Person an, die deiner Meinung nach dieselbe Flagge hat wie du.' : 'Die Ergebnisse siehst du im 🏆 Leaderboard.'}</p></div>`;
       }
       document.getElementById('panelBody').innerHTML = h;
       document.querySelectorAll('.playGame').forEach(btn => btn.addEventListener('click', () =>
-        GAMES[btn.dataset.g].play(!!DEMO, () => {})));
-      document.getElementById('watchMe')?.addEventListener('click', () => G.watch(s.me));
+        GAMES[btn.dataset.g].play(!!DEMO, () => { if (tab === 'game') renderGameTab(); })));
+      document.querySelectorAll('.watchMe').forEach(btn => btn.addEventListener('click', () => GAMES[btn.dataset.g].watch(me)));
     }
 
-    // ---------- Leaderboard: aktives Spiel oben, das andere darunter ----------
-    function boardSection(gk) {
-      const s = S, G = GAMES[gk], active = gk === activeGame();
-      const done = s.people.filter(G.played).sort(compareRank(gk));
-      const waiting = s.people.filter(p => !G.played(p));
-      if (!active && !done.length) return '';
-      const F = foundersPlanned(s);
-      const medals = ['🥇', '🥈', '🥉'];
-      let h = `<h2 style="margin-top:4px">🏆 ${G.name}${active ? ` <span style="font-size:.75rem;color:#16a34a">die besten ${F} wählen</span>` : ''}</h2>`;
-      if (!done.length) h += '<div class="card"><p>Noch hat niemand gespielt.</p></div>';
-      done.forEach((p, i) => {
-        const t = teamOf(s, p);
-        const chooses = active && i < F && s.state.phase === 'minigame';
-        h += `<div class="card" style="display:flex;align-items:center;gap:12px${chooses ? ';border:2px solid #facc15' : ''}">
-          <div style="font-size:1.6rem;width:36px;text-align:center">${medals[i] ?? (i + 1) + '.'}</div>
-          <div style="flex:1"><strong>${escapeHtml(p.name)}</strong>${p.token === token ? ' (du)' : ''}<br>
-            <span style="color:#555;font-size:.9rem">${escapeHtml(G.label(p))}${t ? ` · ${dot(t.css)}${escapeHtml(t.name)}` : chooses ? ' · ★ darf wählen' : ''}</span></div>
-          ${G.canWatch(p) ? `<button class="watch" data-g="${gk}" data-token="${p.token}">▶ Ansehen</button>` : ''}
+    // ---------- Leaderboard ----------
+    const medals = ['🥇', '🥈', '🥉'];
+    function snakeSection() {
+      const s = S, st = settings(s.state);
+      const list = snakeRanking(s.people);
+      const VIDEOS = 3;   // nur die besten 3 mit Aufzeichnung
+      let h = `<h2 style="margin-top:4px">🏆 Runde 1: ${GAMES.snake.name}</h2>`;
+      if (!list.length) return h + '<div class="card"><p>Noch hat niemand gespielt.</p></div>';
+      list.forEach((p, i) => {
+        const bonus = st.snakeBonus[i];
+        h += `<div class="card" style="display:flex;align-items:center;gap:12px;padding:${i < VIDEOS ? '12px' : '6px 12px'}">
+          <div style="font-size:${i < VIDEOS ? '1.6rem' : '1rem'};width:36px;text-align:center">${medals[i] ?? (i + 1) + '.'}</div>
+          <div style="flex:1"><strong>${escapeHtml(p.name)}</strong>${p.token === token ? ' (du)' : ''}
+            <span style="color:#555;font-size:.9rem"> · ${p.minigameScore} 🎅${bonus ? ` · <b style="color:#16a34a">+${bonus} s Bonus</b>` : ''}</span></div>
+          ${i < VIDEOS && GAMES.snake.canWatch(p) ? `<button class="watch" data-g="snake" data-token="${p.token}">▶ Ansehen</button>` : ''}
         </div>`;
       });
-      if (waiting.length && active) h += `<p style="color:#555">Noch nicht gespielt: ${waiting.map(p => escapeHtml(p.name)).join(', ')}</p>`;
+      const waiting = s.people.filter(p => !playedSnake(p));
+      if (waiting.length && isPhase(s, 'snake')) h += `<p style="color:#555">Noch nicht gespielt: ${waiting.map(p => escapeHtml(p.name)).join(', ')}</p>`;
       return h;
     }
+    function biathlonSection() {
+      const s = S;
+      const teams = teamList(s).map(t => ({ t, r: teamBiathlon(t, s.people) }))
+        .sort((a, b) => (b.r.complete - a.r.complete) || (b.r.done - a.r.done) || (a.r.timeMs - b.r.timeMs));
+      let h = `<h2 style="margin-top:14px">⛷️ Runde 2: ${GAMES.biathlon.name} (Teamzeit)</h2>`;
+      if (!teams.length) return h + '<div class="card"><p>Die Teams stehen noch nicht fest.</p></div>';
+      teams.forEach(({ t, r }, i) => {
+        h += `<div class="card"><div style="display:flex;align-items:center;gap:10px">
+            <div style="font-size:1.4rem;width:32px;text-align:center">${r.done ? (medals[i] ?? (i + 1) + '.') : '–'}</div>
+            <div style="flex:1">${dot(t.css)}<strong>${escapeHtml(t.name)}</strong></div>
+            <strong>${r.done ? (r.complete ? fmtS(r.timeMs) : fmtS(r.timeMs) + ' + …') : 'noch keine Zeit'}</strong></div>
+          ${r.members.map(m => `<div style="display:flex;align-items:center;gap:8px;margin:4px 0 0 42px;font-size:.9rem">
+            <span style="flex:1">${escapeHtml(m.name)}${m.token === token ? ' (du)' : ''}: ${playedBiathlon(m) ? escapeHtml(GAMES.biathlon.label(m)) : 'noch kein Lauf'}
+              <span style="color:#94a3b8">(${m.biathlonTries || 0}/${settings(s.state).biathlonAttempts})</span></span>
+            ${GAMES.biathlon.canWatch(m) ? `<button class="watch" data-g="biathlon" data-token="${m.token}" style="padding:4px 10px">▶</button>` : ''}</div>`).join('')}
+        </div>`;
+      });
+      return h;
+    }
+    function bonusSection() {
+      const s = S;
+      const rows = teamList(s).map(t => ({ t, b: teamBonus(t, s.people, s.state, true) })).sort((a, b) => b.b.total - a.b.total);
+      if (!rows.length) return '';
+      return `<h2 style="margin-top:14px">⏱️ Vorsprung fürs Finale</h2><div class="card">${rows.map(({ t, b }) =>
+        `<div style="display:flex;gap:8px;margin:4px 0"><span style="flex:1">${dot(t.css)}${escapeHtml(t.name)}</span>
+          <span style="color:#555;font-size:.85rem">Raten ${b.guess} s · Snake ${b.snake} s</span><strong>${b.total} s</strong></div>`).join('')}</div>`;
+    }
     function renderBoardTab() {
-      const order = [activeGame(), ...Object.keys(GAMES).filter(k => k !== activeGame())];
-      document.getElementById('panelBody').innerHTML = order.map(boardSection).join('');
+      const s = S;
+      let parts = [snakeSection()];
+      if (PH(s) >= phaseIndex('biathlon') || s.people.some(playedBiathlon)) parts = [biathlonSection(), ...parts];
+      if (revealed(s)) parts.push(bonusSection());
+      document.getElementById('panelBody').innerHTML = parts.join('');
       document.querySelectorAll('.watch').forEach(btn => btn.addEventListener('click', () => {
         const p = S.people.find(x => x.token === btn.dataset.token);
         if (p) GAMES[btn.dataset.g].watch(p);
@@ -586,8 +639,8 @@
     }
 
     // ---------- Demo-Modus ----------
-    // index.html?demo       : alle angelegten Personen mit Gesicht sitzen schon, "Du" läuft mit face1 ein
-    // index.html?demo=wahl  : Teamwahl ausprobieren, du wählst nacheinander für alle Gründer
+    // index.html?demo        : alle angelegten Personen mit Gesicht sitzen schon, "Du" läuft mit face1 ein
+    // index.html?demo=raten  : Flagge raten; 3 Sekunden nach deinem Tipp wird aufgelöst
     // Es wird nur gelesen, nichts gespeichert.
     async function demoStart() {
       let ps = [], benchSeats;
@@ -599,37 +652,31 @@
       const byName = (a, b) => String(a.name).localeCompare(String(b.name), 'de');
       let people = ps.filter(p => isPerson(p) && p.photoUrl)
         .sort((a, b) => (a.arrivedAt ?? 9e15) - (b.arrivedAt ?? 9e15) || byName(a, b))
-        .map((p, i) => ({ ...p, teamId: null, pickedAt: null, arrivedAt: t0 + i * 1000 }));
-      if (DEMO === 'pick' && people.length < 3) people = demoSample(t0);
+        .map((p, i) => ({ ...p, teamId: null, pickedAt: null, guess: null, agent: false, arrivedAt: t0 + i * 1000 }));
+      if (DEMO === 'guess' && people.length < 3) people = demoSample(t0);
       const me = { token: 'demo-me', name: 'Du', role: 'player', teamId: null, hair: 'kurz', photoUrl: 'faces/face1.png',
         arrivedAt: DEMO === 'enter' ? Date.now() : t0 + 99000 };
       people.push(me);
       token = me.token;
       if (DEMO === 'enter') return onData({ me, state: { phase: 'setup', benchSeats }, teams: {}, people });
 
-      // Teamwahl: erfundene Snake-Ergebnisse, die besten gründen Teams
+      // Raten: erfundene Flaggen (je zwei gleich) und Snake-Ergebnisse
+      const flags = ['it', 'fr', 'es', 'se', 'br', 'jp', 'us', 'gb', 'nl', 'gr', 'mx', 'ca', 'pt', 'no', 'ie', 'au'];
+      const order = people.slice().sort(() => Math.random() - 0.5);
+      order.forEach((p, i) => { p.flag = flags[Math.floor(i / 2) % flags.length]; });
       people.forEach((p, i) => { p.minigamePlayed = true; p.minigameScore = Math.max(1, 30 - i * 2 - (i % 3)); p.minigameAt = t0 + i; });
-      const order = people.slice().sort(compareRank('snake'));
-      const F = Math.max(1, Math.min(DEFAULT_FOUNDERS, Math.floor(people.length / 2)));
-      const teams = {};
-      const pickOrder = order.slice(0, F).map((f, i) => {
-        const id = 'demo-t' + i;
-        teams[id] = { id, name: 'Team ' + f.name, captainToken: f.token, order: i };
-        f.teamId = id; f.pickedAt = t0 + i;
-        return id;
-      });
-      onData({ me, state: { phase: 'draft', pickOrder, turnIndex: 0, benchSeats }, teams, people });
+      onData({ me, state: { phase: 'guess', benchSeats }, teams: {}, people });
     }
     function demoSample(t0) {
-      const names = ['Anna', 'Ben', 'Clara', 'David', 'Emil', 'Fiona', 'Greta', 'Hannes', 'Ida', 'Jonas', 'Klara', 'Leon', 'Mia', 'Noah'];
-      const longHair = new Set(['Anna', 'Clara', 'Fiona', 'Greta', 'Ida', 'Klara', 'Mia']);
+      const names = ['Anna', 'Ben', 'Clara', 'David', 'Emil', 'Fiona', 'Greta', 'Hannes', 'Ida', 'Jonas', 'Klara', 'Leon', 'Mia', 'Noah', 'Olga'];
+      const longHair = new Set(['Anna', 'Clara', 'Fiona', 'Greta', 'Ida', 'Klara', 'Mia', 'Olga']);
       return names.map((n, i) => ({ token: 'demo-p-' + i, name: n, role: 'player', teamId: null, hair: longHair.has(n) ? 'lang' : 'kurz',
         photoUrl: i % 4 === 1 ? 'faces/face' + (1 + (i % 2)) + '.png' : null, arrivedAt: t0 + i * 1000 }));
     }
     function demoChatter() {
-      const lines = ['Hallo zusammen! 👋', 'Wer hat die Musik mitgebracht? 🎶', 'Ich will in dein Team!',
+      const lines = ['Hallo zusammen! 👋', 'Wer hat die Musik mitgebracht? 🎶', 'Ich weiß, wer zu mir gehört 😏',
         'Kalt hier draußen 🥶', 'Hat jemand den Springer gesehen?? 😮', 'Wann geht es los?', 'Wir gewinnen eh 💪',
-        'Schöner Schneemann ⛄', 'Bitte wählt mich 🙏', 'Biathlon kann ich auch!'];
+        'Schöner Schneemann ⛄', 'Ich verrate nichts 🤫', 'Biathlon kann ich auch!'];
       let k = 0;
       setInterval(() => {
         if (!S) return;
@@ -640,24 +687,23 @@
         onMessages(1);
       }, 3500);
     }
-    function demoPick(player) {
-      const teamId = turnTeamId(S);
-      let people = S.people.map(p => p.token === player.token ? { ...p, teamId, pickedAt: Date.now() } : p);
-      const state = { ...S.state }, teams = { ...S.teams };
-      if (state.turnIndex + 1 < state.pickOrder.length) state.turnIndex++;
-      else {
-        const { newTeams, extra } = planPairs(people.filter(p => !p.teamId), Object.keys(teams).length);
-        const now = Date.now();
-        newTeams.forEach((t, k) => {
-          const id = 'demo-r' + k;
-          teams[id] = { id, name: t.name, captainToken: null, order: t.order, random: true };
+    let demoRevealTimer = null;
+    function demoGuess(p) {
+      // alle anderen tippen zufällig, dann wird nach 3 Sekunden aufgelöst
+      let people = S.people.map(x => x.token === token ? { ...x, guess: p.token }
+        : { ...x, guess: x.guess ?? S.people.filter(y => y.token !== x.token)[Math.floor(Math.random() * (S.people.length - 1))].token });
+      onData({ ...S, me: people.find(x => x.token === token), people });
+      clearTimeout(demoRevealTimer);
+      demoRevealTimer = setTimeout(() => {
+        const teams = {}, now = Date.now();
+        planTeams(S.people).forEach(t => {
+          const id = 'demo-t' + t.order;
+          teams[id] = { id, name: t.name, flag: t.flag, captainToken: null, order: t.order };
           const set = new Set(t.members.map(m => m.token));
-          people = people.map(p => set.has(p.token) ? { ...p, teamId: id, pickedAt: now + k * 10 + t.members.findIndex(m => m.token === p.token) } : p);
+          people = people.map(x => set.has(x.token) ? { ...x, teamId: id, pickedAt: now + t.members.findIndex(m => m.token === x.token) } : x);
         });
-        if (extra) people = people.map(p => p.token === extra.token ? { ...p, teamId: state.pickOrder[0], pickedAt: now + 9999 } : p);
-        state.phase = 'done';
-      }
-      onData({ ...S, me: people.find(p => p.token === token), people, state, teams });
+        onData({ ...S, me: people.find(x => x.token === token), people, teams, state: { ...S.state, phase: 'pairs' } });
+      }, 3000);
     }
 
     function escapeHtml(str) {
