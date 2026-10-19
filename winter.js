@@ -442,13 +442,13 @@ export function buildWinterWorld(scene, floorTex) {
       };
     }
     // links und rechts (von der Mitte aus Richtung Tor gesehen), hinten bleibt frei
-    // Alle Bilder gleich hoch (FH); von der Mitte aus gesehen überall 9° Lücke: Schriftzug | Zauberer/Balkon | Besen/Schädel
+    // Alle Bilder gleich hoch (FH); von der Mitte aus gesehen überall 18° Lücke: Schriftzug | Zauberer/Balkon | Besen/Schädel (Schriftzug und Eis-Pokal fest)
     const FH = 13.5, FY = FH / 2 + 1.4;
     const floaters = [
-      floater('besen', new THREE.Vector3(-1.65, FY, -21.44), FH, 378 / 465, 'rgba(255,90,20,0.85)', 0xffa040),
-      floater('schaedel', new THREE.Vector3(-3.83, FY, 21.16), FH, 378 / 465, 'rgba(90,255,60,0.7)', 0x9dff5a),
-      floater('zauberer', new THREE.Vector3(14.32, FY, -16.04), FH, 1012 / 754, 'rgba(255,110,30,0.7)', 0xffb050),
-      floater('balkon', new THREE.Vector3(13.48, FY, 16.75), FH, 800 / 520, 'rgba(80,255,70,0.55)', 0xa6ff6a),
+      floater('besen', new THREE.Vector3(-8.2, FY, -19.88), FH, 378 / 465, 'rgba(255,90,20,0.85)', 0xffa040),
+      floater('schaedel', new THREE.Vector3(-10.18, FY, 18.94), FH, 378 / 465, 'rgba(90,255,60,0.7)', 0x9dff5a),
+      floater('zauberer', new THREE.Vector3(11.63, FY, -18.08), FH, 1012 / 754, 'rgba(255,110,30,0.7)', 0xffb050),
+      floater('balkon', new THREE.Vector3(10.69, FY, 18.65), FH, 800 / 520, 'rgba(80,255,70,0.55)', 0xa6ff6a),
       // hinter dem Kreis, gegenüber dem Tor: der riesige Eis-Pokal mit den beiden Skifahrern, steht auf dem Boden
       // (unten in der Mitte sitzt die Finaltür, siehe hall3d.js AGENT_DOOR)
       floater('eispokal', new THREE.Vector3(-EIS_X, EIS_H / 2, 0), EIS_H, 480 / 1072, 'rgba(90,180,255,0.75)', 0xbfe6ff, true)

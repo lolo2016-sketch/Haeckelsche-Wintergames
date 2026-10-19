@@ -3,7 +3,7 @@
 // Pfeile am Boden antippen = einen Schritt gehen, wischen = umschauen. Von der Mitte gehen 5 Wege ab, je 4 Schritte.
 // Am Ende eines Weges: die Figur "Hilf unserem Papa" und links daneben der Waffenschrank.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js';
-import { WEAPONS } from './draft.js?v=20261019e';
+import { WEAPONS } from './draft.js?v=20261019h';
 
 const STEP = 6.5;            // Abstand der Wegpunkte (m)
 const STEPS = 4;             // Schritte pro Weg
@@ -277,7 +277,7 @@ function weaponMesh(id) {
 }
 
 // ---------- Szene ----------
-export function createCamp(container, { onWeapon, onLeave } = {}) {
+export function createCamp(container, { onWeapon, onLeave, onDoor2 } = {}) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -509,6 +509,22 @@ export function createCamp(container, { onWeapon, onLeave } = {}) {
     }
   });
 
+  // ----- Tür zu Raum 2: rechts neben Napoleon, erscheint erst nach der richtigen Waffe -----
+  const door2 = new THREE.Group();
+  const d2Frame = lam(0x3a2414);
+  for (const x of [-0.8, 0.8]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.7, 0.25), d2Frame); p.position.set(x, 1.35, 0); door2.add(p); }
+  const d2Top = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.22, 0.25), d2Frame); d2Top.position.y = 2.75; door2.add(d2Top);
+  const d2Leaf = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.55, 0.08), lam(0x6b4423, { emissive: 0x332200 })); d2Leaf.position.y = 1.28; door2.add(d2Leaf);
+  const d2Glow = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 3.1), new THREE.MeshBasicMaterial({ color: 0xffd36b, transparent: true, opacity: 0.4, depthWrite: false }));
+  d2Glow.position.set(0, 1.45, -0.1); door2.add(d2Glow);
+  const d2Sign = textSprite('🚪 Weiter', { size: 64, scale: 1.6 }); d2Sign.position.y = 3.25; door2.add(d2Sign);
+  door2.traverse(o => { o.userData.door2 = true; });
+  // direkt rechts neben Napoleon und dem Rotrock (aus Sicht des Ankommenden), nah genug, dass sie im Hochformat im Bild ist
+  const DOOR2_POS = FIG_POS.clone().add(PSIDE.clone().multiplyScalar(-2.7)).add(CLEAR_DIR.clone().multiplyScalar(-0.3));
+  place(door2, DOOR2_POS, END.clone());
+  door2.visible = false;
+  updaters.push((dt, t) => { if (door2.visible) d2Glow.material.opacity = 0.3 + Math.sin(t * 3) * 0.18; });
+
   // ----- Wegpfeile (wie Street View) -----
   const arrowShape = new THREE.Shape();
   arrowShape.moveTo(0, 0.55); arrowShape.lineTo(0.45, 0); arrowShape.lineTo(0.22, 0); arrowShape.lineTo(0.22, -0.4);
@@ -549,13 +565,20 @@ export function createCamp(container, { onWeapon, onLeave } = {}) {
     // unterwegs vorwärts: Blick schon in die nächste Gasse drehen (wie bei Street View)
     let next = null;
     if (fwd && id !== 'cab' && id !== END_ID) { const [k, st] = id.split(':').map(Number); if (st < STEPS) next = nodePos(k, st + 1); }
-    const lookAtP = id === END_ID ? FIG_POS.clone().add(PSIDE.clone().multiplyScalar(0.6)) : id === 'cab' ? CAB_POS.clone() : next ? next.setY(EYE) : null;
+    // ist die Tür schon da, schaut man am Wegende zwischen Napoleon und Tür
+    const lookAtP = id === END_ID ? (door2.visible ? FIG_POS.clone().lerp(DOOR2_POS, 0.5) : FIG_POS.clone().add(PSIDE.clone().multiplyScalar(0.6)))
+      : id === 'cab' ? CAB_POS.clone() : next ? next.setY(EYE) : null;
     if (lookAtP) {
       const tgt = lookAtP.sub(posOf(id)); const want = Math.atan2(tgt.x, tgt.z);
       moving = { look: true, t: 0, yaw0: yaw, yaw1: yaw + Math.atan2(Math.sin(want - yaw), Math.cos(want - yaw)), pitch1: id === 'cab' ? 0.02 : next ? -0.17 : -0.1, pitch0: pitch };
     }
   }
 
+  function turnTo(p) {
+    if (moving && !moving.look) return;
+    const tgt = p.clone().sub(posOf(cur)); const want = Math.atan2(tgt.x, tgt.z);
+    moving = { look: true, t: 0, yaw0: yaw, yaw1: yaw + Math.atan2(Math.sin(want - yaw), Math.cos(want - yaw)), pitch1: -0.08, pitch0: pitch };
+  }
   const el = renderer.domElement;
   let drag = null;
   el.addEventListener('pointerdown', e => { el.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, yaw, pitch, moved: 0 }; });
@@ -584,6 +607,7 @@ export function createCamp(container, { onWeapon, onLeave } = {}) {
     ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
     const ah = ray.intersectObjects(arrows.children, true)[0];
     if (ah) return goTo(ah.object.userData.target);
+    if (door2.visible && (cur === END_ID || cur === 'cab') && ray.intersectObject(door2, true)[0]) return onDoor2?.();
     const hits = ray.intersectObjects(Object.values(weapons).map(w => w.hit), false);
     if (hits[0]) {
       if (cur === 'cab') return onWeapon?.(hits[0].object.userData.weapon);
@@ -644,6 +668,13 @@ export function createCamp(container, { onWeapon, onLeave } = {}) {
       const star = textSprite('✓', { size: 110, color: '#22c55e', bg: 'rgba(0,0,0,0)', w: 160, h: 160, scale: 0.5 }); star.position.z = 0.2; w.slot.add(star);
     },
     atCabinet: () => cur === 'cab',
+    setDoor2(on) {
+      const appear = !!on && !door2.visible;
+      door2.visible = !!on;
+      // Tür erscheint gerade: Blick automatisch zu Napoleon und der Tür drehen
+      if (appear && (cur === END_ID || cur === 'cab')) turnTo(FIG_POS.clone().lerp(DOOR2_POS, cur === 'cab' ? 0.75 : 0.5));
+    },
+    _jump(id) { cur = id; moving = null; camPos.copy(posOf(id)).setY(EYE); buildArrows(); arrive(id, false); },   // nur für Tests
     dispose() {
       cancelAnimationFrame(raf); ro.disconnect(); window.removeEventListener('keydown', onKey);
       renderer.dispose(); el.remove();
