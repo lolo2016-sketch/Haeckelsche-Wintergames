@@ -92,15 +92,16 @@
     // (sonst mischt der Browser-Zwischenspeicher alte und neue Dateien). Bei jedem Update hochzählen.
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import {
-      getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, addDoc, query, orderBy, limit
+      getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, addDoc, query, orderBy, limit, arrayUnion, increment
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261019e";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261019e";
-    import { createHall } from "./hall.js?v=20261019e";
+    import { playSnake, playReplay } from "./minigame.js?v=20261019h";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261019h";
+    import { createHall } from "./hall.js?v=20261019h";
     import { PHASE_NAMES, phaseIndex, settings, country, teamColor, isPerson, playedSnake, compareSnake, snakeRanking,
       playedBiathlon, teamBiathlon, bonusOf, teamBonus, guessedRight, planTeams,
-      FINAL_TEAMS, PENALTY_S, finalMembers, finalCaptain, finalBonus, finalScoreMs, fmtClock, weaponName } from "./draft.js?v=20261019e";
+      FINAL_TEAMS, PENALTY_S, finalMembers, finalCaptain, finalBonus, finalScoreMs, fmtClock, weaponName,
+      finalStage, RIDDLES, WORD2, WORD2_TRIES, riddleRight, word2Shown, normAnswer, WORD3, CANS } from "./draft.js?v=20261019h";
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
@@ -290,7 +291,7 @@
         const L = me.finalTeam, fin = s.finals?.[L], cap = L ? finalCaptain(L, s.people) : null;
         if (!L) return `<div class="banner">Das Finale ist freigegeben! Du bist noch keinem Finale-Team zugeordnet – sag dem Organisator Bescheid.</div>`;
         const mem = finalMembers(L, s.people).map(p => p.name).join(', ');
-        if (fin?.solved1At) return `<div class="banner">🏆 Team ${L} hat Rätsel 1 gelöst! Wertung: <strong>${fmtClock(finalScoreMs(fin, finalBonus(L, s.people, s.state)))}</strong>. Weitere Rätsel folgen.</div>`;
+        if (fin?.solved3At) return `<div class="banner">🏆 Team ${L} hat das Finale geschafft! Wertung: <strong>${fmtClock(finalScoreMs(fin, finalBonus(L, s.people, s.state)))}</strong>.</div>`;
         if (fin?.startedAt) return `<div class="banner myturn">Team ${L} ist im Finale! Tippe die leuchtende Tür an (links neben dem Pokal), um wieder hineinzugehen.</div>`;
         return `<div class="banner myturn">🏆 Das <strong>Finale</strong> ist freigegeben! Verabredet euch als Team ${L} (${escapeHtml(mem)}).
           ${cap?.token === me.token ? '<strong>Du bist Kapitän:</strong> Wenn alle bereit sind, tippe die leuchtende Tür links neben dem Pokal an. Dann läuft eure Uhr.' : `Euer Kapitän <strong>${escapeHtml(cap?.name ?? '?')}</strong> öffnet die Tür links neben dem Pokal.`}</div>`;
@@ -346,7 +347,7 @@
       // 3D, wenn möglich, sonst die einfache 2D-Halle
       let use3d = false;
       try {
-        hall3dMod ??= await import('./hall3d.js?v=20261019e');
+        hall3dMod ??= await import('./hall3d.js?v=20261019h');
         use3d = hall3dMod.webglAvailable();
       } catch (e) { use3d = false; }
 
@@ -647,10 +648,10 @@
       const rows = FINAL_TEAMS.filter(L => finalMembers(L, s.people).length).map(L => {
         const fin = s.finals?.[L], bonus = finalBonus(L, s.people, s.state);
         return { L, fin, bonus, score: finalScoreMs(fin, bonus), mem: finalMembers(L, s.people) };
-      }).sort((a, b) => (!!b.fin?.solved1At - !!a.fin?.solved1At) || ((a.fin?.solved1At ? a.score : 9e15) - (b.fin?.solved1At ? b.score : 9e15)));
+      }).sort((a, b) => (!!b.fin?.solved3At - !!a.fin?.solved3At) || ((a.fin?.solved3At ? a.score : 9e15) - (b.fin?.solved3At ? b.score : 9e15)));
       return `<h2 style="margin-top:4px">🏆 Finale</h2>${rows.map((r, i) => `<div class="card">
         <strong>Team ${r.L}</strong> <span style="color:#555;font-size:.9rem">(${r.mem.map(m => (m.finalCaptain ? '★ ' : '') + escapeHtml(m.name)).join(', ')})</span><br>
-        <span style="font-size:.9rem">Vorsprung ${r.bonus} s · ${r.fin?.solved1At ? `✅ Rätsel 1 gelöst: <strong>${fmtClock(r.score)}</strong>` : r.fin?.startedAt ? '⏳ spielt gerade' : 'noch nicht gestartet'}
+        <span style="font-size:.9rem">Vorsprung ${r.bonus} s · ${r.fin?.solved3At ? `🏁 geschafft: <strong>${fmtClock(r.score)}</strong>` : r.fin?.startedAt ? `⏳ Raum ${Math.min(3, Math.floor(finalStage(r.fin)))} von 3` : 'noch nicht gestartet'}
         ${r.fin?.penalty ? ` · Strafe +${r.fin.penalty} s` : ''}</span></div>`).join('') || '<div class="card"><p>Die Finale-Teams stehen noch nicht fest.</p></div>'}`;
     }
     function renderBoardTab() {
@@ -666,14 +667,30 @@
       }));
     }
 
-    // ---------- Finale: Tür, Lager-Rätsel, Waffenwahl ----------
-    let camp = null, campMod = null, inFinal = false, leftFinal = false, finHudTimer = null, lastStarted = null;
+    // ---------- Finale: drei Räume ----------
+    // Raum 1: Napoleons Lager (Waffe wählen) · Raum 2: Rätselkammer (HORCRUX) · Raum 3: Schneeballwurf (VEREIST)
+    // Der Kapitän öffnet jede Tür; alle im Team folgen automatisch. Zwischen den Räumen steht die Uhr.
+    let scene3d = null, sceneNo = 0, sceneMods = {}, inFinal = false, leftFinal = false, finHudTimer = null, lastStarted = null, switching = false;
+    let built3 = [];   // Raum 3: in dieser Reihenfolge angetippte Buchstaben (Dosen-Index)
     const myFin = () => S.finals?.[S.me.finalTeam] ?? null;
+    const isCaptain = () => finalCaptain(S.me.finalTeam, S.people)?.token === S.me.token;
+    const sceneFor = st => st <= 1.5 ? 1 : st <= 2.5 ? 2 : 3;
     function toast(text, ms = 2600) {
       const t = document.createElement('div');
       t.style.cssText = 'position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);z-index:950;background:rgba(15,23,42,.9);color:#fff;padding:14px 18px;border-radius:14px;max-width:86vw;text-align:center;font-weight:600';
       t.textContent = text; document.body.appendChild(t); setTimeout(() => t.remove(), ms);
     }
+    function modal(html) {
+      const bg = document.createElement('div'); bg.className = 'modal-bg'; bg.innerHTML = `<div class="modal">${html}</div>`;
+      document.body.appendChild(bg); bg.addEventListener('click', e => { if (e.target === bg) bg.remove(); }); return bg;
+    }
+    // Spielstand schreiben (Demo: nur lokal)
+    async function finUpdate(upd, local) {
+      const L = S.me.finalTeam;
+      if (DEMO) { S = { ...S, finals: { ...S.finals, [L]: { ...myFin(), ...local(myFin()) } } }; syncFinal(); return; }
+      await updateDoc(doc(db, 'finals', L), upd);
+    }
+
     async function onDoor() {
       if (!isPhase(S, 'final')) return toast('🔒 Die Tür zum Finale ist noch verschlossen.');
       const L = S.me.finalTeam;
@@ -681,11 +698,9 @@
       if (myFin()?.startedAt) { leftFinal = false; return enterFinal(); }
       const cap = finalCaptain(L, S.people);
       if (cap?.token !== S.me.token) return toast(`Nur euer Kapitän ${cap?.name ?? ''} kann die Tür öffnen.`);
-      const bg = document.createElement('div'); bg.className = 'modal-bg';
-      bg.innerHTML = `<div class="modal"><h2 style="margin:0 0 6px">🚪 Finale starten?</h2>
+      const bg = modal(`<h2 style="margin:0 0 6px">🚪 Finale starten?</h2>
         <p style="margin:0 0 12px;color:#555">Sind alle von Team ${L} bereit? Sobald du die Tür öffnest, läuft eure Uhr – für alle im Team.</p>
-        <button class="secondary" data-a="no">Noch nicht</button><button data-a="yes">Tür öffnen!</button></div>`;
-      document.body.appendChild(bg);
+        <button class="secondary" data-a="no">Noch nicht</button><button data-a="yes">Tür öffnen!</button>`);
       bg.querySelector('[data-a=no]').onclick = () => bg.remove();
       bg.querySelector('[data-a=yes]').onclick = async () => {
         bg.remove();
@@ -698,7 +713,22 @@
         } catch (err) { alert('Fehler: ' + err.message); }
       };
     }
-    // Bei jedem neuen Datenstand: automatisch hinein, sobald der Kapitän die Tür geöffnet hat; Anzeige aktualisieren
+    // Tür zum nächsten Raum (nur Kapitän): setzt start2At bzw. start3At, die Uhr läuft weiter
+    function nextDoor(n) {
+      const fin = myFin(); if (!fin) return;
+      const key = n === 2 ? 'start2At' : 'start3At';
+      if (fin[key]) return;
+      if (!isCaptain()) return toast(`Nur euer Kapitän ${finalCaptain(S.me.finalTeam, S.people)?.name ?? ''} kann die Tür öffnen.`);
+      const bg = modal(`<h2 style="margin:0 0 6px">🚪 Weiter in Raum ${n}?</h2><p style="margin:0 0 12px;color:#555">Die Uhr steht gerade. Sobald du die Tür öffnest, läuft sie weiter – alle aus deinem Team kommen mit.</p>
+        <button class="secondary" data-a="no">Noch nicht</button><button data-a="yes">Tür öffnen!</button>`);
+      bg.querySelector('[data-a=no]').onclick = () => bg.remove();
+      bg.querySelector('[data-a=yes]').onclick = async () => {
+        bg.remove();
+        try { await finUpdate({ [key]: Date.now() }, () => ({ [key]: Date.now() })); } catch (err) { alert('Fehler: ' + err.message); }
+      };
+    }
+
+    // Bei jedem neuen Datenstand: automatisch hinein bzw. in den nächsten Raum, Anzeige aktualisieren
     function syncFinal() {
       const fin = myFin();
       if (fin?.startedAt && fin.startedAt !== lastStarted) {
@@ -706,9 +736,20 @@
         lastStarted = fin.startedAt;
         if (!first && !inFinal && !leftFinal) { toast('🚪 Euer Kapitän hat die Tür geöffnet – auf ins Finale!'); setTimeout(enterFinal, 900); }
       }
-      if (!fin?.startedAt) lastStarted = lastStarted ?? null;
-      if (camp && fin) { camp.markWrong(fin.wrong || []); if (fin.solved1At && fin.solvedWeapon) camp.markSolved(fin.solvedWeapon); }
+      if (inFinal && fin && !switching) {
+        const want = sceneFor(finalStage(fin));
+        if (want !== sceneNo) { toast(want === 2 ? '🚪 Weiter in die Rätselkammer!' : '🚪 Weiter zum letzten Raum!'); loadScene(want); return; }
+        updateScene(fin);
+      }
       renderFinHud();
+    }
+    function updateScene(fin) {
+      if (!scene3d) return;
+      const st = finalStage(fin);
+      if (sceneNo === 1) { scene3d.markWrong(fin.wrong || []); if (fin.solved1At && fin.solvedWeapon) scene3d.markSolved(fin.solvedWeapon); scene3d.setDoor2(st === 1.5); }
+      if (sceneNo === 2) { scene3d.setSolved(fin.riddles || [], RIDDLES.map(r => r.letter)); scene3d.setDoor(st === 2.5); }
+      if (sceneNo === 3) scene3d.setHits(fin.cans || []);
+      if (st === 4 && !document.getElementById('finDone')) showFinished();
     }
     async function enterFinal() {
       if (inFinal) return;
@@ -718,75 +759,196 @@
       document.getElementById('panel').hidden = true;
       const stage = document.createElement('div'); stage.id = 'finalStage';
       stage.style.cssText = 'position:fixed;inset:0;z-index:15;background:#000';
-      stage.innerHTML = `<div id="finHud" style="position:fixed;z-index:25;top:calc(8px + var(--st));left:8px;right:8px;display:flex;flex-direction:column;gap:6px;align-items:flex-start;pointer-events:none"></div>
+      stage.innerHTML = `<div id="finScene" style="position:absolute;inset:0"></div>
+        <div id="finHud" style="position:fixed;z-index:25;top:calc(8px + var(--st));left:8px;right:8px;display:flex;flex-direction:column;gap:6px;align-items:flex-start;pointer-events:none"></div>
+        <div id="finBar" style="position:fixed;z-index:25;left:8px;right:8px;bottom:calc(64px + var(--sb));display:flex;flex-direction:column;align-items:center;gap:6px"></div>
         <button id="finBack" class="round glass" style="position:fixed;z-index:25;right:8px;bottom:calc(14px + var(--sb));width:auto;padding:0 14px;border-radius:999px;font-size:.9rem">🏟️ Zur Halle</button>
-        <div style="position:fixed;z-index:25;left:50%;bottom:calc(16px + var(--sb));transform:translateX(-50%);background:rgba(15,23,42,.6);color:#fff;padding:6px 12px;border-radius:999px;font-size:.8rem;pointer-events:none" id="finHint">👆 Pfeile antippen = gehen · wischen = umschauen</div>`;
+        <div style="position:fixed;z-index:25;left:8px;bottom:calc(18px + var(--sb));background:rgba(15,23,42,.6);color:#fff;padding:6px 12px;border-radius:999px;font-size:.8rem;pointer-events:none" id="finHint"></div>`;
       document.body.appendChild(stage);
-      setTimeout(() => { const h = document.getElementById('finHint'); if (h) h.style.display = 'none'; }, 7000);
       document.getElementById('finBack').onclick = leaveFinal;
-      try {
-        campMod ??= await import('./camp.js?v=20261019e');
-        camp = campMod.createCamp(stage, { onWeapon: chooseWeapon });
-      } catch (err) { alert('Das Finale konnte nicht geladen werden: ' + err.message); return leaveFinal(); }
       clearInterval(finHudTimer); finHudTimer = setInterval(renderFinHud, 250);
+      await loadScene(sceneFor(finalStage(myFin())));
+    }
+    async function loadScene(n) {
+      switching = true;
+      scene3d?.dispose(); scene3d = null; sceneNo = n; built3 = [];
+      const box = document.getElementById('finScene'); if (!box) { switching = false; return; }
+      const hint = document.getElementById('finHint');
+      try {
+        if (n === 1) {
+          sceneMods.c ??= await import('./camp.js?v=20261019h');
+          scene3d = sceneMods.c.createCamp(box, { onWeapon: chooseWeapon, onDoor2: () => nextDoor(2) });
+          hint.textContent = '👆 Pfeile antippen = gehen · wischen = umschauen';
+        } else if (n === 2) {
+          sceneMods.r2 ??= await import('./room2.js?v=20261019h');
+          scene3d = sceneMods.r2.createRiddleRoom(box, { onPlaque: openRiddle, onDoor: () => nextDoor(3) });
+          hint.textContent = '👆 wischen = umschauen · Tafel antippen = Rätsel';
+        } else {
+          sceneMods.r3 ??= await import('./room3.js?v=20261019h');
+          const mates = finalMembers(S.me.finalTeam, S.people).filter(p => p.token !== S.me.token).map(p => ({ name: p.name, photoUrl: p.photoUrl }));
+          scene3d = sceneMods.r3.createSnowRange(box, { cans: CANS, hits: myFin()?.cans || [], mates, onHit: hitCan });
+          hint.textContent = '👆 antippen = Schneeball werfen · wischen = zielen';
+        }
+      } catch (err) { switching = false; alert('Der Raum konnte nicht geladen werden: ' + err.message); return leaveFinal(); }
+      setTimeout(() => { if (hint) hint.style.opacity = '0.0'; }, 8000); hint.style.opacity = '1';
+      switching = false;
       syncFinal();
     }
     function leaveFinal() {
       inFinal = false; leftFinal = true;
       clearInterval(finHudTimer);
-      camp?.dispose(); camp = null;
+      scene3d?.dispose(); scene3d = null; sceneNo = 0;
       document.getElementById('finalStage')?.remove();
+      document.getElementById('finDone')?.remove();
       ['top', 'side', 'bottom'].forEach(id => { document.getElementById(id).style.display = ''; });
       hall?.resume?.();
       renderTab();
     }
+
+    // Kopfzeile (Uhr, Aufgabe) und Leiste unten (Wort, Buchstaben)
     function renderFinHud() {
-      const hud = document.getElementById('finHud');
+      const hud = document.getElementById('finHud'), bar = document.getElementById('finBar');
       if (!hud) return;
       const L = S.me.finalTeam, fin = myFin();
       if (!fin) { hud.innerHTML = ''; return; }
-      const bonus = finalBonus(L, S.people, S.state), sc = finalScoreMs(fin, bonus);
-      const cap = finalCaptain(L, S.people);
-      const time = fin.solved1At ? `✅ Rätsel 1 gelöst · ${fmtClock(sc)}` : sc < 0 ? `⏱ Vorsprung: Uhr startet in ${Math.ceil(-sc / 1000)} s` : `⏱ ${fmtClock(sc)}`;
+      const st = finalStage(fin), bonus = finalBonus(L, S.people, S.state), sc = finalScoreMs(fin, bonus);
+      const cap = finalCaptain(L, S.people), capTxt = isCaptain() ? 'Du bist Kapitän' : `Kapitän: ${escapeHtml(cap?.name ?? '?')}`;
+      const paused = st === 1.5 || st === 2.5 || st === 4;
+      const time = st === 4 ? `🏁 ${fmtClock(sc)}` : sc < 0 ? `⏱ Vorsprung: Uhr startet in ${Math.ceil(-sc / 1000)} s` : `⏱ ${fmtClock(sc)}${paused ? ' ⏸' : ''}`;
+      const task = {
+        1: `Raum 1 · <strong>Hilf unserem Papa!</strong> Findet ihn im Lager und wählt die richtige Waffe aus der Waffenkammer. ${isCaptain() ? '<br><strong>Du bist Kapitän:</strong> nur du kannst eine Waffe wählen (falsch = +' + PENALTY_S + ' s).' : `<br>Nur ${escapeHtml(cap?.name ?? 'euer Kapitän')} kann eine Waffe wählen.`}`,
+        1.5: `✅ Raum 1 geschafft – die Uhr steht. Rechts neben Napoleon ist eine Tür erschienen. ${isCaptain() ? '<strong>Öffne sie</strong>, wenn alle bereit sind.' : `${escapeHtml(cap?.name ?? 'Euer Kapitän')} öffnet sie.`}`,
+        2: `Raum 2 · <strong>Die Rätselkammer.</strong> Jedes gelöste Rätsel deckt einen Buchstaben auf. Ihr könnt das Wort auch vorher raten (${WORD2_TRIES} Versuche fürs Team).`,
+        2.5: `✅ Raum 2 geschafft – die Uhr steht. Die Tür gegenüber leuchtet. ${isCaptain() ? '<strong>Öffne sie</strong>, wenn alle bereit sind.' : `${escapeHtml(cap?.name ?? 'Euer Kapitän')} öffnet sie.`}`,
+        3: `Raum 3 · <strong>Schneeballschlacht!</strong> Trefft die Dosen – manche verbergen Buchstaben. Tippt die Buchstaben unten in der richtigen Reihenfolge an.`,
+        4: `🏆 <strong>Geschafft!</strong>`
+      }[st] ?? '';
       hud.innerHTML = `<div class="chip glass" style="font-size:1.05rem">${time}${fin.penalty ? ` <span style="color:#fca5a5">(+${fin.penalty} s Strafe)</span>` : ''}</div>
-        <div class="banner glass" style="max-width:520px">Team ${L} · Rätsel 1: <strong>Hilf unserem Papa!</strong> Findet ihn im Lager und wählt die richtige Waffe aus der Waffenkammer.
-          ${cap?.token === S.me.token ? '<br><strong>Du bist Kapitän:</strong> nur du kannst eine Waffe wählen (falsch = +' + PENALTY_S + ' s).' : `<br>Nur euer Kapitän ${escapeHtml(cap?.name ?? '')} kann eine Waffe wählen.`}</div>`;
+        <div class="banner glass" style="max-width:520px">Team ${L} · ${capTxt}<br>${task}</div>`;
+      // Leiste unten
+      if (!bar) return;
+      let h = '';
+      if (sceneNo === 2) {
+        const shown = word2Shown(fin.riddles);
+        const left = WORD2_TRIES - (fin.wordTries || 0);
+        h = `<div class="glass" style="border-radius:14px;padding:8px 12px;display:flex;gap:6px;align-items:center;pointer-events:auto">
+          ${shown.map(c => `<span style="display:inline-block;width:30px;height:38px;border-radius:6px;background:${c === '_' ? 'rgba(255,255,255,.12)' : '#b8860b'};color:#fff;font:bold 1.4rem Georgia,serif;text-align:center;line-height:38px">${c === '_' ? '' : c}</span>`).join('')}
+          ${st === 2 && left > 0 ? `<button id="guessWord" style="margin:0 0 0 6px;padding:8px 12px">Raten (${left})</button>` : ''}</div>`;
+      } else if (sceneNo === 3 && st === 3) {
+        const hits = (fin.cans || []).filter(i => CANS[i]);
+        h = `<div class="glass" style="border-radius:14px;padding:8px 10px;pointer-events:auto;text-align:center">
+          <div style="display:flex;gap:5px;justify-content:center;margin-bottom:6px">${WORD3.split('').map((_, k) => {
+            const i = built3[k]; return `<span style="display:inline-block;width:28px;height:36px;border-radius:6px;background:${i != null ? '#2563eb' : 'rgba(255,255,255,.14)'};color:#fff;font:bold 1.3rem Georgia,serif;line-height:36px">${i != null ? CANS[i] : ''}</span>`;
+          }).join('')}</div>
+          <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap">${hits.length ? hits.map(i => `<button class="l3" data-i="${i}" ${built3.includes(i) ? 'disabled' : ''} style="margin:0;padding:6px 12px;font:bold 1.2rem Georgia,serif">${CANS[i]}</button>`).join('')
+            : '<span style="color:#cbd5e1;font-size:.85rem">Noch keine Buchstaben – werft!</span>'}
+            ${built3.length ? '<button id="l3clear" class="secondary" style="margin:0;padding:6px 10px">↺</button>' : ''}</div></div>`;
+      }
+      if (bar.dataset.h !== h) {
+        bar.dataset.h = h; bar.innerHTML = h;
+        document.getElementById('guessWord')?.addEventListener('click', guessWord2);
+        bar.querySelectorAll('.l3').forEach(b => b.addEventListener('click', () => tapLetter3(Number(b.dataset.i))));
+        document.getElementById('l3clear')?.addEventListener('click', () => { built3 = []; renderFinHud(); });
+      }
     }
+
+    // ----- Raum 1: Waffe wählen (nur Kapitän) -----
     function chooseWeapon(id) {
       const L = S.me.finalTeam, fin = myFin(), cap = finalCaptain(L, S.people);
       if (!fin) return;
-      if (fin.solved1At) return toast('Rätsel 1 ist schon gelöst! 🎉');
+      if (fin.solved1At) return toast('Raum 1 ist schon gelöst! 🎉');
       if (cap?.token !== S.me.token) return toast(`${weaponName(id)} – nur euer Kapitän ${cap?.name ?? ''} kann eine Waffe wählen.`);
       if ((fin.wrong || []).includes(id)) return toast(`${weaponName(id)} war schon falsch.`);
       const answer = DEMO ? 'schlaeger' : S.state.riddle1Answer;
       if (!answer) return toast('Die richtige Waffe ist noch nicht festgelegt (admin.html).');
-      const bg = document.createElement('div'); bg.className = 'modal-bg';
-      bg.innerHTML = `<div class="modal"><h2 style="margin:0 0 6px">${escapeHtml(weaponName(id))} wählen?</h2>
+      const bg = modal(`<h2 style="margin:0 0 6px">${escapeHtml(weaponName(id))} wählen?</h2>
         <p style="margin:0 0 12px;color:#555">Ist es die falsche Waffe, bekommt ihr <strong>+${PENALTY_S} Strafsekunden</strong>.</p>
-        <button class="secondary" data-a="no">Abbrechen</button><button data-a="yes">Diese Waffe!</button></div>`;
-      document.body.appendChild(bg);
+        <button class="secondary" data-a="no">Abbrechen</button><button data-a="yes">Diese Waffe!</button>`);
       bg.querySelector('[data-a=no]').onclick = () => bg.remove();
       bg.querySelector('[data-a=yes]').onclick = async () => {
         bg.remove();
         const right = id === answer;
-        if (DEMO) {
-          const f = { ...fin, ...(right ? { solved1At: Date.now(), solvedWeapon: id } : { penalty: (fin.penalty || 0) + PENALTY_S, wrong: [...(fin.wrong || []), id] }) };
-          S = { ...S, finals: { ...S.finals, [L]: f } }; syncFinal();
-        } else {
-          try {
-            const cur = (await getDoc(doc(db, 'finals', L))).data();
-            if (cur.solved1At) return;
-            await updateDoc(doc(db, 'finals', L), right ? { solved1At: Date.now(), solvedWeapon: id }
-              : { penalty: (cur.penalty || 0) + PENALTY_S, wrong: [...(cur.wrong || []), id] });
-          } catch (err) { return alert('Speichern fehlgeschlagen: ' + err.message); }
-        }
+        try {
+          if (!DEMO && (await getDoc(doc(db, 'finals', L))).data().solved1At) return;
+          await finUpdate(right ? { solved1At: Date.now(), solvedWeapon: id } : { penalty: increment(PENALTY_S), wrong: arrayUnion(id) },
+            f => right ? { solved1At: Date.now(), solvedWeapon: id } : { penalty: (f.penalty || 0) + PENALTY_S, wrong: [...(f.wrong || []), id] });
+        } catch (err) { return alert('Speichern fehlgeschlagen: ' + err.message); }
         if (right) {
-          const ov = document.createElement('div'); ov.className = 'modal-bg';
-          ov.innerHTML = `<div class="modal"><h2 style="margin:0 0 6px">🎉 Richtig!</h2><p>${escapeHtml(weaponName(id))} war die richtige Waffe. Rätsel 1 ist gelöst!</p>
-            <p style="color:#555">Die nächsten Rätsel folgen bald.</p><button data-a="ok">Weiter</button></div>`;
-          document.body.appendChild(ov); ov.querySelector('[data-a=ok]').onclick = () => ov.remove();
+          const ov = modal(`<h2 style="margin:0 0 6px">🎉 Richtig!</h2><p>${escapeHtml(weaponName(id))} war die richtige Waffe – Napoleon ist gerettet!</p>
+            <p style="color:#555">Die Uhr steht. Rechts neben Napoleon ist eine Tür erschienen.</p><button data-a="ok">Weiter</button>`);
+          ov.querySelector('[data-a=ok]').onclick = () => ov.remove();
         } else toast(`❌ ${weaponName(id)} war falsch: +${PENALTY_S} Strafsekunden`);
       };
+    }
+
+    // ----- Raum 2: Rätsel und Wort -----
+    function openRiddle(i) {
+      const fin = myFin(); if (!fin) return;
+      const done = (fin.riddles || []).includes(i);
+      const r = RIDDLES[i];
+      const bg = modal(`<h2 style="margin:0 0 8px">Rätsel ${i + 1}</h2>
+        <p style="margin:0 0 12px;font-size:1.05rem;line-height:1.4">${escapeHtml(r.q)}</p>
+        ${done ? `<p>✅ Gelöst – Buchstabe <strong style="font-size:1.4rem">${r.letter}</strong></p><button data-a="no">Schließen</button>`
+          : `<input id="rAns" placeholder="Antwort" autocomplete="off" style="width:100%;font-size:16px;margin-bottom:8px">
+             <button class="secondary" data-a="no">Schließen</button><button data-a="yes">Prüfen</button>`}`);
+      bg.querySelector('[data-a=no]').onclick = () => bg.remove();
+      const inp = bg.querySelector('#rAns');
+      const check = async () => {
+        if (!riddleRight(i, inp.value)) { inp.value = ''; inp.placeholder = '❌ Leider nicht – nochmal!'; inp.focus(); return; }
+        bg.remove();
+        const now = myFin(), solved = [...new Set([...(now.riddles || []), i])];
+        const all = RIDDLES.every((_, k) => solved.includes(k));
+        try {
+          await finUpdate({ riddles: arrayUnion(i), ...(all ? { solved2At: Date.now() } : {}) }, () => ({ riddles: solved, ...(all ? { solved2At: Date.now() } : {}) }));
+        } catch (err) { return alert('Speichern fehlgeschlagen: ' + err.message); }
+        toast(all ? `✅ Alle Rätsel gelöst: ${WORD2}!` : `✅ Richtig! Buchstabe ${r.letter}`);
+      };
+      if (inp) { inp.focus(); inp.addEventListener('keydown', e => { if (e.key === 'Enter') check(); }); bg.querySelector('[data-a=yes]').onclick = check; }
+    }
+    function guessWord2() {
+      const fin = myFin(); if (!fin || fin.solved2At) return;
+      const left = WORD2_TRIES - (fin.wordTries || 0);
+      if (left <= 0) return toast('Keine Rateversuche mehr – löst die Rätsel!');
+      const bg = modal(`<h2 style="margin:0 0 6px">Lösungswort raten</h2><p style="margin:0 0 10px;color:#555">Noch ${left} Versuch${left === 1 ? '' : 'e'} für euer Team.</p>
+        <input id="wAns" autocomplete="off" style="width:100%;font-size:16px;margin-bottom:8px;text-transform:uppercase">
+        <button class="secondary" data-a="no">Abbrechen</button><button data-a="yes">Raten!</button>`);
+      const inp = bg.querySelector('#wAns'); inp.focus();
+      bg.querySelector('[data-a=no]').onclick = () => bg.remove();
+      const go = async () => {
+        const right = normAnswer(inp.value).replace(/ /g, '') === WORD2.toLowerCase();
+        bg.remove();
+        try {
+          await finUpdate(right ? { solved2At: Date.now() } : { wordTries: increment(1) }, f => right ? { solved2At: Date.now() } : { wordTries: (f.wordTries || 0) + 1 });
+        } catch (err) { return alert('Speichern fehlgeschlagen: ' + err.message); }
+        toast(right ? `✅ Richtig: ${WORD2}!` : `❌ Falsch. Noch ${left - 1} Versuch${left - 1 === 1 ? '' : 'e'}.`);
+      };
+      bg.querySelector('[data-a=yes]').onclick = go; inp.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+    }
+
+    // ----- Raum 3: Dosen und Wort -----
+    async function hitCan(i) {
+      const fin = myFin(); if (!fin || (fin.cans || []).includes(i)) return;
+      try { await finUpdate({ cans: arrayUnion(i) }, f => ({ cans: [...new Set([...(f.cans || []), i])] })); } catch (err) {}
+      if (CANS[i]) toast(`🎯 Treffer! Buchstabe ${CANS[i]}`, 1400);
+    }
+    async function tapLetter3(i) {
+      if (built3.includes(i)) return;
+      built3.push(i); renderFinHud();
+      if (built3.length < WORD3.length) return;
+      const word = built3.map(k => CANS[k]).join('');
+      if (word !== WORD3) { toast('❌ Das ergibt kein Wort – nochmal!'); built3 = []; setTimeout(renderFinHud, 300); return; }
+      try { await finUpdate({ solved3At: Date.now() }, () => ({ solved3At: Date.now() })); } catch (err) { alert('Speichern fehlgeschlagen: ' + err.message); }
+    }
+    function showFinished() {
+      const L = S.me.finalTeam, fin = myFin();
+      const sc = finalScoreMs(fin, finalBonus(L, S.people, S.state));
+      const ov = document.createElement('div'); ov.id = 'finDone'; ov.className = 'modal-bg';
+      ov.innerHTML = `<div class="modal"><h2 style="margin:0 0 6px">🏆 Team ${L} hat es geschafft!</h2>
+        <p style="margin:0 0 6px">Napoleon gerettet · <strong>${WORD2}</strong> · <strong>${WORD3}</strong></p>
+        <p style="font-size:1.6rem;margin:6px 0"><strong>${fmtClock(sc)}</strong></p>
+        <p style="color:#555;font-size:.9rem">gespielte Zeit minus Vorsprung plus Strafsekunden</p><button data-a="ok">Zur Halle</button></div>`;
+      document.body.appendChild(ov);
+      ov.querySelector('[data-a=ok]').onclick = () => { ov.remove(); leaveFinal(); };
     }
 
     // ---------- Demo-Modus ----------
