@@ -17,10 +17,10 @@
       collection, getDocs
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261019";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261019";
+    import { playSnake, playReplay } from "./minigame.js?v=20261019b";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261019b";
     import { PHASES, PHASE_NAMES, phaseIndex, settings, DEFAULTS, COUNTRIES, country, isPerson, teamColor, snakeRanking,
-      guessedRight, teamBonus, teamBiathlon, revealTeams } from "./draft.js?v=20261019";
+      guessedRight, teamBonus, teamBiathlon, revealTeams, FINAL_TEAMS, finalMembers, finalBonus, finalScoreMs, fmtClock, WEAPONS, weaponName } from "./draft.js?v=20261019b";
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
@@ -100,6 +100,7 @@
       return Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6);
     }
 
+    let finals = {};   // Spielstand des Finales pro Team
     async function loadAll() {
       const stateSnap = await getDoc(doc(db, 'state', 'current'));
       const state = stateSnap.exists() ? stateSnap.data() : { phase: 'setup' };
@@ -112,6 +113,8 @@
       const participants = [];
       partsSnap.forEach(d => participants.push({ token: d.id, ...d.data() }));
 
+      finals = {};
+      try { (await getDocs(collection(db, 'finals'))).forEach(d => { finals[d.id] = { id: d.id, ...d.data() }; }); } catch (e) {}
       render(state, teams, participants);
       // Dateiliste einmal im Hintergrund holen und nur Listen/Hinweise auffrischen (Eingaben bleiben erhalten)
       if (!repoFiles.loaded && !repoFiles.loading) {
@@ -150,6 +153,7 @@
           ${step(2, 'toReveal', '3 Auflösen: Teams nach Flagge')}
           ${step(3, 'toBiathlon', '4 ▶ Runde 2: Biathlon starten')}
           ${step(4, 'toDone', '5 Biathlon beenden')}
+          ${step(5, 'toFinal', '6 🏆 Finale freigeben (Tür öffnen)')}
         </div>
         <div style="margin-top:8px;font-size:.85rem;color:#555">Korrektur: Phase direkt setzen
           <select id="phaseSel">${PHASES.map((ph, i) => `<option value="${ph}" ${i === PI ? 'selected' : ''}>${PHASE_NAMES[ph]}</option>`).join('')}</select>
@@ -173,7 +177,7 @@
         <div style="margin-top:10px">
           <button class="danger" id="freshStart">🔄 Für das Event frisch machen</button>
           <span style="color:#666;font-size:.85rem">Wie „Halle leeren“ und zusätzlich: Ergebnisse, Tipps, Teams und Chat löschen, Phase zurück auf „Vorbereitung“.
-          Personen, Namen, Bilder, Videos, Flaggen und QR-Codes bleiben.</span>
+          Personen, Namen, Bilder, Videos, Flaggen, Finale-Teams und QR-Codes bleiben.</span>
         </div>
         <div style="margin-top:10px">
           <span>💬 Chat: <span id="chatCount">…</span> Nachrichten</span>
@@ -230,6 +234,7 @@
         <button class="secondary" id="testBiathlonReplay" ${lastBiathlon ? '' : 'disabled'}>Letzten Biathlon-Test als Wiedergabe</button>
         <a href="${baseUrl}?demo&v=${Date.now().toString(36)}" target="_blank"><button class="secondary" type="button">🏟️ Demo: einlaufen</button></a>
         <a href="${baseUrl}?demo=raten&v=${Date.now().toString(36)}" target="_blank"><button class="secondary" type="button">🏟️ Demo: Flagge raten</button></a>
+        <a href="${baseUrl}?demo=finale&v=${Date.now().toString(36)}" target="_blank"><button class="secondary" type="button">🏆 Demo: Finale (Rätsel 1)</button></a>
         <button class="secondary" id="testReplay" ${lastTest ? '' : 'disabled'}>Letzten Test als Wiedergabe ansehen</button>
       </div>`;
 
@@ -280,6 +285,32 @@
         </div>`;
       });
 
+      // ----- Finale -----
+      html += `<div class="card"><h2>🏆 Finale</h2>
+        <p style="font-size:.9rem;color:#555;margin:2px 0 6px">Viererteams A–D und je ein Kapitän (★). Nach „Finale freigeben“ kann jedes Team zu seinem
+        eigenen Termin spielen: Der Kapitän tippt in der Halle die Tür links neben dem Pokal an, dann läuft die Uhr des Teams und alle gehen hinein.
+        Mehrere Teams können gleichzeitig spielen.</p>
+        <label>Richtige Waffe in Rätsel 1: <select id="riddle1Answer"><option value="">– bitte wählen –</option>
+          ${WEAPONS.map(w => `<option value="${w.id}" ${state.riddle1Answer === w.id ? 'selected' : ''}>${w.name}</option>`).join('')}</select></label>
+        <button class="secondary" id="saveAnswer">Speichern</button>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px;margin-top:10px">
+        ${people.slice().sort(byName).map(p => `<label style="display:flex;gap:6px;align-items:center">
+          <span style="flex:1">${p.name}</span>
+          <select class="finSel" data-token="${p.token}"><option value="">–</option>${FINAL_TEAMS.map(L => `<option ${p.finalTeam === L ? 'selected' : ''}>${L}</option>`).join('')}</select>
+          <span title="Kapitän"><input type="checkbox" class="capSel" data-token="${p.token}" ${p.finalCaptain ? 'checked' : ''}> ★</span></label>`).join('')}</div>
+        <button id="saveFinal" style="margin-top:8px">Finale-Teams speichern</button>
+        <div style="margin-top:10px">${FINAL_TEAMS.map(L => {
+          const mem = finalMembers(L, people); if (!mem.length) return '';
+          const fin = finals[L], bonus = finalBonus(L, people, state), sc = finalScoreMs(fin, bonus);
+          const caps = mem.filter(m => m.finalCaptain);
+          return `<div style="margin:6px 0"><strong>Team ${L}</strong>: ${mem.map(m => (m.finalCaptain ? '★ ' : '') + m.name).join(', ')}
+            ${caps.length !== 1 ? '<span style="color:#b91c1c;font-weight:600"> ⚠️ genau einen Kapitän wählen</span>' : ''}
+            <br><span style="font-size:.9rem">Vorsprung ${bonus} s · ${fin?.solved1At ? `✅ gelöst mit ${weaponName(fin.solvedWeapon)}, Wertung ${fmtClock(sc)}` : fin?.startedAt ? `⏳ läuft seit ${new Date(fin.startedAt).toLocaleTimeString('de-DE')}` : 'nicht gestartet'}
+            ${fin?.penalty ? ` · Strafe +${fin.penalty} s (${(fin.wrong || []).map(weaponName).join(', ')})` : ''}</span>
+            ${fin ? `<button class="secondary resetFinal" data-team="${L}" style="padding:4px 10px">Zurücksetzen</button>` : ''}</div>`;
+        }).join('')}</div>
+      </div>`;
+
       html += `<h2>Teilnehmer (${people.length})</h2>`;
       const snakeRank = snakeRanking(people);
       people.slice().sort(byName).forEach(p => {
@@ -314,7 +345,7 @@
         loadAll();
       });
       document.getElementById('freshStart')?.addEventListener('click', async () => {
-        if (!confirm('Alles für das Event frisch machen?\n\n• Halle leer, QR-Codes wie neu (Einlauf + Intro-Video)\n• Snake- und Biathlon-Ergebnisse und Tipps gelöscht\n• Teams gelöscht\n• Chat gelöscht\n• Phase zurück auf "setup"\n\nPersonen, Namen, Bilder, Videos und QR-Codes bleiben erhalten.')) return;
+        if (!confirm('Alles für das Event frisch machen?\n\n• Halle leer, QR-Codes wie neu (Einlauf + Intro-Video)\n• Snake- und Biathlon-Ergebnisse, Tipps und Finale-Spielstände gelöscht\n• Teams gelöscht\n• Chat gelöscht\n• Phase zurück auf "setup"\n\nPersonen, Namen, Bilder, Videos und QR-Codes bleiben erhalten.')) return;
         for (const p of participants.filter(x => x.role !== 'admin')) {
           await updateDoc(doc(db, 'participants', p.token), {
             arrivedAt: null, videoViews: 0, teamId: null, pickedAt: null, agent: false, guess: null, guessAt: null,
@@ -322,8 +353,9 @@
           });
         }
         for (const t of Object.values(teams)) await deleteDoc(doc(db, 'teams', t.id));
+        for (const L of Object.keys(finals)) await deleteDoc(doc(db, 'finals', L));
         for (const d of (await getDocs(collection(db, 'chat'))).docs) await deleteDoc(d.ref);
-        await setDoc(doc(db, 'state', 'current'), { phase: 'setup', benchSeats: state.benchSeats ?? 20, guessBonus: st.guessBonus, snakeBonus: st.snakeBonus, biathlonAttempts: st.biathlonAttempts });
+        await setDoc(doc(db, 'state', 'current'), { phase: 'setup', benchSeats: state.benchSeats ?? 20, guessBonus: st.guessBonus, snakeBonus: st.snakeBonus, biathlonAttempts: st.biathlonAttempts, riddle1Answer: state.riddle1Answer ?? null });
         alert('Fertig! Alles ist frisch für das Event.');
         loadAll();
       });
@@ -419,6 +451,28 @@
         if (!confirm('Biathlon beenden? Danach sind keine Läufe mehr möglich.')) return;
         setPhase('done');
       });
+      document.getElementById('toFinal').addEventListener('click', () => {
+        if (!state.riddle1Answer) { alert('Bitte zuerst unten bei „Finale“ die richtige Waffe für Rätsel 1 festlegen.'); return; }
+        setPhase('final');
+      });
+      document.getElementById('saveAnswer').addEventListener('click', async () => {
+        await setDoc(doc(db, 'state', 'current'), { ...state, riddle1Answer: document.getElementById('riddle1Answer').value || null });
+        loadAll();
+      });
+      document.getElementById('saveFinal').addEventListener('click', async () => {
+        for (const sel of document.querySelectorAll('.finSel')) {
+          const t = sel.dataset.token, p = people.find(x => x.token === t);
+          const cap = document.querySelector(`.capSel[data-token="${t}"]`).checked;
+          if ((p.finalTeam || '') !== sel.value || !!p.finalCaptain !== cap)
+            await updateDoc(doc(db, 'participants', t), { finalTeam: sel.value || null, finalCaptain: cap });
+        }
+        loadAll();
+      });
+      document.querySelectorAll('.resetFinal').forEach(btn => btn.addEventListener('click', async () => {
+        if (!confirm(`Finale von Team ${btn.dataset.team} zurücksetzen? Uhr, Strafsekunden und Lösung werden gelöscht, das Team kann neu starten.`)) return;
+        await deleteDoc(doc(db, 'finals', btn.dataset.team));
+        loadAll();
+      }));
       document.getElementById('setPhase').addEventListener('click', () => {
         const ph = document.getElementById('phaseSel').value;
         if (!confirm(`Phase direkt auf „${PHASE_NAMES[ph]}“ setzen? (Teams werden dabei nicht verändert.)`)) return;
@@ -465,7 +519,7 @@
         if (!confirm('Wirklich ALLE Teilnehmer, Teams und den Status löschen?')) return;
         for (const p of participants) await deleteDoc(doc(db, 'participants', p.token));
         for (const t of Object.values(teams)) await deleteDoc(doc(db, 'teams', t.id));
-        await setDoc(doc(db, 'state', 'current'), { phase: 'setup', benchSeats: state.benchSeats ?? 20, guessBonus: st.guessBonus, snakeBonus: st.snakeBonus, biathlonAttempts: st.biathlonAttempts });
+        await setDoc(doc(db, 'state', 'current'), { phase: 'setup', benchSeats: state.benchSeats ?? 20, guessBonus: st.guessBonus, snakeBonus: st.snakeBonus, biathlonAttempts: st.biathlonAttempts, riddle1Answer: state.riddle1Answer ?? null });
         for (const d of (await getDocs(collection(db, 'chat'))).docs) await deleteDoc(d.ref);
         loadAll();
       });

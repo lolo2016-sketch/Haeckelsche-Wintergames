@@ -5,13 +5,13 @@
 // Bonussekunden fürs Finale: richtig geraten (pro Person) + Snake-Platz 1–3.
 // Rollen aus früheren Versionen ("captain"/"player") spielen keine Rolle, nur "admin" wird ausgelassen.
 import { doc, collection, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { biathlonRank } from "./biathlon.js?v=20261019";
+import { biathlonRank } from "./biathlon.js?v=20261019b";
 
 // Phasen in Reihenfolge
-export const PHASES = ['setup', 'snake', 'guess', 'pairs', 'biathlon', 'done'];
+export const PHASES = ['setup', 'snake', 'guess', 'pairs', 'biathlon', 'done', 'final'];
 export const PHASE_NAMES = {
   setup: 'Vorbereitung', snake: 'Runde 1: Snake', guess: 'Runde 1: Raten', pairs: 'Zweierteams stehen',
-  biathlon: 'Runde 2: Biathlon', done: 'Biathlon beendet'
+  biathlon: 'Runde 2: Biathlon', done: 'Biathlon beendet', final: 'Finale freigegeben'
 };
 export const phaseIndex = ph => Math.max(0, PHASES.indexOf(ph === 'minigame' ? 'snake' : ph === 'draft' ? 'guess' : ph));
 
@@ -110,3 +110,34 @@ export async function revealTeams(db, people, state) {
   batch.set(doc(db, 'state', 'current'), { ...state, phase: 'pairs' });
   await batch.commit();
 }
+
+// ----- Finale -----
+// Viererteams fürs Finale (A–D) und ihr Kapitän werden in admin.html festgelegt (participants.finalTeam / finalCaptain).
+// Spielstand pro Team in der Sammlung "finals" (Dokument = Teambuchstabe): startedAt, penalty (s), wrong [Waffen], solved1At.
+export const FINAL_TEAMS = ['A', 'B', 'C', 'D'];
+export const PENALTY_S = 2;   // Strafsekunden pro falscher Waffe
+export const finalMembers = (letter, people) => people.filter(p => p.finalTeam === letter);
+export const finalCaptain = (letter, people) => people.find(p => p.finalTeam === letter && p.finalCaptain) ?? null;
+// Vorsprung fürs Finale: Summe der Boni aller Mitglieder (Raten + Snake)
+export function finalBonus(letter, people, state) {
+  return finalMembers(letter, people).reduce((s, p) => s + bonusOf(p, people, state, true).total, 0);
+}
+// gewertete Zeit in ms: verstrichene Zeit − Vorsprung + Strafsekunden (vor Ablauf des Vorsprungs negativ)
+export function finalScoreMs(fin, bonusS, now = Date.now()) {
+  if (!fin?.startedAt) return null;
+  const end = fin.solved1At ?? now;
+  return (end - fin.startedAt) - bonusS * 1000 + (fin.penalty || 0) * 1000;
+}
+export const fmtClock = ms => {
+  const neg = ms < 0, a = Math.abs(ms);
+  return `${neg ? '−' : ''}${Math.floor(a / 60000)}:${String(Math.floor((a % 60000) / 1000)).padStart(2, '0')}`;
+};
+
+// Waffen im Waffenschrank (Rätsel 1); die richtige wird in admin.html gewählt
+export const WEAPONS = [
+  ['muskete', 'Muskete'], ['bajonett', 'Bajonett'], ['saebel', 'Säbel'], ['degen', 'Degen'],
+  ['pistole', 'Steinschlosspistole'], ['kanonenkugel', 'Kanonenkugel'], ['lanze', 'Lanze'], ['axt', 'Axt'],
+  ['dolch', 'Dolch'], ['armbrust', 'Armbrust'], ['bogen', 'Pfeil und Bogen'], ['hellebarde', 'Hellebarde'],
+  ['revolver', 'Revolver'], ['sturmgewehr', 'Sturmgewehr'], ['granate', 'Handgranate'], ['schlaeger', 'Baseballschläger']
+].map(([id, name]) => ({ id, name }));
+export const weaponName = id => WEAPONS.find(w => w.id === id)?.name ?? id;

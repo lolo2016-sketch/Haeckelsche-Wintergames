@@ -4,7 +4,7 @@
 // Wer ins selbe Team kommt, bekommt dieselbe Farbe und setzt sich neben die anderen Teammitglieder.
 // Die eigene Figur läuft in der Third-Person-Ansicht ein, danach sieht man die Runde aus ihren Augen.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js';
-import { buildWinterWorld } from './winter.js?v=20261019';
+import { buildWinterWorld } from './winter.js?v=20261019b';
 
 const BENCH_SHIRT = 0xe2e8f0;
 const HAIR = 0x4a2f1b;
@@ -352,7 +352,71 @@ function tick(ch, dt) {
 }
 
 // ---------- Szene ----------
-export function createHall3D(container, { meToken, onPersonTap } = {}) {
+// ---------- Pokal-Schrein gegenüber dem Tor: verhüllter Pokal, die beiden Organisatoren, Tür zum Finale ----------
+const SHRINE = new THREE.Vector3(-16, 0, 0);
+const DOOR_POS = new THREE.Vector3(-15.2, 0, 6.2);      // links vom Pokal (von der Mitte aus gesehen)
+function buildShrine(scene) {
+  const g = new THREE.Group();
+  const stone = new THREE.MeshLambertMaterial({ color: 0x9ca3af });
+  const ped = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.2, 2.2), stone); ped.position.set(SHRINE.x, 0.6, SHRINE.z); g.add(ped);
+  const step = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.25, 3.2), stone); step.position.set(SHRINE.x, 0.125, SHRINE.z); g.add(step);
+  // Pokal unter einem Tuch: Pokalform aus Drehkörper, darüber ein Samttuch
+  // Umriss eines Tuchs, das über einen großen Pokal geworfen wurde: unten weit fallender Saum, Mitte eingeschnürt, oben die Pokalschale
+  const prof = [[0, 0.02], [1.15, 0.0], [1.05, 0.12], [0.8, 0.4], [0.55, 0.75], [0.5, 1.0], [0.7, 1.35], [0.88, 1.8], [0.92, 2.25], [0.78, 2.55], [0.45, 2.75], [0.12, 2.86], [0, 2.88]]
+    .map(([x, y]) => new THREE.Vector2(x, y));
+  const cloth = new THREE.Mesh(new THREE.LatheGeometry(prof, 40), new THREE.MeshLambertMaterial({ color: 0x7f1d1d, side: THREE.DoubleSide }));
+  // Falten: unten stark, oben kaum
+  const pa = cloth.geometry.attributes.position;
+  for (let i = 0; i < pa.count; i++) {
+    const x = pa.getX(i), z = pa.getZ(i), y = pa.getY(i), a = Math.atan2(z, x);
+    const k = Math.max(0, 1 - y / 2.2);
+    const w = 1 + (Math.sin(a * 7) * 0.09 + Math.sin(a * 13 + 1) * 0.04) * k;
+    pa.setX(i, x * w); pa.setZ(i, z * w); pa.setY(i, y - k * k * 0.12 * (1 + Math.sin(a * 7)));
+  }
+  cloth.geometry.computeVertexNormals();
+  cloth.scale.setScalar(1.25); cloth.position.set(SHRINE.x, 1.2, SHRINE.z); g.add(cloth);
+  const rope = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.035, 6, 20), new THREE.MeshLambertMaterial({ color: 0xd4af37 }));
+  rope.rotation.x = Math.PI / 2; rope.position.set(SHRINE.x, 1.2 + 0.95 * 1.25, SHRINE.z); g.add(rope);
+  const tassel = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.35, 8), new THREE.MeshLambertMaterial({ color: 0xd4af37 }));
+  tassel.position.set(SHRINE.x + 0.3, 1.2 + 0.7 * 1.25, SHRINE.z + 0.1); g.add(tassel);
+  const q = new THREE.Sprite(new THREE.SpriteMaterial({ map: canvasTex(256, 128, (c, w, h) => {
+    c.fillStyle = 'rgba(15,23,42,.75)'; c.beginPath(); c.roundRect(10, 20, w - 20, h - 40, 30); c.fill();
+    c.fillStyle = '#fde68a'; c.font = 'bold 56px Georgia, serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('Pokal 2026', w / 2, h / 2 + 2);
+  }), depthWrite: false }));
+  q.scale.set(2.2, 1.1, 1); q.position.set(SHRINE.x, 5.4, SHRINE.z); g.add(q);
+
+  // Tür zum Finale
+  const door = new THREE.Group(); door.position.copy(DOOR_POS);
+  door.rotation.y = Math.atan2(-DOOR_POS.x, -DOOR_POS.z);   // schaut zur Mitte
+  const frameM = new THREE.MeshLambertMaterial({ color: 0x4a2f1b });
+  for (const x of [-0.75, 0.75]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.6, 0.3), frameM); p.position.set(x, 1.3, 0); door.add(p); }
+  const top = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.25, 0.3), frameM); top.position.y = 2.65; door.add(top);
+  const leafM = new THREE.MeshLambertMaterial({ color: 0x7c4a21, emissive: 0x000000 });
+  const leaf = new THREE.Mesh(new THREE.BoxGeometry(1.3, 2.45, 0.08), leafM); leaf.position.set(0, 1.25, 0); door.add(leaf);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshLambertMaterial({ color: 0xd4af37 })); knob.position.set(0.45, 1.2, 0.07); door.add(knob);
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 2.95), new THREE.MeshBasicMaterial({ color: 0xffd36b, transparent: true, opacity: 0, depthWrite: false }));
+  glow.position.set(0, 1.4, -0.06); door.add(glow);
+  const signTex = locked => canvasTex(512, 128, (c, w, h) => {
+    c.fillStyle = locked ? 'rgba(15,23,42,.75)' : 'rgba(180,83,9,.92)'; c.beginPath(); c.roundRect(10, 14, w - 20, h - 28, 30); c.fill();
+    c.fillStyle = '#fff'; c.font = 'bold 54px -apple-system, Segoe UI, Roboto, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(locked ? '🔒 Finale' : '🚪 Zum Finale', w / 2, h / 2 + 2);
+  });
+  const sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: signTex(true), depthWrite: false })); sign.scale.set(1.9, 0.48, 1); sign.position.y = 3.25; door.add(sign);
+  door.traverse(o => { o.userData.door = true; });
+  g.add(door);
+  scene.add(g);
+  let active = false;
+  return {
+    setActive(on) { if (active === !!on) return; active = !!on; sign.material.map.dispose(); sign.material.map = signTex(!active); sign.material.needsUpdate = true; },
+    update(t) {
+      glow.material.opacity = active ? 0.35 + Math.sin(t * 3) * 0.2 : 0;
+      leafM.emissive.setRGB(active ? 0.15 + Math.sin(t * 3) * 0.08 : 0, active ? 0.08 : 0, 0);
+    },
+    door
+  };
+}
+
+export function createHall3D(container, { meToken, onPersonTap, onDoorTap } = {}) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -364,6 +428,16 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(68, 1, 0.05, 500);
   const world = buildWinterWorld(scene, floorTexture());
+  const shrine = buildShrine(scene);
+  // die beiden Organisatoren links und rechts vom Pokal (Gesichter faces/face1.png und face2.png)
+  for (const [i, z] of [[1, -2.3], [2, 2.3]]) {
+    const ch = makeCharacter({ token: 'org' + i, name: '', photoUrl: `faces/face${i}.png`, hair: 'kurz' });
+    ch.root.scale.setScalar(1.35); ch.label.visible = false; ch.root.userData.token = null;
+    ch.root.position.set(SHRINE.x + 0.4, 0, z); ch.yaw = Math.PI / 2; ch.shirt.color.setHex(0x111827);
+    ch.arms[i === 1 ? 1 : 0].sh.rotation.z = (i === 1 ? 1 : -1) * 0.5;   // Arm Richtung Pokal
+    applyPose(ch); ch.root.rotation.y = Math.PI / 2;
+    ch.noLabel = true; scene.add(ch.root);
+  }
   let benches = null, ring = null;
 
   const chars = {};          // token -> Figur
@@ -651,10 +725,11 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
 
   const ray = new THREE.Raycaster();
   function tapAt(e) {
-    if (!onPersonTap) return;
     const r = el.getBoundingClientRect();
     const v = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(v, camera);
+    if (onDoorTap && ray.intersectObject(shrine.door, true)[0]) return onDoorTap();
+    if (!onPersonTap) return;
     const roots = Object.values(chars).filter(c => c.root.visible).map(c => c.root);
     const hit = ray.intersectObjects(roots, true)[0];
     if (!hit) return;
@@ -674,8 +749,9 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
   const ro = new ResizeObserver(resize); ro.observe(container); resize();
 
   const clock = new THREE.Clock();
-  let raf = 0, time = 0;
+  let raf = 0, time = 0, paused = false;
   function loop() {
+    if (paused) return;
     raf = requestAnimationFrame(loop);
     const dt = Math.min(0.05, clock.getDelta()); time += dt;
     for (const ch of Object.values(chars)) {
@@ -698,6 +774,7 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
       if (ch.arrow.visible) { ch.arrow.position.y = 2.6 + Math.sin(time * 4) * 0.08; ch.arrow.rotation.y += dt * 2; }
     }
     world.update(dt, time, camera);
+    shrine.update(time);
     updateCamera(dt);
     renderer.render(scene, camera);
   }
@@ -727,5 +804,10 @@ export function createHall3D(container, { meToken, onPersonTap } = {}) {
     agentMood = !!on; world.setMood(agentMood);
   }
 
-  return { update, playEntrance, setView, getView: () => mode, setBubble, setAgentMode, dispose };
+  return {
+    update, playEntrance, setView, getView: () => mode, setBubble, setAgentMode, dispose,
+    setDoorActive: on => shrine.setActive(on),
+    pause() { paused = true; cancelAnimationFrame(raf); renderer.domElement.style.visibility = 'hidden'; },
+    resume() { if (!paused) return; paused = false; renderer.domElement.style.visibility = ''; clock.getDelta(); loop(); }
+  };
 }
