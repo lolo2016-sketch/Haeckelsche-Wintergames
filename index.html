@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <script>
 // Ladefehler sichtbar machen (z. B. fehlende oder veraltete Datei nach dem Hochladen)
-window.APP_VERSION = '20261019i';
+window.APP_VERSION = '20261021a';
 (function () {
   var shown = {};
   window.showLoadError = function (what) {
@@ -141,13 +141,13 @@ window.APP_VERSION = '20261019i';
       getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, addDoc, query, orderBy, limit, arrayUnion, increment
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261019i";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261019i";
-    import { createHall } from "./hall.js?v=20261019i";
+    import { playSnake, playReplay } from "./minigame.js?v=20261021a";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261021a";
+    import { createHall } from "./hall.js?v=20261021a";
     import { PHASE_NAMES, phaseIndex, settings, country, teamColor, isPerson, playedSnake, compareSnake, snakeRanking,
       playedBiathlon, teamBiathlon, bonusOf, teamBonus, guessedRight, planTeams,
       FINAL_TEAMS, PENALTY_S, finalMembers, finalCaptain, finalBonus, finalScoreMs, fmtClock, weaponName,
-      finalStage, RIDDLES, WORD2, WORD2_TRIES, riddleRight, word2Shown, word2Tiles, normAnswer, WORD3, CANS } from "./draft.js?v=20261019i";
+      finalStage, RIDDLES, WORD2, WORD2_TRIES, riddleRight, word2Shown, word2Tiles, normAnswer, WORD3, CANS } from "./draft.js?v=20261021a";
     window.APP_READY = true;   // alle Dateien geladen
 
     const app = initializeApp(firebaseConfig);
@@ -394,7 +394,7 @@ window.APP_VERSION = '20261019i';
       // 3D, wenn möglich, sonst die einfache 2D-Halle
       let use3d = false;
       try {
-        hall3dMod ??= await import('./hall3d.js?v=20261019i');
+        hall3dMod ??= await import('./hall3d.js?v=20261021a');
         use3d = hall3dMod.webglAvailable();
       } catch (e) { use3d = false; console.error(e); window.showLoadError?.('3D-Halle: ' + (e?.message || e)); }
 
@@ -796,7 +796,7 @@ window.APP_VERSION = '20261019i';
       const st = finalStage(fin);
       if (sceneNo === 1) { scene3d.markWrong(fin.wrong || []); if (fin.solved1At && fin.solvedWeapon) scene3d.markSolved(fin.solvedWeapon); scene3d.setDoor2(st === 1.5); }
       if (sceneNo === 2) { scene3d.setSolved(fin.riddles || [], RIDDLES.map(r => r.letter)); scene3d.setDoor(st === 2.5); }
-      if (sceneNo === 3) { scene3d.setHits(fin.cans || []); if (fin.lastThrower !== S.me.token) scene3d.setThrower?.(fin.lastThrower, fin.lastThrowAt); }
+      if (sceneNo === 3) scene3d.setHits(fin.cans || []);
       if (st === 4 && !document.getElementById('finDone')) showFinished();
     }
     async function enterFinal() {
@@ -824,17 +824,17 @@ window.APP_VERSION = '20261019i';
       const hint = document.getElementById('finHint');
       try {
         if (n === 1) {
-          sceneMods.c ??= await import('./camp.js?v=20261019i');
+          sceneMods.c ??= await import('./camp.js?v=20261021a');
           scene3d = sceneMods.c.createCamp(box, { onWeapon: chooseWeapon, onDoor2: () => nextDoor(2) });
           hint.textContent = '👆 Pfeile antippen = gehen · wischen = umschauen';
         } else if (n === 2) {
-          sceneMods.r2 ??= await import('./room2.js?v=20261019i');
+          sceneMods.r2 ??= await import('./room2.js?v=20261021a');
           scene3d = sceneMods.r2.createRiddleRoom(box, { onPlaque: openRiddle, onDoor: () => nextDoor(3) });
           hint.textContent = '👆 wischen = umschauen · Tafel antippen = Rätsel';
         } else {
-          sceneMods.r3 ??= await import('./room3.js?v=20261019i');
+          sceneMods.r3 ??= await import('./room3.js?v=20261021a');
           const mates = finalMembers(S.me.finalTeam, S.people).filter(p => p.token !== S.me.token).map(p => ({ token: p.token, name: p.name, photoUrl: p.photoUrl }));
-          scene3d = sceneMods.r3.createSnowRange(box, { cans: CANS, hits: myFin()?.cans || [], mates, onHit: hitCan, canThrow: canThrow3, onThrow: onThrow3 });
+          scene3d = sceneMods.r3.createSnowRange(box, { cans: CANS, hits: myFin()?.cans || [], mates, onHit: hitCan, canThrow: () => !myFin()?.solved3At, reload: 2 });
           hint.textContent = '👆 antippen = Schneeball werfen · wischen = zielen';
         }
       } catch (err) { switching = false; window.showLoadError?.('Raum ' + n + ': ' + err.message); alert('Der Raum konnte nicht geladen werden: ' + err.message); return leaveFinal(); }
@@ -868,7 +868,7 @@ window.APP_VERSION = '20261019i';
         1.5: `✅ Raum 1 geschafft – die Uhr steht. Rechts neben Napoleon ist eine Tür erschienen. ${isCaptain() ? '<strong>Öffne sie</strong>, wenn alle bereit sind.' : `${escapeHtml(cap?.name ?? 'Euer Kapitän')} öffnet sie.`}`,
         2: `Raum 2 · <strong>Die Rätselkammer.</strong> Jedes gelöste Rätsel gibt einen Buchstaben (gemischt!). Tippt sie unten in die richtige Reihenfolge und ratet das Wort (${WORD2_TRIES} Versuche fürs Team).`,
         2.5: `✅ Raum 2 geschafft – die Uhr steht. Die Tür gegenüber leuchtet. ${isCaptain() ? '<strong>Öffne sie</strong>, wenn alle bereit sind.' : `${escapeHtml(cap?.name ?? 'Euer Kapitän')} öffnet sie.`}`,
-        3: `Raum 3 · <strong>Schneeballwurf!</strong> Reihum wirft jeder einmal. Manche Dosen verbergen Buchstaben – tippt sie unten in der richtigen Reihenfolge an.<br>${turnText(fin)}`,
+        3: `Raum 3 · <strong>Schneeballwurf!</strong> Alle werfen gleichzeitig – jeder alle 2 Sekunden einen Schneeball. Manche Dosen verbergen Buchstaben – tippt sie unten in der richtigen Reihenfolge an.`,
         4: `🏆 <strong>Geschafft!</strong>`
       }[st] ?? '';
       hud.innerHTML = `<div class="chip glass" style="font-size:1.05rem">${time}${fin.penalty ? ` <span style="color:#fca5a5">(+${fin.penalty} s Strafe)</span>` : ''}</div>
@@ -991,44 +991,15 @@ window.APP_VERSION = '20261019i';
     }
 
     // ----- Raum 3: Dosen und Wort -----
-    // Reihum werfen: jeder einmal, dann der Nächste. Wer 15 s nicht wirft, wird übersprungen (z. B. Handy aus).
-    const TURN_MS = 15000;
-    function turnInfo(fin, now = Date.now()) {
-      const members = finalMembers(S.me.finalTeam, S.people).slice().sort((a, b) => String(a.token).localeCompare(String(b.token)));
-      if (members.length < 2) return { idx: fin.turn || 0, who: S.me, mine: true, left: 0 };
-      const base = fin.lastThrowAt || fin.start3At || now, el = Math.max(0, now - base);
-      const idx = (fin.turn || 0) + Math.floor(el / TURN_MS), who = members[idx % members.length];
-      return { idx, who, mine: who.token === S.me.token, left: Math.ceil((TURN_MS - (el % TURN_MS)) / 1000) };
-    }
-    function turnText(fin) {
-      if (finalMembers(S.me.finalTeam, S.people).length < 2) return '🎯 Du wirfst.';
-      const t = turnInfo(fin);
-      return t.mine ? `🎯 <strong>Du bist dran!</strong> (noch ${t.left} s)` : `⏳ <strong>${escapeHtml(t.who.name)}</strong> wirft gerade (noch ${t.left} s)`;
-    }
-    function canThrow3() {
-      const fin = myFin(); if (!fin || fin.solved3At) return false;
-      const t = turnInfo(fin);
-      if (!t.mine) { toast(`⏳ ${t.who.name} ist dran – danach kommst du.`, 1600); return false; }
-      return true;
-    }
-    function onThrow3() {
-      const fin = myFin(); if (!fin) return;
-      const t = turnInfo(fin), upd = { turn: t.idx + 1, lastThrowAt: Date.now(), lastThrower: S.me.token };
-      finUpdate(upd, () => upd).catch(() => {});
-    }
-    // „wer ist dran“ jede Sekunde auffrischen
-    setInterval(() => { if (inFinal && sceneNo === 3) { renderFinHud(); if (DEMO) demoMates3(); } }, 1000);
-    // Demo: die anderen aus dem Team werfen nach ein paar Sekunden selbst (manchmal mit Treffer)
-    let demoThrowAt = 0;
+    // Demo: die anderen aus dem Team treffen ab und zu auch eine Dose
+    setInterval(() => { if (DEMO && inFinal && sceneNo === 3) demoMates3(); }, 1000);
+    let demoNext = 0;
     function demoMates3() {
-      const fin = myFin(); if (!fin || fin.solved3At) return;
-      const t = turnInfo(fin); if (t.mine) { demoThrowAt = 0; return; }
-      if (!demoThrowAt) { demoThrowAt = Date.now() + 2500 + Math.random() * 2000; return; }
-      if (Date.now() < demoThrowAt) return;
-      demoThrowAt = 0;
+      const fin = myFin(); if (!fin || fin.solved3At || finalMembers(S.me.finalTeam, S.people).length < 2) return;
+      if (Date.now() < demoNext) return;
+      demoNext = Date.now() + 3000 + Math.random() * 3000;
       const free = CANS.map((_, i) => i).filter(i => !(fin.cans || []).includes(i));
-      const hit = Math.random() < 0.35 && free.length ? free[Math.floor(Math.random() * free.length)] : null;
-      finUpdate({}, f => ({ turn: t.idx + 1, lastThrowAt: Date.now(), lastThrower: t.who.token, ...(hit != null ? { cans: [...new Set([...(f.cans || []), hit])] } : {}) }));
+      if (free.length && Math.random() < 0.4) { const hit = free[Math.floor(Math.random() * free.length)]; finUpdate({}, f => ({ cans: [...new Set([...(f.cans || []), hit])] })); }
     }
     async function hitCan(i) {
       const fin = myFin(); if (!fin || (fin.cans || []).includes(i)) return;
