@@ -1,5 +1,5 @@
 // ===== Snake – Bildschirm, Steuerung, Tutorial, Aufnahme & Wiedergabe =====
-import { createGame, step, speedFor, drawGame, loadFaces, loadHead, DIR } from './snake.js?v=20261019i';
+import { createGame, step, speedFor, drawGame, loadFaces, loadHead, DIR } from './snake.js?v=20261022a';
 
 // Fotos der Veranstalter (in den Ordner "faces" im Repo hochladen)
 export const FACE_URLS = ['faces/face1.png', 'faces/face2.png'];
@@ -151,10 +151,10 @@ export function playSnake({ onFinish, onClose, testMode = false, photoUrl = null
     showMsg(`<h2>${p.title}</h2><p>${p.text}</p>
       <div style="display:flex;gap:8px">
         ${page > 0 ? '<button class="sg-btn sec" data-a="back">Zurück</button>' : ''}
-        <button class="sg-btn" data-a="next">${page < TUTORIAL.length - 1 ? 'Weiter' : 'Üben!'}</button>
+        <button class="sg-btn" data-a="next">${page < TUTORIAL.length - 1 ? 'Weiter' : 'Verstanden!'}</button>
       </div>`);
     msg.querySelector('[data-a=next]').onclick = () => {
-      if (page < TUTORIAL.length - 1) { page++; showTutorial(); } else startPractice();
+      if (page < TUTORIAL.length - 1) { page++; showTutorial(); } else menu();
     };
     const back = msg.querySelector('[data-a=back]');
     if (back) back.onclick = () => { page--; showTutorial(); };
@@ -178,7 +178,7 @@ export function playSnake({ onFinish, onClose, testMode = false, photoUrl = null
     countdown(() => { timer = setTimeout(loop, speedFor(game)); });
   }
 
-  // Menü zwischen den Runden: echter Versuch, üben, Tutorial, fertig
+  // Menü zwischen den Runden: echter Versuch, Tutorial, fertig (keine Übungsrunden mehr – man hat einen ganzen Tag Zeit)
   function menu(head = '') {
     modeEl.textContent = 'Winter-Snake';
     const canPlay = left > 0;
@@ -187,7 +187,6 @@ export function playSnake({ onFinish, onClose, testMode = false, photoUrl = null
       <p>${canPlay ? `Du hast ${leftTxt()}.` : 'Du hast keine echten Versuche mehr.'}</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
         ${canPlay ? '<button class="sg-btn" data-a="go">Echter Versuch</button>' : ''}
-        <button class="sg-btn sec" data-a="practice">Üben</button>
         <button class="sg-btn sec" data-a="tut">Tutorial</button>
         <button class="sg-btn sec" data-a="close">Fertig</button>
       </div>`);
@@ -198,7 +197,6 @@ export function playSnake({ onFinish, onClose, testMode = false, photoUrl = null
       msg.querySelector('[data-a=no]').onclick = () => menu();
       msg.querySelector('[data-a=yes]').onclick = startOfficial;
     });
-    msg.querySelector('[data-a=practice]').onclick = startPractice;
     msg.querySelector('[data-a=tut]').onclick = () => { page = 0; showTutorial(); };
     msg.querySelector('[data-a=close]').onclick = close;
   }

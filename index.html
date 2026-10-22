@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <script>
 // Ladefehler sichtbar machen (z. B. fehlende oder veraltete Datei nach dem Hochladen)
-window.APP_VERSION = '20261021a';
+window.APP_VERSION = '20261022a';
 (function () {
   var shown = {};
   window.showLoadError = function (what) {
@@ -141,13 +141,14 @@ window.APP_VERSION = '20261021a';
       getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, addDoc, query, orderBy, limit, arrayUnion, increment
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261021a";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261021a";
-    import { createHall } from "./hall.js?v=20261021a";
-    import { PHASE_NAMES, phaseIndex, settings, country, teamColor, isPerson, playedSnake, compareSnake, snakeRanking,
+    import { playSnake, playReplay } from "./minigame.js?v=20261022a";
+    import { playDialog, PHASE_DIALOG, DIALOG_ORDER, DIALOGE } from "./dialog.js?v=20261022a";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261022a";
+    import { createHall } from "./hall.js?v=20261022a";
+    import { PHASES, PHASE_NAMES, phaseIndex, settings, country, teamColor, isPerson, playedSnake, compareSnake, snakeRanking,
       playedBiathlon, teamBiathlon, bonusOf, teamBonus, guessedRight, planTeams,
       FINAL_TEAMS, PENALTY_S, finalMembers, finalCaptain, finalBonus, finalScoreMs, fmtClock, weaponName,
-      finalStage, RIDDLES, WORD2, WORD2_TRIES, riddleRight, word2Shown, word2Tiles, normAnswer, WORD3, CANS } from "./draft.js?v=20261021a";
+      finalStage, RIDDLES, WORD2, WORD2_TRIES, riddleRight, word2Shown, word2Tiles, normAnswer, WORD3, CANS } from "./draft.js?v=20261022a";
     window.APP_READY = true;   // alle Dateien geladen
 
     const app = initializeApp(firebaseConfig);
@@ -236,6 +237,7 @@ window.APP_VERSION = '20261021a';
         renderTabbar();
         renderTop(); updateHall();
         if (tab !== 'hall' || phaseChanged) renderTab();
+        maybePhaseDialog();
       }, 120);
     }
 
@@ -339,9 +341,9 @@ window.APP_VERSION = '20261021a';
         if (!L) return `<div class="banner">Das Finale ist freigegeben! Du bist noch keinem Finale-Team zugeordnet – sag dem Organisator Bescheid.</div>`;
         const mem = finalMembers(L, s.people).map(p => p.name).join(', ');
         if (fin?.solved3At) return `<div class="banner">🏆 Team ${L} hat das Finale geschafft! Wertung: <strong>${fmtClock(finalScoreMs(fin, finalBonus(L, s.people, s.state)))}</strong>.</div>`;
-        if (fin?.startedAt) return `<div class="banner myturn">Team ${L} ist im Finale! Tippe die leuchtende Tür an (links neben dem Pokal), um wieder hineinzugehen.</div>`;
+        if (fin?.startedAt) return `<div class="banner myturn">Team ${L} ist im Finale! Schalte den Agentenmodus 🕶️ ein und tippe die leuchtende Tür unten im Eis-Pokal an, um wieder hineinzugehen.</div>`;
         return `<div class="banner myturn">🏆 Das <strong>Finale</strong> ist freigegeben! Verabredet euch als Team ${L} (${escapeHtml(mem)}).
-          ${cap?.token === me.token ? '<strong>Du bist Kapitän:</strong> Wenn alle bereit sind, tippe die leuchtende Tür links neben dem Pokal an. Dann läuft eure Uhr.' : `Euer Kapitän <strong>${escapeHtml(cap?.name ?? '?')}</strong> öffnet die Tür links neben dem Pokal.`}</div>`;
+          ${cap?.token === me.token ? '<strong>Du bist Kapitän:</strong> Wenn alle bereit sind, schalte den Agentenmodus 🕶️ ein und tippe die leuchtende Tür unten im Eis-Pokal an. Dann läuft eure Uhr.' : `Euer Kapitän <strong>${escapeHtml(cap?.name ?? '?')}</strong> öffnet die Tür unten im Eis-Pokal (Agentenmodus 🕶️).`}</div>`;
       }
       const tb = t ? teamBiathlon(t, s.people) : null;
       return `<div class="banner">Biathlon ist beendet. ${teamTxt}${tb?.done ? ` Eure Zeit: <strong>${fmtS(tb.timeMs)}</strong>.` : ''} Vorsprung fürs Finale: <strong>${bonusTxt()} s</strong>.</div>`;
@@ -383,7 +385,11 @@ window.APP_VERSION = '20261021a';
       const side = document.getElementById('side');
       side.innerHTML = `<button class="round glass" id="agentBtn" style="display:none" title="Agentenmodus">🕶️</button>
         <button class="round glass" id="viewBtn" style="display:none" title="Ansicht wechseln"></button>
+        <button class="round glass" id="dlgBtn" title="Erklärung nochmal ansehen">💬</button>
         ${DEMO ? '<button class="round glass" id="replayIntro" title="Einlauf nochmal">▶</button>' : ''}`;
+      document.getElementById('dlgBtn').onclick = () => showDialog(PHASE_DIALOG[PHASES[PH(S)]] || 'intro', { force: true });
+      const dlgParam = params.get('dialog');
+      if (dlgParam) setTimeout(() => previewDialogs(dlgParam), 1500);
       const tapToken = t => {
         const p = S.people.find(x => x.token === t);
         if (!p) return;
@@ -394,7 +400,7 @@ window.APP_VERSION = '20261021a';
       // 3D, wenn möglich, sonst die einfache 2D-Halle
       let use3d = false;
       try {
-        hall3dMod ??= await import('./hall3d.js?v=20261021a');
+        hall3dMod ??= await import('./hall3d.js?v=20261022a');
         use3d = hall3dMod.webglAvailable();
       } catch (e) { use3d = false; console.error(e); window.showLoadError?.('3D-Halle: ' + (e?.message || e)); }
 
@@ -432,7 +438,7 @@ window.APP_VERSION = '20261021a';
         wrap.classList.add('flat');
         hall = createHall(wrap, { meToken: token, onPlayerTap: p => tapToken(p.token) });
         updateHall();
-        if (needsEntrance) { hall.playIntro(); needsEntrance = false; }
+        if (needsEntrance) { needsEntrance = false; entranceRunning = true; showDialog('intro').then(() => { hall.playIntro(); entranceRunning = false; maybePhaseDialog(); }); }
         const rb = document.getElementById('replayIntro');
         if (rb) rb.onclick = () => hall.playIntro();
       }
@@ -450,8 +456,44 @@ window.APP_VERSION = '20261021a';
     }
     async function runEntrance(setBtn) {
       needsEntrance = false;
+      entranceRunning = true;
+      await showDialog('intro');
       await hall.playEntrance();
+      entranceRunning = false;
       setBtn?.();
+      maybePhaseDialog();
+    }
+
+    // ---------- Dialoge (dialog.js): jede Sequenz einmal pro Person ----------
+    let dialogOpen = false, entranceRunning = false;
+    const seenLocal = new Set();
+    const dialogSeen = id => seenLocal.has(id) || (S?.me?.dialogsSeen || []).includes(id);
+    async function showDialog(id, { force = false } = {}) {
+      if (dialogOpen || !DIALOGE[id]?.length || (!force && dialogSeen(id))) return;
+      dialogOpen = true;
+      const st = settings(S.state);
+      const vars = {
+        snakeBonus: st.snakeBonus.map((b, i) => `Platz ${i + 1} bekommt ${b} s`).join(', '),
+        guessBonus: st.guessBonus, biathlonVersuche: st.biathlonAttempts
+      };
+      try {
+        await playDialog(id, { name: S.me.name, agentUrl: S.me.agentUrl || 'agents/agent1.png', vars });
+      } finally { dialogOpen = false; }
+      seenLocal.add(id);
+      if (!DEMO && !force) updateDoc(doc(db, 'participants', token), { dialogsSeen: arrayUnion(id) }).catch(() => {});
+    }
+    // Beim ersten Mal in einer Phase die passende Sequenz zeigen – aber nicht mitten im Spiel, Finale oder Einlauf
+    function maybePhaseDialog() {
+      if (!S || dialogOpen || entranceRunning || needsEntrance || inFinal || saving) return;
+      if (document.querySelector('.sg-overlay, .bg-ov, .modal-bg')) return;
+      const id = PHASE_DIALOG[PHASES[PH(S)]];
+      if (id && !dialogSeen(id)) showDialog(id);
+    }
+    setInterval(maybePhaseDialog, 2500);    // falls gerade ein Spiel offen war: danach nachholen
+    // Vorschau: index.html?...&dialog=snake (eine Sequenz) oder &dialog=alle (alle nacheinander)
+    async function previewDialogs(which) {
+      const ids = which === 'alle' ? DIALOG_ORDER : [which];
+      for (const id of ids) await showDialog(id, { force: true });
     }
 
     // ---------- Chat-Funktionen ----------
@@ -824,15 +866,15 @@ window.APP_VERSION = '20261021a';
       const hint = document.getElementById('finHint');
       try {
         if (n === 1) {
-          sceneMods.c ??= await import('./camp.js?v=20261021a');
+          sceneMods.c ??= await import('./camp.js?v=20261022a');
           scene3d = sceneMods.c.createCamp(box, { onWeapon: chooseWeapon, onDoor2: () => nextDoor(2) });
           hint.textContent = '👆 Pfeile antippen = gehen · wischen = umschauen';
         } else if (n === 2) {
-          sceneMods.r2 ??= await import('./room2.js?v=20261021a');
+          sceneMods.r2 ??= await import('./room2.js?v=20261022a');
           scene3d = sceneMods.r2.createRiddleRoom(box, { onPlaque: openRiddle, onDoor: () => nextDoor(3) });
           hint.textContent = '👆 wischen = umschauen · Tafel antippen = Rätsel';
         } else {
-          sceneMods.r3 ??= await import('./room3.js?v=20261021a');
+          sceneMods.r3 ??= await import('./room3.js?v=20261022a');
           const mates = finalMembers(S.me.finalTeam, S.people).filter(p => p.token !== S.me.token).map(p => ({ token: p.token, name: p.name, photoUrl: p.photoUrl }));
           scene3d = sceneMods.r3.createSnowRange(box, { cans: CANS, hits: myFin()?.cans || [], mates, onHit: hitCan, canThrow: () => !myFin()?.solved3At, reload: 2 });
           hint.textContent = '👆 antippen = Schneeball werfen · wischen = zielen';

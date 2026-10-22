@@ -4,7 +4,7 @@
 // Wer ins selbe Team kommt, bekommt dieselbe Farbe und setzt sich neben die anderen Teammitglieder.
 // Die eigene Figur läuft in der Third-Person-Ansicht ein, danach sieht man die Runde aus ihren Augen.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js';
-import { buildWinterWorld, EIS_X } from './winter.js?v=20261019i';
+import { buildWinterWorld, EIS_X } from './winter.js?v=20261022a';
 
 const BENCH_SHIRT = 0xe2e8f0;
 const HAIR = 0x4a2f1b;
@@ -403,6 +403,7 @@ function buildShrine(scene) {
   });
   const sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: signTex(true), depthWrite: false })); sign.scale.set(1.9, 0.48, 1); sign.position.y = 3.25; door.add(sign);
   door.traverse(o => { o.userData.door = true; });
+  door.visible = false;      // erst im Agentenmodus sichtbar
   scene.add(door);
   scene.add(g);
   let active = false;
@@ -410,6 +411,7 @@ function buildShrine(scene) {
     // Agentenmodus: verhüllter Pokal verschwindet, die Tür wandert groß unten in die Mitte des Eis-Pokals
     setAgent(on) {
       g.visible = !on;
+      door.visible = !!on;      // Tür zum Finale gibt es nur im Agentenmodus (unten im Eis-Pokal)
       if (on) { door.position.set(-(EIS_X - 0.9), 0, 0); door.rotation.y = Math.PI / 2; door.scale.setScalar(1.8); }
       else { door.position.copy(DOOR_POS); door.rotation.y = Math.atan2(-DOOR_POS.x, -DOOR_POS.z); door.scale.setScalar(1); }
     },
@@ -735,7 +737,7 @@ export function createHall3D(container, { meToken, onPersonTap, onDoorTap } = {}
     const r = el.getBoundingClientRect();
     const v = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(v, camera);
-    if (onDoorTap && ray.intersectObject(shrine.door, true)[0]) return onDoorTap();
+    if (onDoorTap && shrine.door.visible && ray.intersectObject(shrine.door, true)[0]) return onDoorTap();
     if (!onPersonTap) return;
     const roots = Object.values(chars).filter(c => c.root.visible).map(c => c.root);
     const hit = ray.intersectObjects(roots, true)[0];

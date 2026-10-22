@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <script>
 // Ladefehler sichtbar machen (z. B. fehlende oder veraltete Datei nach dem Hochladen)
-window.APP_VERSION = '20261019i';
+window.APP_VERSION = '20261022a';
 (function () {
   var shown = {};
   window.showLoadError = function (what) {
@@ -63,10 +63,10 @@ window.APP_VERSION = '20261019i';
       collection, getDocs
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261019i";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261019i";
+    import { playSnake, playReplay } from "./minigame.js?v=20261022a";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261022a";
     import { PHASES, PHASE_NAMES, phaseIndex, settings, DEFAULTS, COUNTRIES, country, isPerson, teamColor, snakeRanking,
-      guessedRight, teamBonus, teamBiathlon, revealTeams, FINAL_TEAMS, finalMembers, finalBonus, finalScoreMs, fmtClock, WEAPONS, weaponName } from "./draft.js?v=20261019i";
+      guessedRight, teamBonus, teamBiathlon, revealTeams, FINAL_TEAMS, finalMembers, finalBonus, finalScoreMs, fmtClock, WEAPONS, weaponName } from "./draft.js?v=20261022a";
     window.APP_READY = true;   // alle Dateien geladen
 
     const app = initializeApp(firebaseConfig);
@@ -396,7 +396,7 @@ window.APP_VERSION = '20261019i';
         if (!confirm('Alles für das Event frisch machen?\n\n• Halle leer, QR-Codes wie neu (Einlauf + Intro-Video)\n• Snake- und Biathlon-Ergebnisse, Tipps und Finale-Spielstände gelöscht\n• Teams gelöscht\n• Chat gelöscht\n• Phase zurück auf "setup"\n\nPersonen, Namen, Bilder, Videos und QR-Codes bleiben erhalten.')) return;
         for (const p of participants.filter(x => x.role !== 'admin')) {
           await updateDoc(doc(db, 'participants', p.token), {
-            arrivedAt: null, videoViews: 0, teamId: null, pickedAt: null, agent: false, guess: null, guessAt: null,
+            arrivedAt: null, videoViews: 0, dialogsSeen: [], teamId: null, pickedAt: null, agent: false, guess: null, guessAt: null,
             minigamePlayed: false, minigameScore: null, minigameAt: null, snakeReplay: null, snakeTries: 0, biathlon: null, biathlonTries: 0
           });
         }
