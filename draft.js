@@ -5,7 +5,7 @@
 // Bonussekunden fürs Finale: richtig geraten (pro Person) + Snake-Platz 1–3.
 // Rollen aus früheren Versionen ("captain"/"player") spielen keine Rolle, nur "admin" wird ausgelassen.
 import { doc, collection, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { biathlonRank } from "./biathlon.js?v=20261023b";
+import { biathlonRank } from "./biathlon.js?v=20261023c";
 
 // Phasen in Reihenfolge
 export const PHASES = ['setup', 'snake', 'guess', 'pairs', 'biathlon', 'done', 'final'];

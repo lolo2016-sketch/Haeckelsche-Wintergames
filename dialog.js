@@ -114,6 +114,9 @@ const CSS = `
   user-select:none;-webkit-user-select:none;touch-action:manipulation;opacity:0;transition:opacity .45s}
 .dlg.on{opacity:1}
 .dlg-bg{position:absolute;inset:0;background-size:cover;background-position:center}
+.dlg-bg-sturm{position:absolute;inset:-40px;background-size:cover;background-position:center;filter:blur(18px) brightness(.75) saturate(1.2);transform:scale(1.08)}
+.dlg-bg-mitte{position:absolute;top:0;left:50%;height:100%;transform:translateX(-50%);max-width:none;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 14%,#000 86%,transparent);mask-image:linear-gradient(90deg,transparent,#000 14%,#000 86%,transparent)}
 .dlg-bg.ersatz{background:radial-gradient(ellipse at 50% 30%,#1d3b66 0%,#0b1a2e 60%,#060d18 100%)}
 .dlg-pokal{position:absolute;left:50%;bottom:16%;height:78%;transform:translateX(-50%);opacity:.9;filter:drop-shadow(0 0 40px rgba(110,190,255,.55))}
 .dlg-schnee{position:absolute;left:0;right:0;bottom:0;height:24%;background:linear-gradient(#dbe8f6,#f6fbff);border-radius:50% 50% 0 0/22% 22% 0 0;opacity:.95}
@@ -181,7 +184,12 @@ export function playDialog(id, { cfg = mergeConfig(null), name = '', agentUrl = 
   // Hintergrund: eigenes Bild der Szene oder das allgemeine, sonst Nachthimmel + Eis-Pokal + Schnee
   const bgUrl = sz.hintergrund || cfg.hintergrund;
   const probe = new Image();
-  probe.onload = () => { bg.style.backgroundImage = `url("${bgUrl}")`; };
+  // Bild mittig (Pokal zwischen den Sprechenden), daneben dasselbe Bild verschwommen als Eissturm
+  probe.onload = () => {
+    const blur = document.createElement('div'); blur.className = 'dlg-bg-sturm'; blur.style.backgroundImage = `url("${bgUrl}")`;
+    const mid = document.createElement('img'); mid.className = 'dlg-bg-mitte'; mid.src = bgUrl; mid.alt = '';
+    bg.append(blur, mid);
+  };
   probe.onerror = () => {
     bg.classList.add('ersatz');
     const p = document.createElement('img'); p.className = 'dlg-pokal'; p.src = ERSATZ.hintergrund; p.alt = '';

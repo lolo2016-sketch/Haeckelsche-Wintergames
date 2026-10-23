@@ -4,7 +4,7 @@
 // Wer ins selbe Team kommt, bekommt dieselbe Farbe und setzt sich neben die anderen Teammitglieder.
 // Die eigene Figur läuft in der Third-Person-Ansicht ein, danach sieht man die Runde aus ihren Augen.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js';
-import { buildWinterWorld, EIS_X } from './winter.js?v=20261023b';
+import { buildWinterWorld, EIS_X } from './winter.js?v=20261023c';
 
 const BENCH_SHIRT = 0xe2e8f0;
 const HAIR = 0x4a2f1b;
@@ -92,16 +92,23 @@ function faceTexture(name) {
   });
 }
 
-function labelTexture(text, captain) {
-  return canvasTex(512, 112, (g, w, h) => {
+// Namensschild; mit Flagge steht die Flagge groß über dem Namen (Schild ist dann doppelt so hoch)
+function labelTexture(text, captain, flag = null) {
+  const top = flag ? 112 : 0;
+  return canvasTex(512, 112 + top, (g, w, h) => {
+    if (flag) {
+      g.font = '96px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(flag, w / 2, 62);
+    }
     g.font = 'bold 56px -apple-system, Segoe UI, Roboto, sans-serif';
     const tw = Math.min(w - 20, g.measureText(text).width + 48);
     const x = (w - tw) / 2;
     g.fillStyle = captain ? 'rgba(250,204,21,.95)' : 'rgba(15,23,42,.72)';
-    g.beginPath(); g.roundRect(x, 18, tw, 76, 38); g.fill();
+    g.beginPath(); g.roundRect(x, top + 18, tw, 76, 38); g.fill();
     g.fillStyle = captain ? '#422006' : '#fff';
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(text, w / 2, 58, w - 60);
+    g.fillText(text, w / 2, top + 58, w - 60);
   });
 }
 
@@ -289,12 +296,14 @@ function setAgent(ch, url) {
 }
 
 // Teamgründer: goldenes Namensschild mit Stern und Armbinde
-function setFounder(ch, founder, name) {
-  if (ch.founder === founder && ch.name === name) return;
-  ch.founder = founder; ch.name = name;
+function setFounder(ch, founder, name, flag = null) {
+  if (ch.founder === founder && ch.name === name && ch.flag === flag) return;
+  ch.founder = founder; ch.name = name; ch.flag = flag;
   ch.label.material.map?.dispose();
-  ch.label.material.map = labelTexture((founder ? '★ ' : '') + name, founder);
+  ch.label.material.map = labelTexture((founder ? '★ ' : '') + name, founder, flag);
   ch.label.material.needsUpdate = true;
+  // Schild mit Flagge: doppelt so hoch, Unterkante (Name) bleibt an derselben Stelle
+  ch.label.scale.y = flag ? 0.5 : 0.25; ch.label.position.y = flag ? 2.305 : 2.18;
   if (ch.band) ch.band.visible = founder;
 }
 
@@ -575,7 +584,7 @@ export function createHall3D(container, { meToken, onPersonTap, onDoorTap } = {}
       }
       ch.target = t;
       ch.shirt.color.setHex(t.color);
-      setFounder(ch, founders.has(p.token), p.name);
+      setFounder(ch, founders.has(p.token), p.name, p.flagEmoji || null);
       setAgent(ch, p.agent ? (p.agentUrl || DEFAULT_AGENT) : null);
     }
     // leuchtende Figuren: entweder ausdrücklich angegeben (z. B. der eigene Tipp beim Raten) oder alle Freien beim Wählen

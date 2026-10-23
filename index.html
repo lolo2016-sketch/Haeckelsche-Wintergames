@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <script>
 // Ladefehler sichtbar machen (z. B. fehlende oder veraltete Datei nach dem Hochladen)
-window.APP_VERSION = '20261023b';
+window.APP_VERSION = '20261023c';
 (function () {
   var shown = {};
   window.showLoadError = function (what) {
@@ -146,14 +146,14 @@ window.APP_VERSION = '20261023b';
       getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, addDoc, query, orderBy, limit, arrayUnion, increment
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261023b";
-    import { playDialog, SZENEN, mergeConfig } from "./dialog.js?v=20261023b";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261023b";
-    import { createHall } from "./hall.js?v=20261023b";
+    import { playSnake, playReplay } from "./minigame.js?v=20261023c";
+    import { playDialog, SZENEN, mergeConfig } from "./dialog.js?v=20261023c";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261023c";
+    import { createHall } from "./hall.js?v=20261023c";
     import { PHASES, PHASE_NAMES, phaseIndex, settings, country, teamColor, isPerson, playedSnake, compareSnake, snakeRanking,
       playedBiathlon, teamBiathlon, bonusOf, teamBonus, guessedRight, planTeams,
       FINAL_TEAMS, PENALTY_S, finalMembers, finalCaptain, finalBonus, finalScoreMs, fmtClock, weaponName,
-      finalStage, RIDDLES, WORD2, WORD2_TRIES, riddleRight, word2Shown, word2Tiles, normAnswer, WORD3, CANS } from "./draft.js?v=20261023b";
+      finalStage, RIDDLES, WORD2, WORD2_TRIES, riddleRight, word2Shown, word2Tiles, normAnswer, WORD3, CANS } from "./draft.js?v=20261023c";
     window.APP_READY = true;   // alle Dateien geladen
 
     const app = initializeApp(firebaseConfig);
@@ -372,7 +372,7 @@ window.APP_VERSION = '20261023b';
       // Nach der Auflösung steht die Flagge vor dem Namen über dem Kopf
       const people = present().map(p => {
         const shown = unmasked(p), c = country(p.flag);
-        return { ...p, agent: !shown, name: (revealed(S) || shown) && c ? `${c.emoji} ${p.name}` : p.name };
+        return { ...p, agent: !shown, flagEmoji: (revealed(S) || shown) && c ? c.emoji : null };   // Flagge steht über dem Namen
       });
       const pickTokens = isPhase(S, 'guess') && S.me.guess ? [S.me.guess] : [];   // der eigene Tipp leuchtet (nur bei mir)
       return { people, teams, pickTokens, turnToken: null, benchSeats: S.state.benchSeats };
@@ -414,7 +414,7 @@ window.APP_VERSION = '20261023b';
       // 3D, wenn möglich, sonst die einfache 2D-Halle
       let use3d = false;
       try {
-        hall3dMod ??= await import('./hall3d.js?v=20261023b');
+        hall3dMod ??= await import('./hall3d.js?v=20261023c');
         use3d = hall3dMod.webglAvailable();
       } catch (e) { use3d = false; console.error(e); window.showLoadError?.('3D-Halle: ' + (e?.message || e)); }
 
@@ -636,17 +636,13 @@ window.APP_VERSION = '20261023b';
       renderChatLog();
     }
     // Antippen einer Figur (wenn gerade nicht gewählt wird): ihre letzten 5 Nachrichten
+    // Person antippen: nur ihr Agentenbild und ihr Name
+    const agentImg = p => `<img src="${escapeHtml(p.agentUrl || 'agents/agent1.png')}" alt="" onerror="this.remove()" style="height:min(44vh,320px);width:auto;max-width:100%;object-fit:contain;background:none;border-radius:12px">`;
     function showPersonMessages(p) {
-      const mine = messages.filter(m => m.token === p.token).slice(0, 5);
-      const t = teamOf(S, p);
       const bg = document.createElement('div');
       bg.className = 'modal-bg';
-      bg.innerHTML = `<div class="modal">
-        ${p.photoUrl ? `<img src="${escapeHtml(p.photoUrl)}" alt="" onerror="this.remove()">` : ''}
-        <h2 style="margin:0 0 4px">${revealed(S) && country(p.flag) ? country(p.flag).emoji + ' ' : ''}${escapeHtml(p.name)}</h2>
-        <div style="color:#64748b;font-size:.9rem">${t ? dot(t.css) + escapeHtml(t.name) : 'Noch ohne Team'}</div>
-        <div class="msgs5">${mine.length ? mine.map(m => `<div>${escapeHtml(m.text)} <span style="color:#94a3b8;font-size:.75rem">${fmtTime(m.at)}</span></div>`).join('')
-          : '<div style="background:none;color:#94a3b8;text-align:center">Hat noch nichts geschrieben.</div>'}</div>
+      bg.innerHTML = `<div class="modal" style="text-align:center">${agentImg(p)}
+        <h2 style="margin:8px 0 10px">${escapeHtml(p.name)}</h2>
         <button data-a="ok">Schließen</button></div>`;
       document.body.appendChild(bg);
       bg.onclick = e => { if (e.target === bg || e.target.dataset.a === 'ok') bg.remove(); };
@@ -660,15 +656,14 @@ window.APP_VERSION = '20261023b';
       const bg = document.createElement('div');
       bg.className = 'modal-bg';
       bg.innerHTML = `<div class="modal">
-        ${p.photoUrl ? `<img src="${escapeHtml(p.photoUrl)}" alt="" onerror="this.remove()">` : ''}
-        <h2 style="margin:0 0 6px">${escapeHtml(p.name)}</h2>
+        ${agentImg(p)}
+        <h2 style="margin:8px 0 6px">${escapeHtml(p.name)}</h2>
         <p style="margin:0 0 12px;color:#555">${same ? 'Das ist dein aktueller Tipp.' : `Hat ${escapeHtml(p.name)} dieselbe Flagge wie du?`}
           ${cur ? `<br><span style="font-size:.85rem">Bisheriger Tipp: ${escapeHtml(cur)}</span>` : ''}</p>
         <button class="secondary" data-a="no">${same ? 'Schließen' : 'Abbrechen'}</button>${same ? '' : '<button data-a="yes">Ja, mein Tipp!</button>'}
-        <button class="secondary" data-a="msgs" style="margin-top:6px">💬 Nachrichten ansehen</button></div>`;
+</div>`;
       document.body.appendChild(bg);
       bg.querySelector('[data-a=no]').onclick = () => bg.remove();
-      bg.querySelector('[data-a=msgs]').onclick = () => { bg.remove(); showPersonMessages(p); };
       bg.onclick = e => { if (e.target === bg) bg.remove(); };
       bg.querySelector('[data-a=yes]')?.addEventListener('click', async () => { bg.remove(); await saveGuess(p); });
     }
@@ -949,15 +944,15 @@ window.APP_VERSION = '20261023b';
       const hint = document.getElementById('finHint');
       try {
         if (n === 1) {
-          sceneMods.c ??= await import('./camp.js?v=20261023b');
+          sceneMods.c ??= await import('./camp.js?v=20261023c');
           scene3d = sceneMods.c.createCamp(box, { onWeapon: chooseWeapon, onDoor2: () => nextDoor(2) });
           hint.textContent = '👆 Pfeile antippen = gehen · wischen = umschauen';
         } else if (n === 2) {
-          sceneMods.r2 ??= await import('./room2.js?v=20261023b');
+          sceneMods.r2 ??= await import('./room2.js?v=20261023c');
           scene3d = sceneMods.r2.createRiddleRoom(box, { onPlaque: openRiddle, onDoor: () => nextDoor(3) });
           hint.textContent = '👆 wischen = umschauen · Tafel antippen = Rätsel';
         } else {
-          sceneMods.r3 ??= await import('./room3.js?v=20261023b');
+          sceneMods.r3 ??= await import('./room3.js?v=20261023c');
           const mates = finalMembers(S.me.finalTeam, S.people).filter(p => p.token !== S.me.token).map(p => ({ token: p.token, name: p.name, photoUrl: p.photoUrl }));
           scene3d = sceneMods.r3.createSnowRange(box, { cans: CANS, hits: myFin()?.cans || [], mates, onHit: hitCan, canThrow: () => !myFin()?.solved3At, reload: 2 });
           hint.textContent = '👆 antippen = Schneeball werfen · wischen = zielen';
