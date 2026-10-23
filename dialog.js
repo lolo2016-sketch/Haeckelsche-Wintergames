@@ -52,8 +52,9 @@ export const STANDARD = {
       { s: 'b', t: 'Nicht gegen den Rand, dich selbst oder die Eisblöcke fahren! Mit jedem Gesicht wird es schneller, und alle 3 Gesichter kommt ein neuer Eisblock dazu.' },
       { s: 'a', t: 'Du hast den ganzen Tag Zeit und so viele Versuche, wie du willst. Nur dein bester zählt.' },
       { s: 'b', t: 'Die Besten bekommen Vorsprung fürs Finale: {snakeBonus}.' },
-      { s: 'ich', wahl: ['Los geht’s!', 'Kann ich mir das nochmal ansehen?'] },
-      { s: 'a', t: 'Klar – im Spiel gibt es jederzeit „Tutorial ansehen“. Viel Glück!' }
+      { s: 'b', t: 'Kleine Kontrollfrage: Was zählt am Ende?' },
+      { s: 'ich', wahl: ['Mein erster Versuch', 'Mein bester Versuch', 'Alle Versuche zusammen'], richtig: 1 },
+      { s: 'a', t: 'Genau: nur dein bester! Im Spiel gibt es jederzeit „Tutorial ansehen“. Viel Glück!' }
     ] },
     wahl: { wann: 'guess', zeilen: [
       { s: 'a', t: 'Snake ist vorbei – danke fürs Mitspielen! Die Besten haben sich ihren Vorsprung gesichert.' },
@@ -61,7 +62,7 @@ export const STANDARD = {
       { s: 'a', t: 'Tippe in der Halle die Person an, die deiner Meinung nach deine Flagge hat. Bis zur Auflösung kannst du umentscheiden.' },
       { s: 'b', t: 'Richtig geraten bringt {guessBonus} Sekunden Vorsprung fürs Finale.' },
       { s: 'ich', wahl: ['Ich verrate nichts. 🤫', 'Welche Flagge habe ich nochmal?'] },
-      { s: 'a', t: 'Oben bei „🤫 Meine Flagge zeigen“ siehst du sie kurz. Lass dir nicht über die Schulter schauen!' }
+      { s: 'a', t: 'Tippe rechts auf den Flaggen-Knopf 🏳️: Dort siehst du deine Flagge. Du kannst dich auch 5 Minuten lang für alle enttarnen – oder einmal heimlich eine andere Person ausspionieren.' }
     ] },
     biathlon: { wann: 'pairs', zeilen: [
       { s: 'a', t: 'Die Auflösung ist da! Dein Teampartner ist {partner}.' },
@@ -81,7 +82,7 @@ export const STANDARD = {
     finale: { wann: 'final', zeilen: [
       { s: 'b', t: 'Das Finale ist eröffnet!' },
       { s: 'a', t: 'Drei Räume warten auf euch: Napoleons Lager, die Rätselkammer und der Schneeballwurf. Euer Vorsprung läuft zuerst ab.' },
-      { s: 'b', t: 'Die Tür ist unten im Eis-Pokal – sie erscheint nur im Agentenmodus 🕶️. Sobald {kapitaen} sie öffnet, läuft eure Uhr.' },
+      { s: 'b', t: 'Die Tür ist unten im riesigen Eis-Pokal. Sobald {kapitaen} sie öffnet, läuft eure Uhr.' },
       { s: 'ich', wahl: ['Wir sind bereit.', 'Was, wenn wir die falsche Waffe nehmen?'] },
       { s: 'a', t: 'Jede falsche Waffe kostet 2 Strafsekunden. Viel Glück, Agent {name}.' }
     ] },
@@ -133,6 +134,10 @@ const CSS = `
 .dlg-wahl button:hover,.dlg-wahl button:first-child{color:#e9c46a}
 .dlg-weiter{position:absolute;right:6%;bottom:calc(10px + env(safe-area-inset-bottom));font-size:13px;color:#cbb88e;opacity:.8;animation:dlgb 1.2s infinite}
 @keyframes dlgb{50%{opacity:.25}}
+.dlg-plus{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);font:bold clamp(40px,9vw,80px) Georgia,serif;color:#fde68a;
+  text-shadow:0 0 24px rgba(253,230,138,.9),0 4px 8px #000;animation:dlgp 1.1s ease-out forwards;pointer-events:none;z-index:3}
+.dlg-plus.falsch{color:#fca5a5;text-shadow:0 0 18px rgba(239,68,68,.7),0 4px 8px #000}
+@keyframes dlgp{0%{opacity:0;transform:translate(-50%,-30%) scale(.6)}25%{opacity:1;transform:translate(-50%,-50%) scale(1.1)}100%{opacity:0;transform:translate(-50%,-90%) scale(1)}}
 .dlg-skip{position:absolute;top:calc(12px + env(safe-area-inset-top));right:12px;z-index:2;background:rgba(0,0,0,.45);color:#f3ead7;border:1px solid rgba(233,196,106,.5);
   border-radius:999px;padding:7px 14px;font:14px system-ui,sans-serif;cursor:pointer}
 @media (max-aspect-ratio: 4/5){
@@ -162,9 +167,11 @@ export const fillText = (t, vars) => String(t ?? '').replace(/\{(\w+)\}/g, (m, k
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // Spielt eine Szene ab. Ergebnis: Promise, das erfüllt wird, wenn die Szene zu Ende ist (oder übersprungen wurde).
-export function playDialog(id, { cfg = mergeConfig(null), name = '', agentUrl = 'agents/agent1.png', vars = {} } = {}) {
+// onAnswer(zeile, gewählt, richtig): wird bei jeder Antwort aufgerufen; wertung = true zeigt „+1 s“ bei richtigen Antworten
+export function playDialog(id, { cfg = mergeConfig(null), name = '', agentUrl = 'agents/agent1.png', vars = {}, onAnswer = null, wertung = false } = {}) {
   const sz = cfg.szenen[id];
-  const lines = (sz?.zeilen || []).filter(z => (z.s === 'ich' ? z.wahl?.some(w => w.trim()) : String(z.t ?? '').trim()));
+  const lines = (sz?.zeilen || []).map((z, idx) => ({ ...z, idx }))
+    .filter(z => (z.s === 'ich' ? z.wahl?.some(w => w.trim()) : String(z.t ?? '').trim()));
   if (!lines.length) return Promise.resolve();
   injectCss();
   const V = { name, ...vars };
@@ -238,9 +245,22 @@ export function playDialog(id, { cfg = mergeConfig(null), name = '', agentUrl = 
       const L = lines[i];
       if (L.s === 'ich') {
         speaker('ich'); weiter.style.display = 'none';
-        const opts = L.wahl.filter(w => w.trim());
-        box.innerHTML = `<div class="dlg-wahl">${opts.map((w, k) => `<button data-k="${k}">${k + 1}. ${esc(fillText(w, V))}</button>`).join('')}</div>`;
-        box.querySelectorAll('button').forEach(b => b.onclick = e => { e.stopPropagation(); next(); });
+        // Antworten (leere weglassen, Nummer der richtigen bleibt die aus dem Admin)
+        const opts = L.wahl.map((w, k) => ({ w, k })).filter(o => o.w.trim());
+        const hasRight = Number.isInteger(L.richtig) && L.richtig >= 0;
+        box.innerHTML = `<div class="dlg-wahl">${opts.map((o, n) => `<button data-k="${o.k}">${n + 1}. ${esc(fillText(o.w, V))}</button>`).join('')}</div>`;
+        box.querySelectorAll('button').forEach(b => b.onclick = e => {
+          e.stopPropagation();
+          if (box.dataset.busy) return; box.dataset.busy = '1';
+          const k = Number(b.dataset.k), right = hasRight && k === L.richtig;
+          onAnswer?.(L.idx, k, right, hasRight);
+          if (wertung && hasRight) {
+            const f = document.createElement('div'); f.className = 'dlg-plus' + (right ? '' : ' falsch');
+            f.textContent = right ? '+1 s ✨' : '✗'; ov.appendChild(f);
+            b.style.color = right ? '#86efac' : '#fca5a5';
+            setTimeout(() => { f.remove(); delete box.dataset.busy; next(); }, 1100);
+          } else { delete box.dataset.busy; next(); }
+        });
         return;
       }
       speaker(L.s); weiter.style.display = '';

@@ -5,7 +5,7 @@
 // Bonussekunden fürs Finale: richtig geraten (pro Person) + Snake-Platz 1–3.
 // Rollen aus früheren Versionen ("captain"/"player") spielen keine Rolle, nur "admin" wird ausgelassen.
 import { doc, collection, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { biathlonRank } from "./biathlon.js?v=20261023a";
+import { biathlonRank } from "./biathlon.js?v=20261023b";
 
 // Phasen in Reihenfolge
 export const PHASES = ['setup', 'snake', 'guess', 'pairs', 'biathlon', 'done', 'final'];
@@ -77,13 +77,14 @@ export function bonusOf(p, people, state, revealed) {
   const rank = snakeRanking(people).findIndex(x => x.token === p.token);
   const snake = rank >= 0 && rank < st.snakeBonus.length && phaseIndex(state.phase) >= phaseIndex('guess') ? st.snakeBonus[rank] : 0;
   const guess = revealed && guessedRight(p, people) ? st.guessBonus : 0;
-  return { snake, guess, total: snake + guess };
+  const dialog = (p.dialogPoints || []).length;          // +1 s je richtiger Antwort in den Dialogen
+  return { snake, guess, dialog, total: snake + guess + dialog };
 }
 export function teamBonus(team, people, state, revealed) {
   return people.filter(p => p.teamId === team.id).reduce((s, p) => {
     const b = bonusOf(p, people, state, revealed);
-    return { snake: s.snake + b.snake, guess: s.guess + b.guess, total: s.total + b.total };
-  }, { snake: 0, guess: 0, total: 0 });
+    return { snake: s.snake + b.snake, guess: s.guess + b.guess, dialog: s.dialog + b.dialog, total: s.total + b.total };
+  }, { snake: 0, guess: 0, dialog: 0, total: 0 });
 }
 
 // ----- Auflösung: gleiche Flagge = ein Team -----
