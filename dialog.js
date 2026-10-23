@@ -1,78 +1,112 @@
 // ===== Dialoge im Stil von Rollenspielen (Baldur's Gate) =====
-// Links stehen die beiden Gastgeber, rechts das Agentenbild der Person, die gerade spielt.
-// Unten läuft der Text; antippen = weiter. Bei Zeilen von "ich" kann man eine Antwort wählen (1., 2., …).
-//
-// ---------- HIER ANPASSEN ----------
-// Bilder: einfach Dateien mit diesen Namen in den Ordner dialog/ legen. Fehlt eine Datei, wird der Ersatz genommen.
-export const SPRECHER = {
-  a: { name: 'Orga 1', bild: 'dialog/sprecher1.png', ersatz: 'faces/face1.png' },
-  b: { name: 'Orga 2', bild: 'dialog/sprecher2.png', ersatz: 'faces/face2.png' }
-};
-export const HINTERGRUND = 'dialog/hintergrund.jpg';      // fehlt sie: Schneelandschaft mit dem Eis-Pokal
-const HINTERGRUND_ERSATZ = 'agents/welt/eispokal_vorne.png';
+// Links die Gastgeber (zwei Einzelbilder ODER ein gemeinsames Bild), rechts das Agentenbild der Person.
+// Unten läuft der Text; antippen = weiter. Bei Antworten der Person wählt man 1., 2., …
+// Texte, Bilder und Zeitpunkt jeder Szene stellt man in admin.html ein (gespeichert in Firebase: state/dialoge).
+// Die Werte hier unten sind nur die Startwerte, solange im Admin noch nichts gespeichert ist.
 
-// Platzhalter im Text: {name} = Vorname der Person, {snakeBonus}, {guessBonus}, {biathlonVersuche}
-// Zeile: { s: 'a' | 'b', t: 'Text' }  ·  Antwort der Person: { s: 'ich', wahl: ['Antwort 1', 'Antwort 2'] }
-// Jede Sequenz läuft für jede Person genau einmal (beim ersten Mal in der jeweiligen Phase).
-export const DIALOGE = {
-  // nach dem ersten Video, bevor man in die Halle einläuft
-  intro: [
-    { s: 'a', t: 'Willkommen, {name}. Schön, dass du es zu den Haeckelschen Wintergames geschafft hast.' },
-    { s: 'b', t: 'Wir haben dich nicht ohne Grund eingeladen. Irgendwo hier wartet der Pokal 2026.' },
-    { s: 'ich', wahl: ['Worum geht es?', 'Ich bin bereit.'] },
-    { s: 'a', t: 'Mehrere Runden, ein Ziel: Wer am Ende das Finale am schnellsten löst, holt sich den Pokal.' },
-    { s: 'b', t: 'Geh rein und such dir deinen Platz auf der Bank. Wir melden uns, sobald es losgeht.' }
-  ],
-  // vor dem ersten Spiel (Winter-Snake)
-  snake: [
-    { s: 'a', t: 'Runde 1: Winter-Snake. Im Tab 🎮 Minispiel steuerst du die Schlange durch den Schnee.' },
-    { s: 'b', t: 'Sammle so viele Weihnachtsmänner wie möglich – aber pass auf die Hindernisse und deinen eigenen Schwanz auf.' },
-    { s: 'a', t: 'Du hast den ganzen Tag Zeit und so viele Versuche, wie du willst. Nur dein bester zählt.' },
-    { s: 'b', t: 'Die Besten bekommen Bonussekunden fürs Finale: {snakeBonus}.' },
-    { s: 'ich', wahl: ['Los geht’s!', 'Wie war das mit dem Schwanz?'] }
-  ],
-  // vor dem Wählen (Flagge raten)
-  guess: [
-    { s: 'b', t: 'Jetzt wird es geheimnisvoll, {name}. Jede Person hat eine geheime Flagge – genau eine andere hat dieselbe wie du.' },
-    { s: 'a', t: 'Tippe in der Halle die Person an, von der du glaubst, dass sie deine Flagge hat. Bis zur Auflösung kannst du umentscheiden.' },
-    { s: 'b', t: 'Richtig geraten bringt {guessBonus} Sekunden Vorsprung fürs Finale.' },
-    { s: 'ich', wahl: ['Ich verrate nichts. 🤫', 'Welche Flagge habe ich nochmal?'] },
-    { s: 'a', t: 'Oben bei „🤫 Meine Flagge zeigen“ siehst du sie kurz. Aber lass dir nicht über die Schulter schauen!' }
-  ],
-  // nach dem Wählen (Auflösung, Teams stehen fest)
-  pairs: [
-    { s: 'a', t: 'Die Auflösung ist da! Die Teams stehen fest.' },
-    { s: 'b', t: 'Oben siehst du, mit wem du im Team bist und ob dein Tipp richtig war.' },
-    { s: 'ich', wahl: ['Ich wusste es!', 'Das hätte ich nie gedacht.'] },
-    { s: 'a', t: 'Lernt euch kennen – gleich müsst ihr zusammen laufen.' }
-  ],
-  // vor dem zweiten Spiel (Biathlon)
-  biathlon: [
-    { s: 'b', t: 'Runde 2: Biathlon! Im Tab 🎮 Minispiel läufst du und schießt auf die Scheiben.' },
-    { s: 'a', t: 'Du hast {biathlonVersuche} echte Versuche. Deine beste Zeit und die deines Teampartners werden addiert.' },
-    { s: 'b', t: 'Fehlschüsse kosten Zeit – lieber einmal mehr ruhig zielen.' },
-    { s: 'ich', wahl: ['Ich treffe alles.', 'Wo war nochmal der Abzug?'] }
-  ],
-  // nach dem zweiten Spiel
-  done: [
-    { s: 'a', t: 'Der Biathlon ist vorbei. Respekt, {name}!' },
-    { s: 'b', t: 'Alle Vorsprünge stehen fest und werden euch im Finale gutgeschrieben.' },
-    { s: 'a', t: 'Ruht euch kurz aus. Das Finale kommt bald.' }
-  ],
-  // vor dem Finale
-  final: [
-    { s: 'b', t: 'Jetzt wird es ernst: das Finale.' },
-    { s: 'a', t: 'In vier Teams spielt ihr drei Räume: Napoleons Lager, die Rätselkammer und die Schneeballschlacht.' },
-    { s: 'b', t: 'Euer Kapitän öffnet die Tür unten im Eis-Pokal – die gibt es nur im Agentenmodus 🕶️. Ab dann läuft eure Uhr.' },
-    { s: 'ich', wahl: ['Wir sind bereit.', 'Wer ist unser Kapitän?'] },
-    { s: 'a', t: 'Das steht oben im Banner. Viel Glück, Agent {name}.' }
-  ]
+// Szenen in ihrer Reihenfolge
+export const SZENEN = [
+  { id: 'intro', titel: '1 · Intro (nach dem Video, vor dem Einlauf)' },
+  { id: 'snake', titel: '2 · Vor Snake (Spiel erklären)' },
+  { id: 'wahl', titel: '3 · Nach Snake, vor dem Wählen' },
+  { id: 'biathlon', titel: '4 · Vor Biathlon (Regeln, Termin)' },
+  { id: 'teams', titel: '5 · Teams fürs Finale' },
+  { id: 'finale', titel: '6 · Finale eröffnet' },
+  { id: 'ende', titel: '7 · Abschluss / Ehrung' }
+];
+// Wann eine Szene kommt (jede Szene läuft pro Person genau einmal)
+export const WANN = [
+  ['einlauf', 'Beim ersten Öffnen, vor dem Einlauf'],
+  ['snake', 'Phase 1: Snake'],
+  ['guess', 'Phase 2: Raten / Wählen'],
+  ['pairs', 'Phase 3: Auflösung (Paare stehen fest)'],
+  ['biathlon', 'Phase 4: Biathlon'],
+  ['done', 'Phase 5: Biathlon beendet'],
+  ['final', 'Phase 6: Finale freigegeben'],
+  ['finaleGeschafft', 'Nachdem das eigene Team das Finale geschafft hat'],
+  ['aus', '– aus (wird nicht gezeigt)']
+];
+// Platzhalter, die im Text ersetzt werden
+export const PLATZHALTER = {
+  name: 'Name der Person', snakeBonus: 'Snake-Bonus je Platz', guessBonus: 'Sekunden fürs richtige Raten',
+  biathlonVersuche: 'Zahl der echten Biathlon-Versuche', partner: 'Teampartner (nach der Auflösung)',
+  finaleTeam: 'Finale-Team (A–D)', mitspieler: 'die anderen im Finale-Team', kapitaen: 'Kapitän des Finale-Teams',
+  finaleZeit: 'Wertung des eigenen Teams im Finale'
 };
-// ---------- ENDE ANPASSEN ----------
 
-// Welche Sequenz gehört zu welcher Phase (intro läuft beim ersten Einlauf)
-export const PHASE_DIALOG = { snake: 'snake', guess: 'guess', pairs: 'pairs', biathlon: 'biathlon', done: 'done', final: 'final' };
-export const DIALOG_ORDER = ['intro', 'snake', 'guess', 'pairs', 'biathlon', 'done', 'final'];
+export const STANDARD = {
+  namen: { a: 'Orga 1', b: 'Orga 2' },
+  hintergrund: 'dialog/hintergrund.jpg',
+  szenen: {
+    intro: { wann: 'einlauf', zeilen: [
+      { s: 'a', t: 'Willkommen, {name}. Schön, dass du es zu den Haeckelschen Wintergames geschafft hast.' },
+      { s: 'b', t: 'Wir haben dich nicht ohne Grund eingeladen. Irgendwo hier wartet der Pokal 2026.' },
+      { s: 'ich', wahl: ['Worum geht es?', 'Ich bin bereit.'] },
+      { s: 'a', t: 'Mehrere Runden, ein Ziel: Wer am Ende das Finale am schnellsten löst, holt sich den Pokal.' },
+      { s: 'b', t: 'Geh rein und such dir deinen Platz auf der Bank. Wir melden uns, sobald es losgeht.' }
+    ] },
+    snake: { wann: 'snake', zeilen: [
+      { s: 'a', t: 'Runde 1: Winter-Snake! Du findest das Spiel unten im Tab 🎮 Minispiel.' },
+      { s: 'b', t: 'Du bist der Kopf der Schlange – mit Weihnachtsmütze. Sammle so viele Gesichter wie möglich. Jedes Gesicht ist ein Punkt und hängt sich hinten an.' },
+      { s: 'a', t: 'Steuern kannst du mit den Pfeilen unten oder durch Wischen auf dem Spielfeld.' },
+      { s: 'b', t: 'Nicht gegen den Rand, dich selbst oder die Eisblöcke fahren! Mit jedem Gesicht wird es schneller, und alle 3 Gesichter kommt ein neuer Eisblock dazu.' },
+      { s: 'a', t: 'Du hast den ganzen Tag Zeit und so viele Versuche, wie du willst. Nur dein bester zählt.' },
+      { s: 'b', t: 'Die Besten bekommen Vorsprung fürs Finale: {snakeBonus}.' },
+      { s: 'ich', wahl: ['Los geht’s!', 'Kann ich mir das nochmal ansehen?'] },
+      { s: 'a', t: 'Klar – im Spiel gibt es jederzeit „Tutorial ansehen“. Viel Glück!' }
+    ] },
+    wahl: { wann: 'guess', zeilen: [
+      { s: 'a', t: 'Snake ist vorbei – danke fürs Mitspielen! Die Besten haben sich ihren Vorsprung gesichert.' },
+      { s: 'b', t: 'Jetzt wird gewählt, {name}. Jede Person hat eine geheime Flagge – genau eine andere hat dieselbe wie du.' },
+      { s: 'a', t: 'Tippe in der Halle die Person an, die deiner Meinung nach deine Flagge hat. Bis zur Auflösung kannst du umentscheiden.' },
+      { s: 'b', t: 'Richtig geraten bringt {guessBonus} Sekunden Vorsprung fürs Finale.' },
+      { s: 'ich', wahl: ['Ich verrate nichts. 🤫', 'Welche Flagge habe ich nochmal?'] },
+      { s: 'a', t: 'Oben bei „🤫 Meine Flagge zeigen“ siehst du sie kurz. Lass dir nicht über die Schulter schauen!' }
+    ] },
+    biathlon: { wann: 'pairs', zeilen: [
+      { s: 'a', t: 'Die Auflösung ist da! Dein Teampartner ist {partner}.' },
+      { s: 'b', t: 'Zusammen tretet ihr im Biathlon-Sprint an. Los geht es am [TAG] um [UHRZEIT].' },
+      { s: 'a', t: 'Mit ◀ ▶ fährst du, mit ▲ springst du, mit ▼ legst du dich hin. Auf Schnee gleitest du weiter, Gegenrichtung bremst.' },
+      { s: 'b', t: 'Berührst du ein Hindernis, stürzt du und brauchst 2 Sekunden zum Aufstehen. Im echten Lauf warten Hindernisse, die du selbst herausfinden musst.' },
+      { s: 'a', t: 'Trainieren kannst du so oft du willst. Danach hast du {biathlonVersuche} echte Versuche – deine beste Zeit und die von {partner} werden addiert.' },
+      { s: 'ich', wahl: ['Wir holen uns das!', 'Wo war nochmal die Bremse?'] }
+    ] },
+    teams: { wann: 'done', zeilen: [
+      { s: 'b', t: 'Der Biathlon ist vorbei – Respekt, {name}!' },
+      { s: 'a', t: 'Fürs Finale werdet ihr neu eingeteilt. Du bist in Team {finaleTeam} mit {mitspieler}.' },
+      { s: 'b', t: 'Euer Kapitän ist {kapitaen}. Nur er oder sie öffnet die Türen und wählt im ersten Raum die Waffe.' },
+      { s: 'ich', wahl: ['Starkes Team!', 'Wann geht es los?'] },
+      { s: 'a', t: 'Verabredet euch – sobald das Finale eröffnet ist, könnt ihr loslegen, wann ihr wollt.' }
+    ] },
+    finale: { wann: 'final', zeilen: [
+      { s: 'b', t: 'Das Finale ist eröffnet!' },
+      { s: 'a', t: 'Drei Räume warten auf euch: Napoleons Lager, die Rätselkammer und der Schneeballwurf. Euer Vorsprung läuft zuerst ab.' },
+      { s: 'b', t: 'Die Tür ist unten im Eis-Pokal – sie erscheint nur im Agentenmodus 🕶️. Sobald {kapitaen} sie öffnet, läuft eure Uhr.' },
+      { s: 'ich', wahl: ['Wir sind bereit.', 'Was, wenn wir die falsche Waffe nehmen?'] },
+      { s: 'a', t: 'Jede falsche Waffe kostet 2 Strafsekunden. Viel Glück, Agent {name}.' }
+    ] },
+    ende: { wann: 'finaleGeschafft', zeilen: [
+      { s: 'a', t: 'Ihr habt es geschafft, {name}! Team {finaleTeam} hat das Finale gelöst.' },
+      { s: 'b', t: 'Eure Wertung: {finaleZeit}. Was für eine Leistung!' },
+      { s: 'ich', wahl: ['Wer hat gewonnen?', 'Danke für den Tag!'] },
+      { s: 'a', t: 'Die Siegerehrung machen wir gemeinsam – bis gleich!' }
+    ] }
+  }
+};
+// Standardwerte für die Bilder einer Szene
+const BILD_STANDARD = { bilder: 'zwei', bildA: 'dialog/sprecher1.png', bildB: 'dialog/sprecher2.png', bildBeide: 'dialog/beide.png', hintergrund: '' };
+const ERSATZ = { a: 'faces/face1.png', b: 'faces/face2.png', hintergrund: 'agents/welt/eispokal_vorne.png' };
+
+// Gespeicherte Einstellungen (Firebase) über die Startwerte legen
+export function mergeConfig(remote) {
+  const r = remote || {};
+  const out = { namen: { ...STANDARD.namen, ...(r.namen || {}) }, hintergrund: r.hintergrund ?? STANDARD.hintergrund, szenen: {} };
+  for (const { id } of SZENEN) {
+    const std = STANDARD.szenen[id], rem = r.szenen?.[id] || {};
+    out.szenen[id] = { ...BILD_STANDARD, ...std, ...rem, zeilen: (rem.zeilen ?? std.zeilen).map(z => ({ ...z, ...(z.wahl ? { wahl: [...z.wahl] } : {}) })) };
+  }
+  return out;
+}
 
 const CSS = `
 .dlg{position:fixed;inset:0;z-index:9000;overflow:hidden;background:#0b1a2e;color:#f3ead7;font-family:Georgia,'Times New Roman',serif;
@@ -84,11 +118,12 @@ const CSS = `
 .dlg-schnee{position:absolute;left:0;right:0;bottom:0;height:24%;background:linear-gradient(#dbe8f6,#f6fbff);border-radius:50% 50% 0 0/22% 22% 0 0;opacity:.95}
 .dlg-flocken{position:absolute;inset:0;pointer-events:none}
 .dlg-vign{position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 45%,rgba(0,0,0,.55) 100%)}
-.dlg-p{position:absolute;bottom:0;max-height:74%;transition:filter .35s,transform .35s;transform-origin:bottom center;filter:brightness(.5) saturate(.75)}
+.dlg-p{position:absolute;bottom:0;max-height:74%;object-fit:contain;object-position:bottom;transition:filter .35s,transform .35s;transform-origin:bottom center;filter:brightness(.5) saturate(.75)}
 .dlg-p.aktiv{filter:none;transform:scale(1.04)}
-.dlg-p.a{left:-2%;width:31%;object-fit:contain;object-position:bottom}
-.dlg-p.b{left:20%;width:31%;object-fit:contain;object-position:bottom}
-.dlg-p.ich{right:-1%;width:36%;object-fit:contain;object-position:bottom}
+.dlg-p.a{left:-2%;width:31%}
+.dlg-p.b{left:20%;width:31%}
+.dlg-p.beide{left:-2%;width:54%;max-height:80%}
+.dlg-p.ich{right:-1%;width:36%}
 .dlg-box{position:absolute;left:0;right:0;bottom:0;padding:26px 6% calc(22px + env(safe-area-inset-bottom));
   background:linear-gradient(rgba(5,8,14,0),rgba(5,8,14,.86) 30%,rgba(5,8,14,.96));min-height:28%}
 .dlg-zeile{font-size:clamp(17px,2.4vw,24px);line-height:1.45;text-shadow:0 2px 4px #000;max-width:900px;margin:0 auto}
@@ -104,6 +139,7 @@ const CSS = `
   /* Hochformat (Handy): Figuren stehen über der Textbox */
   .dlg-p{max-height:52%;bottom:24%}
   .dlg-p.a{width:42%;left:-6%}.dlg-p.b{width:42%;left:20%}.dlg-p.ich{width:48%;right:-4%}
+  .dlg-p.beide{width:70%;left:-6%;max-height:56%}
   .dlg-pokal{height:58%;bottom:28%}
   .dlg-schnee{height:34%}
   .dlg-box{min-height:26%;background:linear-gradient(rgba(5,8,14,0),rgba(5,8,14,.9) 18%,rgba(5,8,14,.97))}
@@ -113,45 +149,69 @@ function injectCss() {
   if (document.getElementById('dlg-css')) return;
   const st = document.createElement('style'); st.id = 'dlg-css'; st.textContent = CSS; document.head.appendChild(st);
 }
-// Bild laden; fehlt es, Ersatz nehmen
-function img(cls, src, fallback) {
+// Bild laden; fehlt es, Ersatz nehmen (oder onFail aufrufen)
+function img(cls, src, fallback, onFail) {
   const el = document.createElement('img'); el.className = 'dlg-p ' + cls; el.alt = '';
-  el.onerror = () => { if (fallback && el.src.indexOf(fallback) < 0) el.src = fallback; else el.style.display = 'none'; };
-  el.src = src; return el;
+  el.onerror = () => {
+    if (fallback && el.src.indexOf(fallback) < 0) el.src = fallback;
+    else { el.style.display = 'none'; onFail?.(); }
+  };
+  el.src = src || fallback || ''; return el;
 }
-const fill = (t, vars) => String(t).replace(/\{(\w+)\}/g, (m, k) => vars[k] ?? m);
+export const fillText = (t, vars) => String(t ?? '').replace(/\{(\w+)\}/g, (m, k) => vars[k] ?? m);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-// Spielt eine Sequenz ab. Ergebnis: Promise, das erfüllt wird, wenn die Sequenz zu Ende ist (oder übersprungen wurde).
-export function playDialog(id, { name = '', agentUrl = 'agents/agent1.png', vars = {} } = {}) {
-  const lines = DIALOGE[id];
-  if (!lines?.length) return Promise.resolve();
+// Spielt eine Szene ab. Ergebnis: Promise, das erfüllt wird, wenn die Szene zu Ende ist (oder übersprungen wurde).
+export function playDialog(id, { cfg = mergeConfig(null), name = '', agentUrl = 'agents/agent1.png', vars = {} } = {}) {
+  const sz = cfg.szenen[id];
+  const lines = (sz?.zeilen || []).filter(z => (z.s === 'ich' ? z.wahl?.some(w => w.trim()) : String(z.t ?? '').trim()));
+  if (!lines.length) return Promise.resolve();
   injectCss();
   const V = { name, ...vars };
+  const N = { a: cfg.namen.a, b: cfg.namen.b, beide: `${cfg.namen.a} & ${cfg.namen.b}`, ich: name };
   const ov = document.createElement('div'); ov.className = 'dlg';
   const bg = document.createElement('div'); bg.className = 'dlg-bg'; ov.appendChild(bg);
-  // Hintergrund: eigenes Bild, sonst Nachthimmel + Eis-Pokal + Schnee
+  // Hintergrund: eigenes Bild der Szene oder das allgemeine, sonst Nachthimmel + Eis-Pokal + Schnee
+  const bgUrl = sz.hintergrund || cfg.hintergrund;
   const probe = new Image();
-  probe.onload = () => { bg.style.backgroundImage = `url("${HINTERGRUND}")`; };
+  probe.onload = () => { bg.style.backgroundImage = `url("${bgUrl}")`; };
   probe.onerror = () => {
     bg.classList.add('ersatz');
-    const p = document.createElement('img'); p.className = 'dlg-pokal'; p.src = HINTERGRUND_ERSATZ; p.alt = '';
+    const p = document.createElement('img'); p.className = 'dlg-pokal'; p.src = ERSATZ.hintergrund; p.alt = '';
     const s = document.createElement('div'); s.className = 'dlg-schnee';
     bg.append(s, p);
   };
-  probe.src = HINTERGRUND;
-  // fallender Schnee
+  if (bgUrl) probe.src = bgUrl; else probe.onerror();
   const cv = document.createElement('canvas'); cv.className = 'dlg-flocken'; ov.appendChild(cv);
   const vign = document.createElement('div'); vign.className = 'dlg-vign'; ov.appendChild(vign);
-  const P = { a: img('a', SPRECHER.a.bild, SPRECHER.a.ersatz), b: img('b', SPRECHER.b.bild, SPRECHER.b.ersatz), ich: img('ich', agentUrl, 'agents/agent1.png') };
-  ov.append(P.b, P.a, P.ich);
+  // Gastgeber: zwei Einzelbilder oder ein gemeinsames Bild (fehlt es, doch die zwei Einzelbilder)
+  const P = { ich: img('ich', agentUrl, 'agents/agent1.png') };
+  const zwei = () => {
+    P.a = img('a', sz.bildA, ERSATZ.a); P.b = img('b', sz.bildB, ERSATZ.b);
+    ov.insertBefore(P.b, P.ich); ov.insertBefore(P.a, P.ich);
+  };
+  ov.appendChild(P.ich);
+  if (sz.bilder === 'eins') {
+    P.beide = img('beide', sz.bildBeide, null, () => { P.beide.remove(); delete P.beide; zwei(); speaker(cur); });
+    ov.insertBefore(P.beide, P.ich);
+  } else zwei();
   const box = document.createElement('div'); box.className = 'dlg-box'; ov.appendChild(box);
   const weiter = document.createElement('div'); weiter.className = 'dlg-weiter'; weiter.textContent = 'Tippen = weiter ▸'; ov.appendChild(weiter);
   const skip = document.createElement('button'); skip.className = 'dlg-skip'; skip.textContent = 'Überspringen ⏭'; ov.appendChild(skip);
   document.body.appendChild(ov);
   requestAnimationFrame(() => ov.classList.add('on'));
 
-  // Schneeflocken
+  // Wer spricht, ist hell; beim gemeinsamen Bild ist es hell, solange einer von euch spricht
+  let cur = null;
+  function speaker(s) {
+    cur = s;
+    for (const k of Object.keys(P)) {
+      const on = k === s || (k === 'beide' && s !== 'ich') || (s === 'beide' && (k === 'a' || k === 'b'));
+      P[k].classList.toggle('aktiv', on);
+    }
+  }
+
+  // fallender Schnee
   const ctx = cv.getContext('2d'); let raf = 0;
   const flakes = Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random(), r: 0.6 + Math.random() * 2, v: 0.02 + Math.random() * 0.05, w: Math.random() * 6 }));
   const snow = t => {
@@ -172,21 +232,20 @@ export function playDialog(id, { name = '', agentUrl = 'agents/agent1.png', vars
       clearInterval(typing); cancelAnimationFrame(raf);
       ov.classList.remove('on'); setTimeout(() => ov.remove(), 450); resolve();
     };
-    const speaker = s => { for (const k of ['a', 'b', 'ich']) P[k].classList.toggle('aktiv', k === s); };
     function next() {
       i++;
       if (i >= lines.length) return finish();
       const L = lines[i];
-      if (L.s === 'ich' && L.wahl?.length) {
+      if (L.s === 'ich') {
         speaker('ich'); weiter.style.display = 'none';
-        box.innerHTML = `<div class="dlg-wahl">${L.wahl.map((w, k) => `<button data-k="${k}">${k + 1}. ${esc(fill(w, V))}</button>`).join('')}</div>`;
+        const opts = L.wahl.filter(w => w.trim());
+        box.innerHTML = `<div class="dlg-wahl">${opts.map((w, k) => `<button data-k="${k}">${k + 1}. ${esc(fillText(w, V))}</button>`).join('')}</div>`;
         box.querySelectorAll('button').forEach(b => b.onclick = e => { e.stopPropagation(); next(); });
         return;
       }
-      const who = L.s === 'ich' ? { name } : SPRECHER[L.s] || { name: '' };
       speaker(L.s); weiter.style.display = '';
-      const full = fill(L.t, V);
-      box.innerHTML = `<div class="dlg-zeile"><span class="dlg-name">${esc(who.name)}:</span><span class="dlg-text"></span></div>`;
+      const full = fillText(L.t, V);
+      box.innerHTML = `<div class="dlg-zeile"><span class="dlg-name">${esc(N[L.s] ?? '')}:</span><span class="dlg-text"></span></div>`;
       const tx = box.querySelector('.dlg-text');
       let n = 0;
       clearInterval(typing);

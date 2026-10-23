@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <script>
 // Ladefehler sichtbar machen (z. B. fehlende oder veraltete Datei nach dem Hochladen)
-window.APP_VERSION = '20261022a';
+window.APP_VERSION = '20261023a';
 (function () {
   var shown = {};
   window.showLoadError = function (what) {
@@ -63,10 +63,11 @@ window.APP_VERSION = '20261022a';
       collection, getDocs
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261022a";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261022a";
+    import { playSnake, playReplay } from "./minigame.js?v=20261023a";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261023a";
     import { PHASES, PHASE_NAMES, phaseIndex, settings, DEFAULTS, COUNTRIES, country, isPerson, teamColor, snakeRanking,
-      guessedRight, teamBonus, teamBiathlon, revealTeams, FINAL_TEAMS, finalMembers, finalBonus, finalScoreMs, fmtClock, WEAPONS, weaponName } from "./draft.js?v=20261022a";
+      guessedRight, teamBonus, teamBiathlon, revealTeams, FINAL_TEAMS, finalMembers, finalBonus, finalScoreMs, fmtClock, WEAPONS, weaponName } from "./draft.js?v=20261023a";
+    import { SZENEN, WANN, PLATZHALTER, mergeConfig, playDialog } from "./dialog.js?v=20261023a";
     window.APP_READY = true;   // alle Dateien geladen
 
     const app = initializeApp(firebaseConfig);
@@ -95,8 +96,9 @@ window.APP_VERSION = '20261022a';
         return (await r.json()).filter(f => f.type === 'file').map(f => f.path);
       };
       try {
-        const [photos, faces, videos, agents] = await Promise.all([list('photos'), list('faces'), list('videos'), list('agents')]);
+        const [photos, faces, videos, agents, dialog] = await Promise.all([list('photos'), list('faces'), list('videos'), list('agents'), list('dialog')]);
         repoFiles = {
+          dialog: dialog.filter(f => /\.(png|jpe?g|webp|gif)$/i.test(f)),
           agents: agents.filter(f => /\.(png|webp)$/i.test(f)),
           photos: [...photos, ...faces].filter(f => /\.(png|jpe?g|webp|gif)$/i.test(f)),
           videos: videos.filter(f => /\.(mp4|webm|mov|m4v)$/i.test(f)), loaded: true, error: null
@@ -106,7 +108,8 @@ window.APP_VERSION = '20261022a';
     function fileOptions() {
       return `<datalist id="photoFiles">${repoFiles.photos.map(f => `<option value="${f}">`).join('')}</datalist>
         <datalist id="videoFiles">${repoFiles.videos.map(f => `<option value="${f}">`).join('')}</datalist>
-        <datalist id="agentFiles">${(repoFiles.agents || []).map(f => `<option value="${f}">`).join('')}</datalist>`;
+        <datalist id="agentFiles">${(repoFiles.agents || []).map(f => `<option value="${f}">`).join('')}</datalist>
+        <datalist id="dialogFiles">${[...(repoFiles.dialog || []), ...repoFiles.photos].map(f => `<option value="${f}">`).join('')}</datalist>`;
     }
     function filesHint() {
       if (!repoFiles.loaded) return 'Lade Dateiliste aus dem Repo …';
@@ -180,6 +183,108 @@ window.APP_VERSION = '20261022a';
 
     function qrImg(url, size = 140) {
       return `<img src="https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(url)}" width="${size}" height="${size}">`;
+    }
+
+    // ----- 💬 Dialog-Szenen bearbeiten (gespeichert in state/dialoge) -----
+    let dlgCfg = null, dlgSel = 'intro', dlgDirty = false, dlgMsg = '';
+    const escA = v => String(v ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    async function loadDlg() {
+      try { const snap = await getDoc(doc(db, 'state', 'dialoge')); dlgCfg = mergeConfig(snap.exists() ? snap.data() : null); }
+      catch (e) { dlgCfg = mergeConfig(null); dlgMsg = '⚠️ Laden fehlgeschlagen: ' + e.message; }
+    }
+    function mountDlg() {
+      const el = document.getElementById('dlgCard'); if (!el) return;
+      if (!dlgCfg) { el.innerHTML = '<h2>💬 Dialog-Szenen</h2><p>Lade …</p>'; loadDlg().then(mountDlg); return; }
+      const sz = dlgCfg.szenen[dlgSel], N = dlgCfg.namen;
+      const thumb = src => src ? `<img src="${escA(src)}" onerror="this.style.opacity=.15" style="height:56px;max-width:80px;object-fit:contain;vertical-align:middle;background:#eef;border-radius:6px;margin-left:4px">` : '';
+      const who = (z, k) => `<select class="dlgWho" data-k="${k}">
+          <option value="a" ${z.s === 'a' ? 'selected' : ''}>${escA(N.a)}</option>
+          <option value="b" ${z.s === 'b' ? 'selected' : ''}>${escA(N.b)}</option>
+          <option value="beide" ${z.s === 'beide' ? 'selected' : ''}>Beide zusammen</option>
+          <option value="ich" ${z.s === 'ich' ? 'selected' : ''}>Spieler: Antworten</option></select>`;
+      el.innerHTML = `<h2>💬 Dialog-Szenen</h2>
+        <p style="font-size:.9rem;color:#555;margin:2px 0 8px">Jede Szene sieht jede Person genau einmal (zum eingestellten Zeitpunkt). Rechts erscheint immer ihr Agentenbild.
+          Bilder vorher in den Ordner <code>dialog/</code> im Repo laden. Platzhalter im Text: ${Object.entries(PLATZHALTER).map(([k, v]) => `<code title="${escA(v)}">{${k}}</code>`).join(' ')}</p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
+          <label>Name 1 <input id="dlgNameA" value="${escA(N.a)}" style="width:120px"></label>
+          <label>Name 2 <input id="dlgNameB" value="${escA(N.b)}" style="width:120px"></label>
+          <label>Hintergrund (alle Szenen) <input id="dlgBgAll" list="dialogFiles" value="${escA(dlgCfg.hintergrund)}" style="width:200px"></label>
+        </div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin:8px 0">${SZENEN.map(z => `<button class="${z.id === dlgSel ? '' : 'secondary'} dlgPick" data-id="${z.id}" style="padding:6px 10px">${escA(z.titel)}</button>`).join('')}</div>
+        <div style="border:1px solid #ddd;border-radius:10px;padding:10px">
+          <label>Wann: <select id="dlgWann">${WANN.map(([v, t]) => `<option value="${v}" ${sz.wann === v ? 'selected' : ''}>${escA(t)}</option>`).join('')}</select></label>
+          <div style="margin:8px 0">Bilder von euch:
+            <label><input type="radio" name="dlgMode" value="zwei" ${sz.bilder !== 'eins' ? 'checked' : ''}> zwei Einzelbilder</label>
+            <label><input type="radio" name="dlgMode" value="eins" ${sz.bilder === 'eins' ? 'checked' : ''}> ein gemeinsames Bild (größer)</label></div>
+          ${sz.bilder === 'eins'
+            ? `<label>Gemeinsames Bild <input id="dlgBildBeide" list="dialogFiles" value="${escA(sz.bildBeide)}" style="width:220px"></label>${thumb(sz.bildBeide)}`
+            : `<label>${escA(N.a)} <input id="dlgBildA" list="dialogFiles" value="${escA(sz.bildA)}" style="width:200px"></label>${thumb(sz.bildA)}
+               <label style="margin-left:8px">${escA(N.b)} <input id="dlgBildB" list="dialogFiles" value="${escA(sz.bildB)}" style="width:200px"></label>${thumb(sz.bildB)}`}
+          <div style="margin-top:6px"><label>Eigener Hintergrund nur für diese Szene (leer = allgemeiner) <input id="dlgBgOne" list="dialogFiles" value="${escA(sz.hintergrund)}" style="width:200px"></label></div>
+          <div style="margin-top:10px">${sz.zeilen.map((z, k) => `<div style="display:flex;gap:6px;align-items:flex-start;margin:6px 0;${z.s === 'ich' ? 'background:#fff7e0;border-radius:8px;padding:4px' : ''}">
+              <span style="min-width:22px;color:#888;padding-top:6px">${k + 1}.</span>${who(z, k)}
+              ${z.s === 'ich'
+                ? `<textarea class="dlgWahl" data-k="${k}" rows="${Math.max(2, (z.wahl || []).length)}" placeholder="Antwortmöglichkeiten, eine pro Zeile" style="flex:1;font:inherit;padding:6px">${escA((z.wahl || []).join('\n'))}</textarea>`
+                : `<textarea class="dlgText" data-k="${k}" rows="3" style="flex:1;font:inherit;padding:6px">${escA(z.t)}</textarea>`}
+              <span style="display:flex;flex-direction:column;gap:2px">
+                <button class="secondary dlgMv" data-k="${k}" data-d="-1" style="padding:2px 8px" ${k ? '' : 'disabled'}>↑</button>
+                <button class="secondary dlgMv" data-k="${k}" data-d="1" style="padding:2px 8px" ${k < sz.zeilen.length - 1 ? '' : 'disabled'}>↓</button>
+                <button class="danger dlgDel" data-k="${k}" style="padding:2px 8px">✕</button></span></div>`).join('')}</div>
+          <button class="secondary" id="dlgAddA">+ Text ${escA(N.a)}</button>
+          <button class="secondary" id="dlgAddB">+ Text ${escA(N.b)}</button>
+          <button class="secondary" id="dlgAddIch">+ Antworten Spieler</button>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <button id="dlgSave">💾 Alle Szenen speichern</button>
+          <button class="secondary" id="dlgPrev">▶ Vorschau dieser Szene</button>
+          <button class="secondary" id="dlgStd">Diese Szene auf Standard zurücksetzen</button>
+          <span style="font-size:.9rem;color:${dlgDirty ? '#b45309' : '#15803d'}">${dlgMsg || (dlgDirty ? '● nicht gespeichert' : '')}</span>
+        </div>`;
+      const q = id => el.querySelector('#' + id);
+      const changed = (rerender = false) => { dlgDirty = true; dlgMsg = ''; if (rerender) mountDlg(); else { const m = el.querySelector('#dlgSave + button + button + span'); if (m) { m.textContent = '● nicht gespeichert'; m.style.color = '#b45309'; } } };
+      q('dlgNameA').oninput = e => { N.a = e.target.value; changed(); };
+      q('dlgNameB').oninput = e => { N.b = e.target.value; changed(); };
+      q('dlgBgAll').oninput = e => { dlgCfg.hintergrund = e.target.value.trim(); changed(); };
+      q('dlgBgOne').oninput = e => { sz.hintergrund = e.target.value.trim(); changed(); };
+      q('dlgWann').onchange = e => { sz.wann = e.target.value; changed(); };
+      el.querySelectorAll('input[name=dlgMode]').forEach(r => r.onchange = () => { sz.bilder = r.value; changed(true); });
+      for (const [id, key] of [['dlgBildA', 'bildA'], ['dlgBildB', 'bildB'], ['dlgBildBeide', 'bildBeide']]) {
+        const inp = q(id); if (inp) { inp.oninput = e => { sz[key] = e.target.value.trim(); changed(); }; inp.onchange = () => mountDlg(); }
+      }
+      el.querySelectorAll('.dlgPick').forEach(b => b.onclick = () => { dlgSel = b.dataset.id; mountDlg(); });
+      el.querySelectorAll('.dlgText').forEach(t => t.oninput = () => { sz.zeilen[t.dataset.k].t = t.value; changed(); });
+      el.querySelectorAll('.dlgWahl').forEach(t => t.oninput = () => { sz.zeilen[t.dataset.k].wahl = t.value.split('\n'); changed(); });
+      el.querySelectorAll('.dlgWho').forEach(sel => sel.onchange = () => {
+        const z = sz.zeilen[sel.dataset.k], was = z.s; z.s = sel.value;
+        if (z.s === 'ich' && was !== 'ich') { z.wahl = z.t ? [z.t] : ['']; delete z.t; }
+        if (z.s !== 'ich' && was === 'ich') { z.t = (z.wahl || []).join(' '); delete z.wahl; }
+        changed(true);
+      });
+      el.querySelectorAll('.dlgMv').forEach(b => b.onclick = () => {
+        const k = +b.dataset.k, d = +b.dataset.d, a = sz.zeilen; [a[k], a[k + d]] = [a[k + d], a[k]]; changed(true);
+      });
+      el.querySelectorAll('.dlgDel').forEach(b => b.onclick = () => { sz.zeilen.splice(+b.dataset.k, 1); changed(true); });
+      q('dlgAddA').onclick = () => { sz.zeilen.push({ s: 'a', t: '' }); changed(true); };
+      q('dlgAddB').onclick = () => { sz.zeilen.push({ s: 'b', t: '' }); changed(true); };
+      q('dlgAddIch').onclick = () => { sz.zeilen.push({ s: 'ich', wahl: ['', ''] }); changed(true); };
+      q('dlgStd').onclick = () => {
+        if (!confirm('Diese Szene auf die Standardtexte und -bilder zurücksetzen?')) return;
+        dlgCfg.szenen[dlgSel] = mergeConfig(null).szenen[dlgSel]; changed(true);
+      };
+      q('dlgPrev').onclick = () => playDialog(dlgSel, { cfg: dlgCfg, name: 'Max', agentUrl: 'agents/agent1.png',
+        vars: { snakeBonus: 'Platz 1 bekommt 6 s, Platz 2 bekommt 4 s, Platz 3 bekommt 2 s', guessBonus: 4, biathlonVersuche: 3, partner: 'Anna',
+          finaleTeam: 'B', mitspieler: 'Anna, Tom und Lea', kapitaen: 'Tom', finaleZeit: '7:42' } });
+      q('dlgSave').onclick = async () => {
+        // leere Zeilen und leere Antworten weglassen
+        const clean = JSON.parse(JSON.stringify(dlgCfg));
+        for (const z of Object.values(clean.szenen)) {
+          z.zeilen = z.zeilen.map(l => l.s === 'ich' ? { s: 'ich', wahl: (l.wahl || []).map(w => w.trim()).filter(Boolean) } : { s: l.s, t: String(l.t ?? '').trim() })
+            .filter(l => l.s === 'ich' ? l.wahl.length : l.t);
+        }
+        try { await setDoc(doc(db, 'state', 'dialoge'), clean); dlgCfg = mergeConfig(clean); dlgDirty = false; dlgMsg = '✓ gespeichert'; }
+        catch (e) { dlgMsg = '⚠️ Speichern fehlgeschlagen: ' + e.message; }
+        mountDlg();
+      };
     }
 
     function render(state, teams, participants) {
@@ -285,6 +390,7 @@ window.APP_VERSION = '20261022a';
         <button class="secondary" id="testReplay" ${lastTest ? '' : 'disabled'}>Letzten Test als Wiedergabe ansehen</button>
       </div>`;
 
+      html += `<div class="card" id="dlgCard"></div>`;
       html += fileOptions();
 
       // zuletzt angelegte Person: QR-Code und Link gleich oben
@@ -335,7 +441,7 @@ window.APP_VERSION = '20261022a';
       // ----- Finale -----
       html += `<div class="card"><h2>🏆 Finale</h2>
         <p style="font-size:.9rem;color:#555;margin:2px 0 6px">Viererteams A–D und je ein Kapitän (★). Nach „Finale freigeben“ kann jedes Team zu seinem
-        eigenen Termin spielen: Der Kapitän tippt in der Halle die Tür links neben dem Pokal an, dann läuft die Uhr des Teams und alle gehen hinein.
+        eigenen Termin spielen: Der Kapitän tippt in der Halle im Agentenmodus 🕶️ die Tür unten im Eis-Pokal an, dann läuft die Uhr des Teams und alle gehen hinein.
         Mehrere Teams können gleichzeitig spielen.</p>
         <label>Richtige Waffe in Rätsel 1: <select id="riddle1Answer"><option value="">– bitte wählen –</option>
           ${WEAPONS.map(w => `<option value="${w.id}" ${state.riddle1Answer === w.id ? 'selected' : ''}>${w.name}</option>`).join('')}</select></label>
@@ -387,6 +493,7 @@ window.APP_VERSION = '20261022a';
         navigator.clipboard?.writeText(link).then(() => { e.target.textContent = 'Kopiert ✓'; }).catch(() => prompt('Link:', link));
       });
       if (repoFiles.loaded) refreshFileUi();
+      mountDlg();
       document.getElementById('resetArrivals')?.addEventListener('click', async () => {
         if (!confirm('Alle Teilnehmer wieder auf "noch nicht da" setzen? Die Halle ist danach leer, jeder läuft beim nächsten Öffnen neu ein und sieht sein Intro-Video wieder wie beim ersten Mal (nicht überspringbar).')) return;
         for (const p of participants.filter(x => x.role !== 'admin')) await updateDoc(doc(db, 'participants', p.token), { arrivedAt: null, videoViews: 0 });

@@ -1,5 +1,5 @@
 // ===== Snake – Bildschirm, Steuerung, Tutorial, Aufnahme & Wiedergabe =====
-import { createGame, step, speedFor, drawGame, loadFaces, loadHead, DIR } from './snake.js?v=20261022a';
+import { createGame, step, speedFor, drawGame, loadFaces, loadHead, DIR } from './snake.js?v=20261023a';
 
 // Fotos der Veranstalter (in den Ordner "faces" im Repo hochladen)
 export const FACE_URLS = ['faces/face1.png', 'faces/face2.png'];
@@ -186,8 +186,8 @@ export function playSnake({ onFinish, onClose, testMode = false, photoUrl = null
       ${bestScore != null ? `<p>Dein bester Versuch: <strong>${bestScore} 🎅</strong></p>` : ''}
       <p>${canPlay ? `Du hast ${leftTxt()}.` : 'Du hast keine echten Versuche mehr.'}</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
-        ${canPlay ? '<button class="sg-btn" data-a="go">Echter Versuch</button>' : ''}
-        <button class="sg-btn sec" data-a="tut">Tutorial</button>
+        ${canPlay ? '<button class="sg-btn" data-a="go">▶ Direkt spielen</button>' : ''}
+        <button class="sg-btn sec" data-a="tut">📖 Tutorial ansehen</button>
         <button class="sg-btn sec" data-a="close">Fertig</button>
       </div>`);
     msg.querySelector('[data-a=go]')?.addEventListener('click', () => {
