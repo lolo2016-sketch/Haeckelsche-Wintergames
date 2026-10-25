@@ -38,14 +38,14 @@ export const STANDARD = {
   namen: { a: 'Orga 1', b: 'Orga 2' },
   hintergrund: 'dialog/hintergrund.jpg',
   szenen: {
-    intro: { wann: 'einlauf', zeilen: [
+    intro: { bilder: 'eins', bildBeide: 'dialog/beide1.png', bildA: 'dialog/beide1_links.png', bildB: 'dialog/beide1_rechts.png', wann: 'einlauf', zeilen: [
       { s: 'a', t: 'Willkommen, {name}. Schön, dass du es zu den Haeckelschen Wintergames geschafft hast.' },
       { s: 'b', t: 'Wir haben dich nicht ohne Grund eingeladen. Irgendwo hier wartet der Pokal 2026.' },
       { s: 'ich', wahl: ['Worum geht es?', 'Ich bin bereit.'] },
       { s: 'a', t: 'Mehrere Runden, ein Ziel: Wer am Ende das Finale am schnellsten löst, holt sich den Pokal.' },
       { s: 'b', t: 'Geh rein und such dir deinen Platz auf der Bank. Wir melden uns, sobald es losgeht.' }
     ] },
-    snake: { wann: 'snake', zeilen: [
+    snake: { bilder: 'eins', bildBeide: 'dialog/beide2.png', bildA: 'dialog/beide2_links.png', bildB: 'dialog/beide2_rechts.png', wann: 'snake', zeilen: [
       { s: 'a', t: 'Runde 1: Winter-Snake! Du findest das Spiel unten im Tab 🎮 Minispiel.' },
       { s: 'b', t: 'Du bist der Kopf der Schlange – mit Weihnachtsmütze. Sammle so viele Gesichter wie möglich. Jedes Gesicht ist ein Punkt und hängt sich hinten an.' },
       { s: 'a', t: 'Steuern kannst du mit den Pfeilen unten oder durch Wischen auf dem Spielfeld.' },
@@ -56,7 +56,7 @@ export const STANDARD = {
       { s: 'ich', wahl: ['Mein erster Versuch', 'Mein bester Versuch', 'Alle Versuche zusammen'], richtig: 1 },
       { s: 'a', t: 'Genau: nur dein bester! Im Spiel gibt es jederzeit „Tutorial ansehen“. Viel Glück!' }
     ] },
-    wahl: { wann: 'guess', zeilen: [
+    wahl: { bilder: 'eins', bildBeide: 'dialog/beide3.png', bildA: 'dialog/beide3_links.png', bildB: 'dialog/beide3_rechts.png', wann: 'guess', zeilen: [
       { s: 'a', t: 'Snake ist vorbei – danke fürs Mitspielen! Die Besten haben sich ihren Vorsprung gesichert.' },
       { s: 'b', t: 'Jetzt wird gewählt, {name}. Jede Person hat eine geheime Flagge – genau eine andere hat dieselbe wie du.' },
       { s: 'a', t: 'Tippe in der Halle die Person an, die deiner Meinung nach deine Flagge hat. Bis zur Auflösung kannst du umentscheiden.' },
@@ -64,7 +64,7 @@ export const STANDARD = {
       { s: 'ich', wahl: ['Ich verrate nichts. 🤫', 'Welche Flagge habe ich nochmal?'] },
       { s: 'a', t: 'Tippe rechts auf den Flaggen-Knopf 🏳️: Dort siehst du deine Flagge. Du kannst dich auch 5 Minuten lang für alle enttarnen – oder einmal heimlich eine andere Person ausspionieren.' }
     ] },
-    biathlon: { wann: 'pairs', zeilen: [
+    biathlon: { bilder: 'eins', bildBeide: 'dialog/beide4.png', bildA: 'dialog/beide4_links.png', bildB: 'dialog/beide4_rechts.png', wann: 'pairs', zeilen: [
       { s: 'a', t: 'Die Auflösung ist da! Dein Teampartner ist {partner}.' },
       { s: 'b', t: 'Zusammen tretet ihr im Biathlon-Sprint an. Los geht es am [TAG] um [UHRZEIT].' },
       { s: 'a', t: 'Mit ◀ ▶ fährst du, mit ▲ springst du, mit ▼ legst du dich hin. Auf Schnee gleitest du weiter, Gegenrichtung bremst.' },
@@ -72,21 +72,21 @@ export const STANDARD = {
       { s: 'a', t: 'Trainieren kannst du so oft du willst. Danach hast du {biathlonVersuche} echte Versuche – deine beste Zeit und die von {partner} werden addiert.' },
       { s: 'ich', wahl: ['Wir holen uns das!', 'Wo war nochmal die Bremse?'] }
     ] },
-    teams: { wann: 'done', zeilen: [
+    teams: { bilder: 'eins', bildBeide: 'dialog/beide1.png', bildA: 'dialog/beide1_links.png', bildB: 'dialog/beide1_rechts.png', wann: 'done', zeilen: [
       { s: 'b', t: 'Der Biathlon ist vorbei – Respekt, {name}!' },
       { s: 'a', t: 'Fürs Finale werdet ihr neu eingeteilt. Du bist in Team {finaleTeam} mit {mitspieler}.' },
       { s: 'b', t: 'Euer Kapitän ist {kapitaen}. Nur er oder sie öffnet die Türen und wählt im ersten Raum die Waffe.' },
       { s: 'ich', wahl: ['Starkes Team!', 'Wann geht es los?'] },
       { s: 'a', t: 'Verabredet euch – sobald das Finale eröffnet ist, könnt ihr loslegen, wann ihr wollt.' }
     ] },
-    finale: { wann: 'final', zeilen: [
+    finale: { bilder: 'eins', bildBeide: 'dialog/beide2.png', bildA: 'dialog/beide2_links.png', bildB: 'dialog/beide2_rechts.png', wann: 'final', zeilen: [
       { s: 'b', t: 'Das Finale ist eröffnet!' },
       { s: 'a', t: 'Drei Räume warten auf euch: Napoleons Lager, die Rätselkammer und der Schneeballwurf. Euer Vorsprung läuft zuerst ab.' },
       { s: 'b', t: 'Die Tür ist unten im riesigen Eis-Pokal. Sobald {kapitaen} sie öffnet, läuft eure Uhr.' },
       { s: 'ich', wahl: ['Wir sind bereit.', 'Was, wenn wir die falsche Waffe nehmen?'] },
       { s: 'a', t: 'Jede falsche Waffe kostet 2 Strafsekunden. Viel Glück, Agent {name}.' }
     ] },
-    ende: { wann: 'finaleGeschafft', zeilen: [
+    ende: { bilder: 'eins', bildBeide: 'dialog/beide3.png', bildA: 'dialog/beide3_links.png', bildB: 'dialog/beide3_rechts.png', wann: 'finaleGeschafft', zeilen: [
       { s: 'a', t: 'Ihr habt es geschafft, {name}! Team {finaleTeam} hat das Finale gelöst.' },
       { s: 'b', t: 'Eure Wertung: {finaleZeit}. Was für eine Leistung!' },
       { s: 'ich', wahl: ['Wer hat gewonnen?', 'Danke für den Tag!'] },
@@ -124,8 +124,9 @@ const CSS = `
 .dlg-vign{position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 45%,rgba(0,0,0,.55) 100%)}
 .dlg-p{position:absolute;bottom:0;max-height:74%;object-fit:contain;object-position:bottom;transition:filter .35s,transform .35s;transform-origin:bottom center;filter:brightness(.5) saturate(.75)}
 .dlg-p.aktiv{filter:none;transform:scale(1.04)}
-.dlg-p.a{left:-2%;width:31%}
-.dlg-p.b{left:20%;width:31%}
+.dlg-duo{position:absolute;left:-1%;bottom:0;height:70%;max-width:62%;display:flex;align-items:flex-end;pointer-events:none}
+.dlg-duo .dlg-p{position:relative;left:auto;bottom:auto;height:100%;width:auto;max-height:none;max-width:none;min-width:0;flex:0 1 auto}
+.dlg-duo .dlg-p.b{margin-left:-4%}
 .dlg-p.beide{left:-2%;width:54%;max-height:80%}
 .dlg-p.ich{right:-1%;width:36%}
 .dlg-box{position:absolute;left:0;right:0;bottom:0;padding:26px 6% calc(22px + env(safe-area-inset-bottom));
@@ -146,7 +147,8 @@ const CSS = `
 @media (max-aspect-ratio: 4/5){
   /* Hochformat (Handy): Figuren stehen über der Textbox */
   .dlg-p{max-height:52%;bottom:24%}
-  .dlg-p.a{width:42%;left:-6%}.dlg-p.b{width:42%;left:20%}.dlg-p.ich{width:48%;right:-4%}
+  .dlg-duo{height:48%;bottom:24%;max-width:74%;left:-3%}
+  .dlg-p.ich{width:48%;right:-4%}
   .dlg-p.beide{width:70%;left:-6%;max-height:56%}
   .dlg-pokal{height:58%;bottom:28%}
   .dlg-schnee{height:34%}
@@ -201,9 +203,11 @@ export function playDialog(id, { cfg = mergeConfig(null), name = '', agentUrl = 
   const vign = document.createElement('div'); vign.className = 'dlg-vign'; ov.appendChild(vign);
   // Gastgeber: zwei Einzelbilder oder ein gemeinsames Bild (fehlt es, doch die zwei Einzelbilder)
   const P = { ich: img('ich', agentUrl, 'agents/agent1.png') };
+  // zwei Einzelbilder nebeneinander in gleicher Höhe (gleicher Maßstab), das zweite leicht überlappend
   const zwei = () => {
     P.a = img('a', sz.bildA, ERSATZ.a); P.b = img('b', sz.bildB, ERSATZ.b);
-    ov.insertBefore(P.b, P.ich); ov.insertBefore(P.a, P.ich);
+    const duo = document.createElement('div'); duo.className = 'dlg-duo'; duo.append(P.a, P.b);
+    ov.insertBefore(duo, P.ich);
   };
   ov.appendChild(P.ich);
   if (sz.bilder === 'eins') {
