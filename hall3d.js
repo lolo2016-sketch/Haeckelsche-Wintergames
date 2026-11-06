@@ -4,7 +4,7 @@
 // Wer ins selbe Team kommt, bekommt dieselbe Farbe und setzt sich neben die anderen Teammitglieder.
 // Die eigene Figur läuft in der Third-Person-Ansicht ein, danach sieht man die Runde aus ihren Augen.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js';
-import { buildWinterWorld, EIS_X } from './winter.js?v=20261025b';
+import { buildWinterWorld, EIS_X } from './winter.js?v=20261106b';
 
 const BENCH_SHIRT = 0xe2e8f0;
 const HAIR = 0x4a2f1b;
@@ -825,6 +825,7 @@ export function createHall3D(container, { meToken, onPersonTap, onDoorTap } = {}
 
   return {
     update, playEntrance, setView, getView: () => mode, setBubble, setAgentMode, dispose,
+    setSign: cfg => world.setSign(cfg),
     setDoorActive: on => shrine.setActive(on),
     pause() { paused = true; cancelAnimationFrame(raf); renderer.domElement.style.visibility = 'hidden'; },
     resume() { if (!paused) return; paused = false; renderer.domElement.style.visibility = ''; clock.getDelta(); loop(); }

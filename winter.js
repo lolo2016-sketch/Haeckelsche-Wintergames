@@ -401,6 +401,37 @@ export function buildWinterWorld(scene, floorTex) {
     const logoGlow = glowSprite('rgba(255,120,30,0.9)'); logoGlow.scale.set(LW * 1.5, LH * 1.4, 1); logoGlow.position.z = -0.6; logo.add(logoGlow);
     g.add(logo);
 
+    // Schild unter dem Schriftzug („Erstes Event startet am …“): eigenes Bild aus dem Admin oder automatischer Text
+    const SW = LW * 0.92;
+    const signMat = new THREE.MeshBasicMaterial({ transparent: true, alphaTest: 0.05, fog: false, side: THREE.DoubleSide, depthWrite: false });
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), signMat);
+    sign.visible = false; logo.add(sign);
+    let signLift = 0;      // Schriftzug wird um die Schildhöhe angehoben, damit das Schild über dem Tor steht
+    const placeSign = aspect => { const h = SW / aspect; sign.scale.set(SW, h, 1); sign.position.set(0, -LH / 2 - 0.15 - h / 2, 0.02); sign.visible = true; signLift = h + 0.3; };
+    function setSign(cfg) {
+      const { url, text } = cfg || {};
+      signMat.map?.dispose?.();
+      if (url) {
+        new THREE.TextureLoader().load(url, t => { t.colorSpace = THREE.SRGBColorSpace; signMat.map = t; signMat.needsUpdate = true; placeSign(t.image.width / t.image.height); },
+          undefined, () => setSign({ text }));                 // Bild fehlt: Text zeigen
+        return;
+      }
+      if (!text) { sign.visible = false; signLift = 0; return; }
+      const lines = String(text).split('\n');
+      signMat.map = canvasTex(1024, 128 + 110 * (lines.length - 1), (x, w, h) => {
+        x.textAlign = 'center'; x.textBaseline = 'middle';
+        lines.forEach((ln, i) => {
+          const y = 64 + i * 110, size = i === 0 ? 74 : 88;
+          x.font = `900 ${size}px Impact, "Arial Black", sans-serif`;
+          x.lineJoin = 'round'; x.lineWidth = 14; x.strokeStyle = '#2a0402'; x.strokeText(ln, w / 2, y, w - 40);
+          const gr = x.createLinearGradient(0, y - size / 2, 0, y + size / 2);
+          gr.addColorStop(0, '#ffe2a8'); gr.addColorStop(0.5, '#ff9a2e'); gr.addColorStop(1, '#d4380d');
+          x.fillStyle = gr; x.shadowColor = 'rgba(255,120,30,.9)'; x.shadowBlur = 18; x.fillText(ln, w / 2, y, w - 40); x.shadowBlur = 0;
+        });
+      });
+      signMat.needsUpdate = true; placeSign(1024 / (128 + 110 * (lines.length - 1)));
+    }
+
     // Schwebende Objekte mit 4 Ansichten
     const VIEWS = ['vorne', 'links', 'hinten', 'rechts'];   // gegen den Uhrzeigersinn um das Objekt herum
     function floater(name, pos, H, aspect, glowColor, emberColor, grounded = false) {
@@ -454,16 +485,18 @@ export function buildWinterWorld(scene, floorTex) {
       floater('eispokal', new THREE.Vector3(-EIS_X, EIS_H / 2, 0), EIS_H, 480 / 1072, 'rgba(90,180,255,0.75)', 0xbfe6ff, true)
     ];
     scene.add(g);
-    return { group: g, update: (dt, time, cam) => {
+    return { group: g, setSign, update: (dt, time, cam) => {
       logoGlow.material.opacity = 0.5 + Math.sin(time * 2.2) * 0.12;
-      logo.position.y = 4 + LH / 2 + Math.sin(time * 0.6) * 0.15;
+      logo.position.y = 4 + LH / 2 + (sign.visible ? signLift : 0) + Math.sin(time * 0.6) * 0.15;
       floaters.forEach(f => f(dt, time, cam));
     } };
   }
 
   // Stimmung: normal (Wintertag) oder Agentenmodus (roter, düsterer Himmel, alles in rotes Licht getaucht)
+  let pendingSign = null;
+  function setSign(cfg) { pendingSign = cfg; agentWorld?.setSign(cfg); }
   function setMood(agent) {
-    if (agent && !agentWorld) agentWorld = buildAgentWorld();
+    if (agent && !agentWorld) { agentWorld = buildAgentWorld(); if (pendingSign) agentWorld.setSign(pendingSign); }
     if (agentWorld) agentWorld.group.visible = agent;
     sky.material.map = agent ? redSkyTex : skyTex; sky.material.needsUpdate = true;
     scene.background.setHex(agent ? 0x3a0608 : 0xeef4fb);
@@ -479,6 +512,6 @@ export function buildWinterWorld(scene, floorTex) {
       updaters.forEach(u => u(dt, time));
       if (agentWorld?.group.visible && cam) agentWorld.update(dt, time, cam);
     },
-    setMood
+    setMood, setSign
   };
 }

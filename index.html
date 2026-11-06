@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <script>
 // Ladefehler sichtbar machen (z. B. fehlende oder veraltete Datei nach dem Hochladen)
-window.APP_VERSION = '20261025b';
+window.APP_VERSION = '20261106b';
 (function () {
   var shown = {};
   window.showLoadError = function (what) {
@@ -77,6 +77,7 @@ window.APP_VERSION = '20261025b';
   .my-msg b { color:#16a34a; }
   #side { right:8px; top:calc(50% - 50px); display:flex; flex-direction:column; gap:8px; }
   #bonusBox { top:calc(8px + var(--st)); right:8px; }
+  #draftBar { left:50%; transform:translateX(-50%); bottom:calc(150px + env(safe-area-inset-bottom)); width:min(92vw,520px); }
   #bonusBox .chip { font-weight:700; font-size:1rem; }
   #bonusBox .chip.pop { animation: bonusPop .9s ease-out; }
   @keyframes bonusPop { 0% { transform:scale(1); } 30% { transform:scale(1.35); background:rgba(250,204,21,.95); color:#111; } 100% { transform:scale(1); } }
@@ -126,6 +127,7 @@ window.APP_VERSION = '20261025b';
   <div id="top" class="hud"></div>
   <div id="side" class="hud"></div>
   <div id="bonusBox" class="hud"></div>
+  <div id="draftBar" class="hud"></div>
   <div id="bottom" class="hud" style="display:none">
     <div class="chatlog glass" id="chatLog" style="display:none"></div>
     <form class="chatbar glass" id="chatForm" autocomplete="off">
@@ -143,17 +145,18 @@ window.APP_VERSION = '20261025b';
     // (sonst mischt der Browser-Zwischenspeicher alte und neue Dateien). Bei jedem Update hochzählen.
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import {
-      getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, addDoc, query, orderBy, limit, arrayUnion, increment
+      getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, addDoc, query, orderBy, limit, arrayUnion, increment, writeBatch
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261025b";
-    import { playDialog, SZENEN, mergeConfig } from "./dialog.js?v=20261025b";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261025b";
-    import { createHall } from "./hall.js?v=20261025b";
+    import { playSnake, playReplay } from "./minigame.js?v=20261106b";
+    import { playDialog, SZENEN, mergeConfig } from "./dialog.js?v=20261106b";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261106b";
+    import { createHall } from "./hall.js?v=20261106b";
     import { PHASES, PHASE_NAMES, phaseIndex, settings, country, teamColor, isPerson, playedSnake, compareSnake, snakeRanking,
       playedBiathlon, teamBiathlon, bonusOf, teamBonus, guessedRight, planTeams,
       FINAL_TEAMS, PENALTY_S, finalMembers, finalCaptain, finalBonus, finalScoreMs, fmtClock, weaponName,
-      finalStage, RIDDLES, WORD2, WORD2_TRIES, riddleRight, word2Shown, word2Tiles, normAnswer, WORD3, CANS } from "./draft.js?v=20261025b";
+      finalStage, RIDDLES, WORD2, WORD2_TRIES, riddleRight, word2Shown, word2Tiles, normAnswer, WORD3, CANS,
+      effectivePhase, nextEvent, fmtWhen, revealTeams, draftState, pairRanking } from "./draft.js?v=20261106b";
     window.APP_READY = true;   // alle Dateien geladen
 
     const app = initializeApp(firebaseConfig);
@@ -188,6 +191,8 @@ window.APP_VERSION = '20261025b';
       let state = { phase: 'setup' };
       const ready = { p: false, t: false, s: false };
       const changed = () => { if (ready.p && ready.t && ready.s) onData(build(parts, teams, state, finals)); };
+      // Zeitplan: alle 15 s prüfen, ob die nächste Phase erreicht ist (dann alles neu aufbauen)
+      setInterval(() => { if (S && ready.s && effectivePhase(state) !== S.state.phase) changed(); }, 15000);
       // Spielstand des Finales pro Team (A–D)
       onSnapshot(collection(db, 'finals'), snap => {
         snap.docChanges().forEach(c => { if (c.type === 'removed') delete finals[c.doc.id]; else finals[c.doc.id] = { id: c.doc.id, ...c.doc.data() }; });
@@ -214,7 +219,8 @@ window.APP_VERSION = '20261025b';
     }
     // Alle außer Admins sind Teilnehmer (frühere Rollen Kapitän/Spieler spielen keine Rolle mehr)
     function build(parts, teams, state, finals = {}) {
-      return { me: parts[token] ?? null, state: { ...state }, teams: { ...teams }, finals: { ...finals }, people: Object.values(parts).filter(isPerson) };
+      // Phase laut Zeitplan (oder die im Admin von Hand gesetzte)
+      return { me: parts[token] ?? null, state: { ...state, phase: effectivePhase(state) }, teams: { ...teams }, finals: { ...finals }, people: Object.values(parts).filter(isPerson) };
     }
     function showError(err) {
       root.innerHTML = `<div class="card"><p>Verbindung zur Datenbank fehlgeschlagen: ${escapeHtml(err.message)}</p></div>`;
@@ -243,7 +249,123 @@ window.APP_VERSION = '20261025b';
         renderTop(); updateHall();
         if (tab !== 'hall' || phaseChanged) renderTab();
         maybePhaseDialog();
+        autoTasks();
       }, 120);
+    }
+
+    // ---------- automatische Schritte nach Zeitplan ----------
+    let revealing = false, healing = false;
+    function autoTasks() {
+      if (DEMO || !S) return;
+      // Paare automatisch bilden, sobald die Biathlon-Phase erreicht ist (gleiche Flagge = ein Paar)
+      if (PH(S) >= phaseIndex('pairs') && !Object.keys(S.teams).length && S.people.some(p => p.flag) && !revealing) {
+        revealing = true;
+        revealTeams(db, S.people, S.state, { keepPhase: true }).catch(() => {}).finally(() => setTimeout(() => { revealing = false; }, 20000));
+      }
+      // Teamwahl fertig: eigenes Finale-Team speichern, falls es noch fehlt (z. B. bei den Gesetzten des letzten Teams)
+      if (PH(S) >= phaseIndex('done') && !S.me.finalTeam && !healing) {
+        const d = draftState(teamList(S), S.people);
+        const L = d.complete ? d.letterOf(S.me) : null;
+        if (L) { healing = true; updateDoc(doc(db, 'participants', token), { finalTeam: L }).catch(() => {}).finally(() => { healing = false; }); }
+      }
+    }
+
+    // ---------- Schild unter dem Schriftzug ----------
+    let lastSign = '';
+    function updateSign() {
+      if (!hall?.setSign) return;
+      const img = S.state.signImage || '';
+      const nx = nextEvent(S.state);
+      const text = img ? '' : (nx ? `${nx.key === 'snake' ? 'Erstes Event startet' : 'Nächstes Event'}\n${fmtWhen(nx.at)}` : '');
+      const key = img + '|' + text;
+      if (key === lastSign) return;
+      lastSign = key; hall.setSign({ url: img || null, text });
+    }
+
+    // ---------- Runde 3: Teams fürs Finale wählen + Kapitänswahl ----------
+    let draftSel = [];
+    const inDraft = () => isPhase(S, 'done');
+    function draftInfo() { return draftState(teamList(S), S.people); }
+    function renderDraftBar() {
+      const bar = document.getElementById('draftBar'); if (!bar) return;
+      if (!inDraft() || inFinal) { bar.innerHTML = ''; draftSel = []; return; }
+      const d = draftInfo(), myL = d.letterOf(S.me);
+      const names = toks => toks.map(t => escapeHtml(personName(S, t))).join(' und ');
+      let h = '';
+      if (!d.seeds.length) h = 'Die Paare stehen noch nicht fest.';
+      else if (!d.complete) {
+        const turnNames = d.members[d.turn].map(p => escapeHtml(p.name)).join(' & ');
+        if (d.picker?.token === token) {
+          if (draftSel.some(t => !d.free.some(p => p.token === t))) draftSel = [];
+          h = `<strong>Team ${d.turn}: Du bist dran!</strong> Tippe in der Halle ein Zweierteam an – es kommt immer als ganzes Paar zu euch.
+            ${draftSel.length ? `<br>Gewählt: ${names(draftSel)}<br><button id="draftOk" style="margin-top:6px">Bestätigen</button>` : ''}`;
+        } else h = `⏳ Team ${d.turn} (${turnNames}) wählt gerade${d.picker ? ` – ${escapeHtml(d.picker.name)} entscheidet` : ''}.${myL ? ` Du bist in Team ${myL}.` : ''}`;
+      } else {
+        const cap = finalCaptain(myL, S.people);
+        const mates = d.members[myL] || [];
+        if (cap) h = `Team ${myL}: ${mates.map(p => escapeHtml(p.name)).join(', ')} · 👑 Kapitän: <strong>${escapeHtml(cap.name)}</strong>`;
+        else {
+          const voted = mates.filter(p => p.captainVote).length;
+          h = `Team ${myL} steht! Wählt euren Kapitän (${voted}/${mates.length} haben gewählt).
+            <br><button id="capBtn" style="margin-top:6px">👑 ${S.me.captainVote ? 'Stimme ändern' : 'Kapitän wählen'}</button>`;
+        }
+      }
+      bar.innerHTML = h ? `<div class="glass" style="border-radius:14px;padding:10px 14px;text-align:center;pointer-events:auto">${h}</div>` : '';
+      document.getElementById('draftOk')?.addEventListener('click', confirmPicks);
+      document.getElementById('capBtn')?.addEventListener('click', () => voteCaptain());
+    }
+    function draftTap(p) {
+      const d = draftInfo();
+      if (!d.complete) {
+        if (d.picker?.token !== token) { toast(d.turn ? `Team ${d.turn} wählt gerade.` : 'Gerade wird nicht gewählt.'); return true; }
+        const u = d.unitOf(p);
+        if (!u) { toast(`${p.name} ist schon in einem Team.`); return true; }
+        const toks = u.members.map(m => m.token);
+        draftSel = draftSel.includes(p.token) ? [] : toks;          // immer das ganze Paar (nochmal tippen = abwählen)
+        updateHall(); renderDraftBar(); return true;
+      }
+      const myL = d.letterOf(S.me);
+      if (myL && d.letterOf(p) === myL && !finalCaptain(myL, S.people)) { voteCaptain(p.token); return true; }
+      return false;
+    }
+    if (params.has('test')) window.__t = { draftTap: tok => draftTap(S.people.find(p => p.token === tok)), confirmPicks: () => confirmPicks(), voteCaptain: t => voteCaptain(t), info: () => draftInfo(), S: () => S };
+    async function confirmPicks() {
+      const d = draftInfo();
+      if (d.picker?.token !== token || !draftSel.length) return;
+      const picked = draftSel.map(t => S.people.find(p => p.token === t)).filter(Boolean);
+      const bg = modal(`<h2 style="margin:0 0 6px">Team ${d.turn}</h2>
+        <p style="margin:0 0 12px">Willst du wirklich bestätigen, dass das Paar <strong>${picked.map(p => escapeHtml(p.name)).join(' und ')}</strong> eure Teammitglieder sind?</p>
+        <button class="secondary" data-a="no">Abbrechen</button><button data-a="yes">Ja, bestätigen</button>`);
+      bg.querySelector('[data-a=no]').onclick = () => bg.remove();
+      bg.querySelector('[data-a=yes]').onclick = async () => {
+        bg.remove();
+        const now = draftInfo();   // frisch prüfen: noch dran, noch frei?
+        if (now.turn !== d.turn || picked.some(p => !now.free.some(x => x.token === p.token))) return toast('Das hat sich gerade geändert – bitte nochmal wählen.');
+        const toks = [...now.members[d.turn].map(p => p.token), ...picked.map(p => p.token)];
+        draftSel = [];
+        if (DEMO) { S = { ...S, people: S.people.map(p => toks.includes(p.token) ? { ...p, finalTeam: d.turn } : p) }; S.me = S.people.find(p => p.token === token); updateHall(); renderDraftBar(); return; }
+        const batch = writeBatch(db);
+        toks.forEach(t => batch.update(doc(db, 'participants', t), { finalTeam: d.turn }));
+        try { await batch.commit(); toast(`✅ Team ${d.turn} ist komplett.`); } catch (err) { alert('Speichern fehlgeschlagen: ' + err.message); }
+      };
+    }
+    function voteCaptain(pre = null) {
+      const d = draftInfo(), myL = d.letterOf(S.me);
+      if (!myL || finalCaptain(myL, S.people)) return;
+      const mates = d.members[myL] || [];
+      const sel = pre || S.me.captainVote || '';
+      const bg = modal(`<h2 style="margin:0 0 6px">👑 Kapitän wählen</h2>
+        <p style="margin:0 0 10px;color:#555">Wer zuerst 2 Stimmen hat, wird Kapitän von Team ${myL}. Bis dahin kannst du deine Stimme ändern.</p>
+        ${mates.map(p => `<label style="display:block;padding:6px 0;font-size:1.05rem"><input type="radio" name="cap" value="${p.token}" ${p.token === sel ? 'checked' : ''}> ${escapeHtml(p.name)}${p.token === token ? ' (du)' : ''}</label>`).join('')}
+        <div style="margin-top:10px"><button class="secondary" data-a="no">Abbrechen</button><button data-a="yes">Stimme abgeben</button></div>`);
+      bg.querySelector('[data-a=no]').onclick = () => bg.remove();
+      bg.querySelector('[data-a=yes]').onclick = async () => {
+        const v = bg.querySelector('input[name=cap]:checked')?.value; if (!v) return toast('Bitte eine Person wählen.');
+        bg.remove();
+        const upd = { captainVote: v, captainVoteAt: Date.now() };
+        if (DEMO) { S.me = { ...S.me, ...upd }; S = { ...S, me: S.me, people: S.people.map(p => p.token === token ? S.me : p) }; renderDraftBar(); return; }
+        try { await updateDoc(doc(db, 'participants', token), upd); toast('🗳️ Stimme abgegeben.'); } catch (err) { alert('Speichern fehlgeschlagen: ' + err.message); }
+      };
     }
 
     // ---------- Hilfen ----------
@@ -374,7 +496,7 @@ window.APP_VERSION = '20261025b';
         const shown = unmasked(p), c = country(p.flag);
         return { ...p, agent: !shown, flagEmoji: (revealed(S) || shown) && c ? c.emoji : null };   // Flagge steht über dem Namen
       });
-      const pickTokens = isPhase(S, 'guess') && S.me.guess ? [S.me.guess] : [];   // der eigene Tipp leuchtet (nur bei mir)
+      const pickTokens = isPhase(S, 'guess') && S.me.guess ? [S.me.guess] : inDraft() ? draftSel : [];   // eigener Tipp / eigene Auswahl leuchtet gelb
       return { people, teams, pickTokens, turnToken: null, benchSeats: S.state.benchSeats };
     }
     // Einfache 2D-Halle (sehr alte Handys)
@@ -388,6 +510,7 @@ window.APP_VERSION = '20261025b';
       if (ab) { const on = (S.me.revealUntil || 0) > Date.now(); ab.classList.toggle('agent-on', on); ab.title = on ? 'Du bist gerade enttarnt' : 'Flagge: enttarnen / ausspionieren'; }
       if (hall.is3d) { hall.update(hallData3d()); hall.setAgentMode(true); hall.setDoorActive(isPhase(S, 'final')); }   // Agenten-Welt immer an
       else hall.update(hallData2d(), { pickable: false });
+      renderDraftBar(); updateSign();
       syncFinal();
     }
 
@@ -408,13 +531,14 @@ window.APP_VERSION = '20261025b';
         const p = S.people.find(x => x.token === t);
         if (!p) return;
         if (isPhase(S, 'guess') && p.token !== token) return askGuess(p);
+        if (inDraft() && draftTap(p)) return;
         showPersonMessages(p);
       };
 
       // 3D, wenn möglich, sonst die einfache 2D-Halle
       let use3d = false;
       try {
-        hall3dMod ??= await import('./hall3d.js?v=20261025b');
+        hall3dMod ??= await import('./hall3d.js?v=20261106b');
         use3d = hall3dMod.webglAvailable();
       } catch (e) { use3d = false; console.error(e); window.showLoadError?.('3D-Halle: ' + (e?.message || e)); }
 
@@ -528,8 +652,29 @@ window.APP_VERSION = '20261025b';
         guessBonus: st.guessBonus, biathlonVersuche: st.biathlonAttempts,
         partner: und(teamMates(S, me).map(p => p.name)) || 'dein Partner',
         finaleTeam: L || '?', mitspieler: und(mates), kapitaen: (L && finalCaptain(L, S.people)?.name) || 'euer Kapitän',
-        finaleZeit: fin?.solved3At ? fmtClock(finalScoreMs(fin, finalBonus(L, S.people, S.state))) : ''
+        finaleZeit: fin?.solved3At ? fmtClock(finalScoreMs(fin, finalBonus(L, S.people, S.state))) : '',
+        ...resultVars(und)
       };
+    }
+    // Ergebnisse für die Dialoge: Snake-Platz, Biathlon-Platz des Paares, Finale-Platz und Sieger
+    function resultVars(und) {
+      const me = S.me, out = {};
+      const sr = snakeRanking(S.people), si = sr.findIndex(p => p.token === me.token);
+      out.snakePlatz = si >= 0 ? `${si + 1}.` : 'ohne Wertung'; out.snakePunkte = me.minigamePlayed ? String(me.minigameScore ?? 0) : '0';
+      const pr = pairRanking(teamList(S), S.people), pi = pr.findIndex(r => r.team.id === me.teamId);
+      out.biathlonPlatz = pi >= 0 ? `${pi + 1}.` : '–'; out.biathlonZeit = pi >= 0 && pr[pi].done ? fmtS(pr[pi].timeMs) : '–';
+      const d = draftState(teamList(S), S.people), myL = d.letterOf(me);
+      out.waehler = myL ? (d.pickerOf(myL)?.name ?? '') : ''; out.teamBuchstabe = myL || '–';
+      const nx = nextEvent(S.state); out.naechstesEvent = nx ? fmtWhen(nx.at) : '';
+      // Finale-Wertung aller fertigen Teams
+      const done = FINAL_TEAMS.map(L => ({ L, fin: S.finals?.[L] })).filter(x => x.fin?.solved3At)
+        .map(x => ({ L: x.L, ms: finalScoreMs(x.fin, finalBonus(x.L, S.people, S.state)) })).sort((a, b) => a.ms - b.ms);
+      const fp = done.findIndex(x => x.L === me.finalTeam);
+      out.finalePlatz = fp >= 0 ? `${fp + 1}.` : 'ohne Wertung';
+      out.siegerTeam = done[0] ? done[0].L : '?';
+      out.siegerNamen = done[0] ? und(finalMembers(done[0].L, S.people).map(p => p.name)) : '';
+      out.siegerZeit = done[0] ? fmtClock(done[0].ms) : '';
+      return out;
     }
     // Szenen mit Platzhaltern zum Finale-Team/Partner warten, bis es die Angaben gibt
     function sceneReady(id) {
@@ -826,7 +971,7 @@ window.APP_VERSION = '20261025b';
       let parts = [snakeSection()];
       if (PH(s) >= phaseIndex('biathlon') || s.people.some(playedBiathlon)) parts = [biathlonSection(), ...parts];
       if (revealed(s)) parts.push(bonusSection());
-      if (isPhase(s, 'final')) parts = [finalSection(), ...parts];
+      if (PH(s) >= phaseIndex('final')) parts = [finalSection(), ...parts];
       document.getElementById('panelBody').innerHTML = parts.join('');
       document.querySelectorAll('.watch').forEach(btn => btn.addEventListener('click', () => {
         const p = S.people.find(x => x.token === btn.dataset.token);
@@ -865,7 +1010,8 @@ window.APP_VERSION = '20261025b';
       if (!L) return toast('Du bist noch keinem Finale-Team zugeordnet.');
       if (myFin()?.startedAt) { leftFinal = false; return enterFinal(); }
       const cap = finalCaptain(L, S.people);
-      if (cap?.token !== S.me.token) return toast(`Nur euer Kapitän ${cap?.name ?? ''} kann die Tür öffnen.`);
+      if (!cap) return toast('Ihr habt noch keinen Kapitän gewählt – wer zuerst 2 Stimmen hat, öffnet die Tür.');
+      if (cap.token !== S.me.token) return toast(`Nur euer Kapitän ${cap.name} kann die Tür öffnen.`);
       const bg = modal(`<h2 style="margin:0 0 6px">🚪 Finale starten?</h2>
         <p style="margin:0 0 12px;color:#555">Sind alle von Team ${L} bereit? Sobald du die Tür öffnest, läuft eure Uhr – für alle im Team.</p>
         <button class="secondary" data-a="no">Noch nicht</button><button data-a="yes">Tür öffnen!</button>`);
@@ -944,15 +1090,15 @@ window.APP_VERSION = '20261025b';
       const hint = document.getElementById('finHint');
       try {
         if (n === 1) {
-          sceneMods.c ??= await import('./camp.js?v=20261025b');
+          sceneMods.c ??= await import('./camp.js?v=20261106b');
           scene3d = sceneMods.c.createCamp(box, { onWeapon: chooseWeapon, onDoor2: () => nextDoor(2) });
           hint.textContent = '👆 Pfeile antippen = gehen · wischen = umschauen';
         } else if (n === 2) {
-          sceneMods.r2 ??= await import('./room2.js?v=20261025b');
+          sceneMods.r2 ??= await import('./room2.js?v=20261106b');
           scene3d = sceneMods.r2.createRiddleRoom(box, { onPlaque: openRiddle, onDoor: () => nextDoor(3) });
           hint.textContent = '👆 wischen = umschauen · Tafel antippen = Rätsel';
         } else {
-          sceneMods.r3 ??= await import('./room3.js?v=20261025b');
+          sceneMods.r3 ??= await import('./room3.js?v=20261106b');
           const mates = finalMembers(S.me.finalTeam, S.people).filter(p => p.token !== S.me.token).map(p => ({ token: p.token, name: p.name, photoUrl: p.photoUrl }));
           scene3d = sceneMods.r3.createSnowRange(box, { cans: CANS, hits: myFin()?.cans || [], mates, onHit: hitCan, canThrow: () => !myFin()?.solved3At, reload: 2 });
           hint.textContent = '👆 antippen = Schneeball werfen · wischen = zielen';

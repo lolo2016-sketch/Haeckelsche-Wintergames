@@ -8,21 +8,22 @@
 export const SZENEN = [
   { id: 'intro', titel: '1 · Intro (nach dem Video, vor dem Einlauf)' },
   { id: 'snake', titel: '2 · Vor Snake (Spiel erklären)' },
-  { id: 'wahl', titel: '3 · Nach Snake, vor dem Wählen' },
-  { id: 'biathlon', titel: '4 · Vor Biathlon (Regeln, Termin)' },
-  { id: 'teams', titel: '5 · Teams fürs Finale' },
+  { id: 'wahl', titel: '3 · Auswertung Snake + Wählen' },
+  { id: 'biathlon', titel: '4 · Paare stehen · Biathlon' },
+  { id: 'teams', titel: '5 · Teams fürs Finale wählen' },
   { id: 'finale', titel: '6 · Finale eröffnet' },
-  { id: 'ende', titel: '7 · Abschluss / Ehrung' }
+  { id: 'ende', titel: '7 · Siegerehrung' }
 ];
 // Wann eine Szene kommt (jede Szene läuft pro Person genau einmal)
 export const WANN = [
   ['einlauf', 'Beim ersten Öffnen, vor dem Einlauf'],
   ['snake', 'Phase 1: Snake'],
-  ['guess', 'Phase 2: Raten / Wählen'],
-  ['pairs', 'Phase 3: Auflösung (Paare stehen fest)'],
-  ['biathlon', 'Phase 4: Biathlon'],
-  ['done', 'Phase 5: Biathlon beendet'],
+  ['guess', 'Phase 2: Auswertung Snake + Wählen'],
+  ['pairs', 'Phase 3: Auflösung (nur bei Handbetrieb)'],
+  ['biathlon', 'Phase 4: Paare stehen · Biathlon'],
+  ['done', 'Phase 5: Teams fürs Finale wählen'],
   ['final', 'Phase 6: Finale freigegeben'],
+  ['ende', 'Phase 7: Siegerehrung'],
   ['finaleGeschafft', 'Nachdem das eigene Team das Finale geschafft hat'],
   ['aus', '– aus (wird nicht gezeigt)']
 ];
@@ -31,7 +32,10 @@ export const PLATZHALTER = {
   name: 'Name der Person', snakeBonus: 'Snake-Bonus je Platz', guessBonus: 'Sekunden fürs richtige Raten',
   biathlonVersuche: 'Zahl der echten Biathlon-Versuche', partner: 'Teampartner (nach der Auflösung)',
   finaleTeam: 'Finale-Team (A–D)', mitspieler: 'die anderen im Finale-Team', kapitaen: 'Kapitän des Finale-Teams',
-  finaleZeit: 'Wertung des eigenen Teams im Finale'
+  finaleZeit: 'Wertung des eigenen Teams im Finale', snakePlatz: 'eigener Snake-Platz (z. B. 3.)', snakePunkte: 'eigene Snake-Punkte',
+  biathlonPlatz: 'Platz des eigenen Paares im Biathlon', biathlonZeit: 'Zeit des eigenen Paares', waehler: 'wer im eigenen Paar die Teammitglieder wählt',
+  teamBuchstabe: 'Finale-Team (A–D), sobald bekannt', naechstesEvent: 'nächster Termin laut Zeitplan', finalePlatz: 'Platz des eigenen Teams im Finale',
+  siegerTeam: 'Siegerteam (Buchstabe)', siegerNamen: 'Namen im Siegerteam', siegerZeit: 'Wertung des Siegerteams'
 };
 
 export const STANDARD = {
@@ -57,40 +61,42 @@ export const STANDARD = {
       { s: 'a', t: 'Genau: nur dein bester! Im Spiel gibt es jederzeit „Tutorial ansehen“. Viel Glück!' }
     ] },
     wahl: { bilder: 'eins', bildBeide: 'dialog/beide3.png', bildA: 'dialog/beide3_links.png', bildB: 'dialog/beide3_rechts.png', wann: 'guess', zeilen: [
-      { s: 'a', t: 'Snake ist vorbei – danke fürs Mitspielen! Die Besten haben sich ihren Vorsprung gesichert.' },
-      { s: 'b', t: 'Jetzt wird gewählt, {name}. Jede Person hat eine geheime Flagge – genau eine andere hat dieselbe wie du.' },
-      { s: 'a', t: 'Tippe in der Halle die Person an, die deiner Meinung nach deine Flagge hat. Bis zur Auflösung kannst du umentscheiden.' },
-      { s: 'b', t: 'Richtig geraten bringt {guessBonus} Sekunden Vorsprung fürs Finale.' },
+      { s: 'a', t: 'Snake ist vorbei – danke fürs Mitspielen, {name}!' },
+      { s: 'b', t: 'Du hast {snakePunkte} Punkte geholt und bist auf Platz {snakePlatz} gelandet.' },
+      { s: 'a', t: 'Jetzt wird gewählt. Jede Person hat eine geheime Flagge – genau eine andere hat dieselbe wie du. Das ist dein Partner.' },
+      { s: 'b', t: 'Tippe in der Halle die Person an, die deiner Meinung nach deine Flagge hat. Dein Tipp leuchtet gelb. Richtig geraten bringt {guessBonus} Sekunden.' },
       { s: 'ich', wahl: ['Ich verrate nichts. 🤫', 'Welche Flagge habe ich nochmal?'] },
-      { s: 'a', t: 'Tippe rechts auf den Flaggen-Knopf 🏳️: Dort siehst du deine Flagge. Du kannst dich auch 5 Minuten lang für alle enttarnen – oder einmal heimlich eine andere Person ausspionieren.' }
+      { s: 'a', t: 'Tippe rechts auf 🏳️: Dort siehst du deine Flagge, kannst dich 5 Minuten enttarnen – oder einmal heimlich jemanden ausspionieren. Die Auflösung kommt {naechstesEvent}.' }
     ] },
-    biathlon: { bilder: 'eins', bildBeide: 'dialog/beide4.png', bildA: 'dialog/beide4_links.png', bildB: 'dialog/beide4_rechts.png', wann: 'pairs', zeilen: [
-      { s: 'a', t: 'Die Auflösung ist da! Dein Teampartner ist {partner}.' },
-      { s: 'b', t: 'Zusammen tretet ihr im Biathlon-Sprint an. Los geht es am [TAG] um [UHRZEIT].' },
-      { s: 'a', t: 'Mit ◀ ▶ fährst du, mit ▲ springst du, mit ▼ legst du dich hin. Auf Schnee gleitest du weiter, Gegenrichtung bremst.' },
-      { s: 'b', t: 'Berührst du ein Hindernis, stürzt du und brauchst 2 Sekunden zum Aufstehen. Im echten Lauf warten Hindernisse, die du selbst herausfinden musst.' },
-      { s: 'a', t: 'Trainieren kannst du so oft du willst. Danach hast du {biathlonVersuche} echte Versuche – deine beste Zeit und die von {partner} werden addiert.' },
+    biathlon: { bilder: 'eins', bildBeide: 'dialog/beide4.png', bildA: 'dialog/beide4_links.png', bildB: 'dialog/beide4_rechts.png', wann: 'biathlon', zeilen: [
+      { s: 'a', t: 'Die Auflösung ist da! Dein Partner ist {partner}.' },
+      { s: 'b', t: 'Runde 2: Biathlon! Ihr spielt als Paar. Im Tab 🎮 Minispiel fährst du mit ◀ ▶, springst mit ▲ und legst dich mit ▼ hin.' },
+      { s: 'a', t: 'Hindernisse lassen dich stürzen – 2 Sekunden zum Aufstehen. Trainieren kannst du so oft du willst.' },
+      { s: 'b', t: 'Du hast {biathlonVersuche} echte Versuche. Deine beste Zeit und die von {partner} werden addiert. Ihr habt Zeit bis {naechstesEvent}.' },
+      { s: 'a', t: 'Und das lohnt sich: Das schnellste Paar darf sich fürs Finale als Erstes zwei weitere Leute ins Team holen.' },
       { s: 'ich', wahl: ['Wir holen uns das!', 'Wo war nochmal die Bremse?'] }
     ] },
     teams: { bilder: 'eins', bildBeide: 'dialog/beide1.png', bildA: 'dialog/beide1_links.png', bildB: 'dialog/beide1_rechts.png', wann: 'done', zeilen: [
-      { s: 'b', t: 'Der Biathlon ist vorbei – Respekt, {name}!' },
-      { s: 'a', t: 'Fürs Finale werdet ihr neu eingeteilt. Du bist in Team {finaleTeam} mit {mitspieler}.' },
-      { s: 'b', t: 'Euer Kapitän ist {kapitaen}. Nur er oder sie öffnet die Türen und wählt im ersten Raum die Waffe.' },
-      { s: 'ich', wahl: ['Starkes Team!', 'Wann geht es los?'] },
-      { s: 'a', t: 'Verabredet euch – sobald das Finale eröffnet ist, könnt ihr loslegen, wann ihr wollt.' }
+      { s: 'b', t: 'Der Biathlon ist vorbei – Respekt, {name}! Ihr seid als Paar auf Platz {biathlonPlatz} gelandet ({biathlonZeit}).' },
+      { s: 'a', t: 'Jetzt werden die Teams fürs Finale gebildet. Die vier schnellsten Paare sind die Teams A bis D.' },
+      { s: 'b', t: 'Das beste Paar wählt zuerst zwei weitere Leute, dann das zweitbeste und so weiter. Gewählt wird in der Halle: antippen, dann bestätigen.' },
+      { s: 'a', t: 'Wählen darf aus jedem Paar, wer im Biathlon schneller war – bei euch {waehler}.' },
+      { s: 'b', t: 'Steht euer Team, wählt ihr euren Kapitän: Wer zuerst 2 Stimmen hat, führt euch ins Finale.' },
+      { s: 'ich', wahl: ['Ich weiß schon, wen ich will.', 'Hauptsache, ich werde gewählt!'] }
     ] },
     finale: { bilder: 'eins', bildBeide: 'dialog/beide2.png', bildA: 'dialog/beide2_links.png', bildB: 'dialog/beide2_rechts.png', wann: 'final', zeilen: [
-      { s: 'b', t: 'Das Finale ist eröffnet!' },
-      { s: 'a', t: 'Drei Räume warten auf euch: Napoleons Lager, die Rätselkammer und der Schneeballwurf. Euer Vorsprung läuft zuerst ab.' },
-      { s: 'b', t: 'Die Tür ist unten im riesigen Eis-Pokal. Sobald {kapitaen} sie öffnet, läuft eure Uhr.' },
+      { s: 'b', t: 'Das Finale ist eröffnet! Du spielst in Team {finaleTeam} mit {mitspieler}, Kapitän ist {kapitaen}.' },
+      { s: 'a', t: 'Ihr habt Zeit bis {naechstesEvent}. Macht euch einen Termin aus und spielt alle zusammen.' },
+      { s: 'b', t: 'Drei Räume warten: Napoleons Lager, die Rätselkammer und der Schneeballwurf. Alle Vorsprung-Sekunden eures Teams werden abgezogen.' },
+      { s: 'a', t: 'Die Tür ist unten im riesigen Eis-Pokal. Sobald {kapitaen} sie öffnet, läuft eure Uhr.' },
       { s: 'ich', wahl: ['Wir sind bereit.', 'Was, wenn wir die falsche Waffe nehmen?'] },
-      { s: 'a', t: 'Jede falsche Waffe kostet 2 Strafsekunden. Viel Glück, Agent {name}.' }
+      { s: 'b', t: 'Jede falsche Waffe kostet 2 Strafsekunden. Wer am wenigsten Zeit braucht, gewinnt. Viel Glück, Agent {name}!' }
     ] },
-    ende: { bilder: 'eins', bildBeide: 'dialog/beide3.png', bildA: 'dialog/beide3_links.png', bildB: 'dialog/beide3_rechts.png', wann: 'finaleGeschafft', zeilen: [
-      { s: 'a', t: 'Ihr habt es geschafft, {name}! Team {finaleTeam} hat das Finale gelöst.' },
-      { s: 'b', t: 'Eure Wertung: {finaleZeit}. Was für eine Leistung!' },
-      { s: 'ich', wahl: ['Wer hat gewonnen?', 'Danke für den Tag!'] },
-      { s: 'a', t: 'Die Siegerehrung machen wir gemeinsam – bis gleich!' }
+    ende: { bilder: 'eins', bildBeide: 'dialog/beide3.png', bildA: 'dialog/beide3_links.png', bildB: 'dialog/beide3_rechts.png', wann: 'ende', zeilen: [
+      { s: 'a', t: 'Die Haeckelschen Wintergames sind vorbei. Zeit für die Siegerehrung!' },
+      { s: 'b', t: 'Gewonnen hat Team {siegerTeam}: {siegerNamen} mit {siegerZeit}. Herzlichen Glückwunsch!' },
+      { s: 'a', t: 'Dein Team {finaleTeam} ist auf Platz {finalePlatz} gelandet. Danke, dass du dabei warst, {name}!' },
+      { s: 'ich', wahl: ['Nächstes Jahr gewinnen wir!', 'Danke für die Spiele!'] }
     ] }
   }
 };
@@ -105,6 +111,11 @@ export function mergeConfig(remote) {
   for (const { id } of SZENEN) {
     const std = STANDARD.szenen[id], rem = r.szenen?.[id] || {};
     out.szenen[id] = { ...BILD_STANDARD, ...std, ...rem, zeilen: (rem.zeilen ?? std.zeilen).map(z => ({ ...z, ...(z.wahl ? { wahl: [...z.wahl] } : {}) })) };
+    // ältere gespeicherte Zeitpunkte an den neuen Ablauf anpassen (die Texte bleiben unverändert):
+    // Biathlon-Szene kam bei der „Auflösung“ – die gibt es im Zeitplan nicht mehr, die Paare entstehen beim Biathlon-Start;
+    // Abschluss kam „nach dem eigenen Finale“ – jetzt zur Siegerehrung
+    const MIGRATE = { biathlon: ['pairs', 'biathlon'], ende: ['finaleGeschafft', 'ende'] };
+    if (MIGRATE[id] && out.szenen[id].wann === MIGRATE[id][0]) out.szenen[id].wann = MIGRATE[id][1];
   }
   return out;
 }
@@ -127,6 +138,10 @@ const CSS = `
 .dlg-duo{position:absolute;left:-1%;bottom:0;height:70%;max-width:62%;display:flex;align-items:flex-end;pointer-events:none}
 .dlg-duo .dlg-p{position:relative;left:auto;bottom:auto;height:100%;width:auto;max-height:none;max-width:none;min-width:0;flex:0 1 auto}
 .dlg-duo .dlg-p.b{margin-left:-4%}
+/* beide Bilder gleich groß (Hälften desselben Fotos): deckungsgleich übereinander, wirkt wie ein Foto */
+.dlg-duo.stack .dlg-p{object-fit:contain;object-position:bottom}
+.dlg-duo.stack .dlg-p.b{position:absolute;inset:0;width:100%;height:100%;margin:0}
+.dlg-duo.stack .dlg-p.aktiv{transform:none}
 .dlg-p.beide{left:-2%;width:54%;max-height:80%}
 .dlg-p.ich{right:-1%;width:36%}
 .dlg-box{position:absolute;left:0;right:0;bottom:0;padding:26px 6% calc(22px + env(safe-area-inset-bottom));
@@ -208,6 +223,8 @@ export function playDialog(id, { cfg = mergeConfig(null), name = '', agentUrl = 
     P.a = img('a', sz.bildA, ERSATZ.a); P.b = img('b', sz.bildB, ERSATZ.b);
     const duo = document.createElement('div'); duo.className = 'dlg-duo'; duo.append(P.a, P.b);
     ov.insertBefore(duo, P.ich);
+    const same = () => { const a = P.a, b = P.b; if (a.naturalWidth && b.naturalWidth) duo.classList.toggle('stack', a.naturalWidth === b.naturalWidth && a.naturalHeight === b.naturalHeight); };
+    P.a.addEventListener('load', same); P.b.addEventListener('load', same);
   };
   ov.appendChild(P.ich);
   if (sz.bilder === 'eins') {

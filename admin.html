@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <script>
 // Ladefehler sichtbar machen (z. B. fehlende oder veraltete Datei nach dem Hochladen)
-window.APP_VERSION = '20261025b';
+window.APP_VERSION = '20261106b';
 (function () {
   var shown = {};
   window.showLoadError = function (what) {
@@ -63,11 +63,12 @@ window.APP_VERSION = '20261025b';
       collection, getDocs
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261025b";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261025b";
+    import { playSnake, playReplay } from "./minigame.js?v=20261106b";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261106b";
     import { PHASES, PHASE_NAMES, phaseIndex, settings, DEFAULTS, COUNTRIES, country, isPerson, teamColor, snakeRanking,
-      guessedRight, teamBonus, teamBiathlon, revealTeams, FINAL_TEAMS, finalMembers, finalBonus, finalScoreMs, fmtClock, WEAPONS, weaponName } from "./draft.js?v=20261025b";
-    import { SZENEN, WANN, PLATZHALTER, mergeConfig, playDialog } from "./dialog.js?v=20261025b";
+      guessedRight, teamBonus, teamBiathlon, revealTeams, FINAL_TEAMS, finalMembers, finalBonus, finalScoreMs, fmtClock, WEAPONS, weaponName,
+      SCHEDULE, effectivePhase, nextEvent, fmtWhen, draftState, finalCaptain } from "./draft.js?v=20261106b";
+    import { SZENEN, WANN, PLATZHALTER, mergeConfig, playDialog } from "./dialog.js?v=20261106b";
     window.APP_READY = true;   // alle Dateien geladen
 
     const app = initializeApp(firebaseConfig);
@@ -239,10 +240,11 @@ window.APP_VERSION = '20261025b';
           <button id="dlgSave">💾 Alle Szenen speichern</button>
           <button class="secondary" id="dlgPrev">▶ Vorschau dieser Szene</button>
           <button class="secondary" id="dlgStd">Diese Szene auf Standard zurücksetzen</button>
+          <button class="secondary" id="dlgStdAll">Alle Szenen auf Standard</button>
           <span style="font-size:.9rem;color:${dlgDirty ? '#b45309' : '#15803d'}">${dlgMsg || (dlgDirty ? '● nicht gespeichert' : '')}</span>
         </div>`;
       const q = id => el.querySelector('#' + id);
-      const changed = (rerender = false) => { dlgDirty = true; dlgMsg = ''; if (rerender) mountDlg(); else { const m = el.querySelector('#dlgSave + button + button + span'); if (m) { m.textContent = '● nicht gespeichert'; m.style.color = '#b45309'; } } };
+      const changed = (rerender = false) => { dlgDirty = true; dlgMsg = ''; if (rerender) mountDlg(); else { const m = el.querySelector('#dlgSave ~ span'); if (m) { m.textContent = '● nicht gespeichert'; m.style.color = '#b45309'; } } };
       q('dlgNameA').oninput = e => { N.a = e.target.value; changed(); };
       q('dlgNameB').oninput = e => { N.b = e.target.value; changed(); };
       q('dlgBgAll').oninput = e => { dlgCfg.hintergrund = e.target.value.trim(); changed(); };
@@ -274,6 +276,10 @@ window.APP_VERSION = '20261025b';
       q('dlgAddA').onclick = () => { sz.zeilen.push({ s: 'a', t: '' }); changed(true); };
       q('dlgAddB').onclick = () => { sz.zeilen.push({ s: 'b', t: '' }); changed(true); };
       q('dlgAddIch').onclick = () => { sz.zeilen.push({ s: 'ich', wahl: ['', ''] }); changed(true); };
+      q('dlgStdAll').onclick = () => {
+        if (!confirm('ACHTUNG: Damit werden ALLE deine eigenen Texte durch die Standardtexte ersetzt!\n\nWirklich alle Szenen zurücksetzen? (Erst beim Speichern endgültig.)')) return;
+        dlgCfg.szenen = mergeConfig(null).szenen; changed(true);
+      };
       q('dlgStd').onclick = () => {
         if (!confirm('Diese Szene auf die Standardtexte und -bilder zurücksetzen?')) return;
         dlgCfg.szenen[dlgSel] = mergeConfig(null).szenen[dlgSel]; changed(true);
@@ -305,20 +311,35 @@ window.APP_VERSION = '20261025b';
       const people = participants.filter(isPerson);
       const admins = participants.filter(p => p.role === 'admin');
       const st = settings(state);
-      const PI = phaseIndex(state.phase);
+      const PI = phaseIndex(effectivePhase(state));        // mit Zeitplan: die Phase, die gerade gilt
+      const toLocal = ms => ms ? new Date(ms - new Date(ms).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
+      const nx = nextEvent(state);
       const byName = (a, b) => String(a.name).localeCompare(String(b.name), 'de');
       const nameOf = tok => people.find(p => p.token === tok)?.name ?? '?';
       const step = (i, id, label, extra = '') => `<button id="${id}" ${PI === i ? '' : 'disabled class="secondary"'} ${extra}>${label}</button>`;
 
-      let html = `<div class="card"><h2>Phase: ${PHASE_NAMES[PHASES[PI]] ?? state.phase}</h2>
-        <p style="margin:2px 0 8px;color:#555;font-size:.9rem">Immer der nächste Schritt ist anklickbar.</p>
+      let html = `<div class="card"><h2>⏰ Zeitplan</h2>
+        <p style="margin:2px 0 8px;color:#555;font-size:.9rem">Ist die Automatik an, wechselt die Phase auf allen Handys von selbst zur eingestellten Zeit
+          (die Paare werden beim Biathlon-Start automatisch gebildet). Unter dem Schriftzug „Haeckelsche Games“ steht dann der nächste Termin.</p>
+        <label style="font-weight:600"><input type="checkbox" id="autoOn" ${state.auto ? 'checked' : ''}> Automatisch nach Zeitplan</label>
+        <div style="display:grid;grid-template-columns:auto auto;gap:6px 10px;align-items:center;margin:8px 0;max-width:560px">
+          ${SCHEDULE.map(([k, label]) => `<span>${label}</span><input type="datetime-local" class="schedIn" data-k="${k}" value="${toLocal(state.schedule?.[k])}">`).join('')}
+        </div>
+        <label>Eigenes Bild unter dem Schriftzug (leer = Text mit dem nächsten Termin):
+          <input id="signImage" list="dialogFiles" value="${state.signImage || ''}" placeholder="z. B. agents/welt/event1.png" style="width:260px"></label>
+        <p style="margin:6px 0;font-size:.9rem">Gerade: <strong>${PHASE_NAMES[PHASES[PI]]}</strong>${state.auto ? '' : ' (von Hand gesetzt)'}${nx ? ` · nächstes: ${nx.label} – ${fmtWhen(nx.at)}` : ''}</p>
+        <button id="saveSched">💾 Zeitplan speichern</button>
+      </div>`;
+      html += `<div class="card"><h2>Phase: ${PHASE_NAMES[PHASES[PI]] ?? state.phase}</h2>
+        <p style="margin:2px 0 8px;color:#555;font-size:.9rem">${state.auto ? '⏰ Die Automatik ist an – ein Klick hier schaltet sie aus.' : 'Immer der nächste Schritt ist anklickbar.'}</p>
         <div style="display:flex;flex-wrap:wrap;gap:6px">
           ${step(0, 'toSnake', '1 ▶ Runde 1: Snake starten')}
           ${step(1, 'toGuess', '2 Snake beenden → Raten starten')}
           ${step(2, 'toReveal', '3 Auflösen: Teams nach Flagge')}
           ${step(3, 'toBiathlon', '4 ▶ Runde 2: Biathlon starten')}
-          ${step(4, 'toDone', '5 Biathlon beenden')}
+          ${step(4, 'toDone', '5 Biathlon beenden → Teams fürs Finale wählen')}
           ${step(5, 'toFinal', '6 🏆 Finale freigeben (Tür öffnen)')}
+          ${step(6, 'toEnde', '7 🥇 Siegerehrung')}
         </div>
         <div style="margin-top:8px;font-size:.85rem;color:#555">Korrektur: Phase direkt setzen
           <select id="phaseSel">${PHASES.map((ph, i) => `<option value="${ph}" ${i === PI ? 'selected' : ''}>${PHASE_NAMES[ph]}</option>`).join('')}</select>
@@ -452,6 +473,17 @@ window.APP_VERSION = '20261025b';
       });
 
       // ----- Finale -----
+      // Teamwahl (Runde 3): Reihenfolge nach Biathlon, wer dran ist, Kapitäne
+      if (PI >= phaseIndex('done') && Object.keys(teams).length) {
+        const d = draftState(Object.values(teams).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), people);
+        html += `<div class="card"><h2>🧩 Teamwahl fürs Finale</h2>
+          ${d.seeds.map(sd => { const cap = finalCaptain(sd.letter, people.map(p => ({ ...p, finalTeam: d.letterOf(p) })));
+            return `<p style="margin:4px 0"><strong>Team ${sd.letter}</strong> (Paar ${escA(sd.team.name)}, ${sd.complete ? fmtClock(sd.timeMs) : 'unvollständig'}):
+              ${d.members[sd.letter].map(p => escA(p.name)).join(', ')} · ${d.members[sd.letter].length} Personen
+              · wählt: ${escA(d.pickerOf(sd.letter)?.name ?? '–')} · 👑 ${cap ? escA(cap.name) : 'noch offen'}</p>`; }).join('')}
+          <p style="margin:6px 0;color:#555">${d.complete ? '✅ Alle sind verteilt.' : `Dran: Team ${d.turn} (${escA(d.picker?.name ?? '?')}) · noch frei: ${d.freeUnits.map(u => u.members.map(p => escA(p.name)).join(' &amp; ')).join(' · ')}`}
+            · Korrigieren kannst du unten in der Finale-Karte.</p></div>`;
+      }
       html += `<div class="card"><h2>🏆 Finale</h2>
         <p style="font-size:.9rem;color:#555;margin:2px 0 6px">Viererteams A–D und je ein Kapitän (★). Nach „Finale freigeben“ kann jedes Team zu seinem
         eigenen Termin spielen: Der Kapitän tippt in der Halle im Agentenmodus 🕶️ die Tür unten im Eis-Pokal an, dann läuft die Uhr des Teams und alle gehen hinein.
@@ -516,7 +548,7 @@ window.APP_VERSION = '20261025b';
         if (!confirm('Alles für das Event frisch machen?\n\n• Halle leer, QR-Codes wie neu (Einlauf + Intro-Video)\n• Snake- und Biathlon-Ergebnisse, Tipps und Finale-Spielstände gelöscht\n• Teams gelöscht\n• Chat gelöscht\n• Phase zurück auf "setup"\n\nPersonen, Namen, Bilder, Videos und QR-Codes bleiben erhalten.')) return;
         for (const p of participants.filter(x => x.role !== 'admin')) {
           await updateDoc(doc(db, 'participants', p.token), {
-            arrivedAt: null, videoViews: 0, dialogsSeen: [], dialogPoints: [], revealUntil: null, spyUsed: null, spyAt: null, teamId: null, pickedAt: null, agent: false, guess: null, guessAt: null,
+            arrivedAt: null, videoViews: 0, dialogsSeen: [], dialogPoints: [], revealUntil: null, spyUsed: null, spyAt: null, captainVote: null, captainVoteAt: null, finalTeam: null, finalCaptain: false, teamId: null, pickedAt: null, agent: false, guess: null, guessAt: null,
             minigamePlayed: false, minigameScore: null, minigameAt: null, snakeReplay: null, snakeTries: 0, biathlon: null, biathlonTries: 0
           });
         }
@@ -601,7 +633,22 @@ window.APP_VERSION = '20261025b';
       });
 
       // ----- Ablauf -----
-      const setPhase = async (phase, extra = {}) => { await setDoc(doc(db, 'state', 'current'), { ...state, ...extra, phase }); loadAll(); };
+      const setPhase = async (phase, extra = {}) => {
+        if (state.auto && !confirm('Die Zeitplan-Automatik ist an. Phase von Hand setzen und die Automatik ausschalten?')) return;
+        await setDoc(doc(db, 'state', 'current'), { ...state, ...extra, phase, auto: false }); loadAll();
+      };
+      document.getElementById('toEnde').addEventListener('click', () => setPhase('ende'));
+      document.getElementById('saveSched').addEventListener('click', async () => {
+        const schedule = {};
+        document.querySelectorAll('.schedIn').forEach(i => { if (i.value) schedule[i.dataset.k] = new Date(i.value).getTime(); });
+        const keys = SCHEDULE.map(([k]) => k).filter(k => schedule[k]);
+        for (let i = 1; i < keys.length; i++) if (schedule[keys[i]] < schedule[keys[i - 1]]) { alert('Die Zeiten müssen in der richtigen Reihenfolge sein.'); return; }
+        const auto = document.getElementById('autoOn').checked;
+        if (auto && !schedule.snake) { alert('Für die Automatik mindestens den Snake-Start eintragen.'); return; }
+        await setDoc(doc(db, 'state', 'current'), { ...state, schedule, auto, signImage: document.getElementById('signImage').value.trim() || null,
+          ...(auto ? {} : { phase: effectivePhase({ ...state, auto: true, schedule }) || state.phase }) });
+        loadAll();
+      });
       document.getElementById('toSnake').addEventListener('click', () => setPhase('snake'));
       document.getElementById('toGuess').addEventListener('click', () => {
         const n = people.filter(p => !p.minigamePlayed).length;

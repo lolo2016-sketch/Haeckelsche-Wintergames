@@ -5,18 +5,42 @@
 // Bonussekunden fürs Finale: richtig geraten (pro Person) + Snake-Platz 1–3.
 // Rollen aus früheren Versionen ("captain"/"player") spielen keine Rolle, nur "admin" wird ausgelassen.
 import { doc, collection, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { biathlonRank } from "./biathlon.js?v=20261025b";
+import { biathlonRank } from "./biathlon.js?v=20261106b";
 
 // Phasen in Reihenfolge
-export const PHASES = ['setup', 'snake', 'guess', 'pairs', 'biathlon', 'done', 'final'];
+export const PHASES = ['setup', 'snake', 'guess', 'pairs', 'biathlon', 'done', 'final', 'ende'];
 export const PHASE_NAMES = {
-  setup: 'Vorbereitung', snake: 'Runde 1: Snake', guess: 'Runde 1: Raten', pairs: 'Zweierteams stehen',
-  biathlon: 'Runde 2: Biathlon', done: 'Biathlon beendet', final: 'Finale freigegeben'
+  setup: 'Vorbereitung', snake: 'Runde 1: Snake', guess: 'Auswertung Snake + Wählen', pairs: 'Zweierteams stehen',
+  biathlon: 'Runde 2: Biathlon', done: 'Runde 3: Teams fürs Finale wählen', final: 'Finale freigegeben', ende: 'Siegerehrung'
 };
+
+// ----- Zeitplan: Phasen wechseln automatisch zur eingestellten Zeit (state.auto + state.schedule) -----
+// Die Paare (pairs) entstehen zusammen mit dem Start des Biathlons.
+export const SCHEDULE = [
+  ['snake', 'Snake startet (Event 1)'],
+  ['guess', 'Snake endet · Auswertung + Wählen'],
+  ['biathlon', 'Paare stehen fest · Biathlon startet'],
+  ['done', 'Biathlon endet · Teams fürs Finale wählen'],
+  ['final', 'Finale startet'],
+  ['ende', 'Siegerehrung']
+];
+export function effectivePhase(state, now = Date.now()) {
+  if (!state?.auto) return state?.phase || 'setup';
+  let ph = 'setup';
+  for (const [k] of SCHEDULE) { const t = Number(state.schedule?.[k]); if (t && t <= now) ph = k; }
+  return ph;
+}
+// nächster Termin laut Zeitplan (für das Schild unter dem Schriftzug)
+export function nextEvent(state, now = Date.now()) {
+  if (!state?.auto) return null;
+  const n = SCHEDULE.map(([k, label]) => ({ key: k, label, at: Number(state.schedule?.[k]) })).filter(e => e.at > now).sort((a, b) => a.at - b.at)[0];
+  return n || null;
+}
+export const fmtWhen = ms => new Date(ms).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '') + ' Uhr';
 export const phaseIndex = ph => Math.max(0, PHASES.indexOf(ph === 'minigame' ? 'snake' : ph === 'draft' ? 'guess' : ph));
 
 // Standardwerte (in admin.html änderbar)
-export const DEFAULTS = { guessBonus: 4, snakeBonus: [6, 4, 2], biathlonAttempts: 3 };
+export const DEFAULTS = { guessBonus: 4, snakeBonus: [6, 4, 2], biathlonAttempts: 5 };
 export const settings = state => ({
   guessBonus: Number(state.guessBonus ?? DEFAULTS.guessBonus),
   snakeBonus: Array.isArray(state.snakeBonus) ? state.snakeBonus.map(Number) : DEFAULTS.snakeBonus,
@@ -99,17 +123,54 @@ export function planTeams(people) {
       return { flag, order, name: c ? `${c.emoji} ${c.name}` : '❓ Ohne Flagge', members };
     });
 }
-export async function revealTeams(db, people, state) {
+// feste Team-IDs je Flagge: mehrfaches Ausführen (z. B. automatisch von mehreren Handys) ergibt dasselbe Ergebnis
+export async function revealTeams(db, people, state, { keepPhase = false } = {}) {
   const batch = writeBatch(db);
-  (await getDocs(collection(db, 'teams'))).forEach(d => batch.delete(d.ref));
-  const now = Date.now();
-  planTeams(people).forEach(t => {
-    const id = 'team_' + Math.random().toString(36).slice(2, 10);
-    batch.set(doc(db, 'teams', id), { name: t.name, flag: t.flag, captainToken: null, order: t.order });
-    t.members.forEach((m, i) => batch.update(doc(db, 'participants', m.token), { teamId: id, pickedAt: now + i }));
+  const plan = planTeams(people).map(t => ({ ...t, id: 'team_' + (t.flag || 'ohne') }));
+  const ids = new Set(plan.map(t => t.id));
+  (await getDocs(collection(db, 'teams'))).forEach(d => { if (!ids.has(d.id)) batch.delete(d.ref); });
+  plan.forEach(t => {
+    batch.set(doc(db, 'teams', t.id), { name: t.name, flag: t.flag, captainToken: null, order: t.order });
+    t.members.forEach((m, i) => batch.update(doc(db, 'participants', m.token), { teamId: t.id, pickedAt: 1000 + t.order * 10 + i }));
   });
-  batch.set(doc(db, 'state', 'current'), { ...state, phase: 'pairs' });
+  if (!keepPhase) batch.set(doc(db, 'state', 'current'), { ...state, phase: 'pairs' });
   await batch.commit();
+}
+
+// ----- Runde 3: Teams fürs Finale wählen -----
+// Die Paare nach Biathlon-Zeit (Summe, kleiner = besser). Die besten 4 Paare sind die Teams A–D.
+// Die Paare bleiben immer zusammen: Reihum (A zuerst, dann B, C, D, dann wieder A …) holt sich jedes Team
+// ein ganzes weiteres Paar, bis alle verteilt sind (bei 8 Paaren: jedes Team genau eins).
+// Wählen darf aus jedem Paar nur, wer im Biathlon schneller war.
+const bestTime = p => (p.biathlon?.played && p.biathlon.finished ? p.biathlon.timeMs : Infinity);
+export function pairRanking(teams, people) {
+  return teams.map(t => ({ team: t, ...teamBiathlon(t, people) }))
+    .filter(r => r.members.length)
+    .sort((a, b) => (b.complete - a.complete) || (a.complete ? a.timeMs - b.timeMs : (b.done - a.done) || (a.timeMs - b.timeMs)) || (a.team.order ?? 0) - (b.team.order ?? 0));
+}
+export function draftState(teams, people) {
+  const ranking = pairRanking(teams, people);
+  const seeds = ranking.slice(0, FINAL_TEAMS.length).map((r, i) => ({ letter: FINAL_TEAMS[i], team: r.team, timeMs: r.timeMs, complete: r.complete }));
+  const seedOf = new Map(); seeds.forEach(sd => people.filter(p => p.teamId === sd.team.id).forEach(p => seedOf.set(p.token, sd.letter)));
+  const letterOf = p => p.finalTeam || seedOf.get(p.token) || null;
+  const membersOfPair = id => people.filter(p => p.teamId === id);
+  // weitere Paare: frei, solange noch niemand daraus einem Finale-Team zugeordnet ist
+  const units = ranking.slice(seeds.length).map(r => ({ team: r.team, members: membersOfPair(r.team.id) }));
+  const freeUnits = units.filter(u => u.members.every(p => !letterOf(p)));
+  const picks = Object.fromEntries(seeds.map(sd => [sd.letter, units.filter(u => u.members.some(p => p.finalTeam === sd.letter)).length]));
+  const members = Object.fromEntries(seeds.map(sd => [sd.letter, people.filter(p => letterOf(p) === sd.letter)]));
+  // Personen ohne Paar (z. B. ohne Flagge) zählen als eigene Einheit
+  const loners = people.filter(p => !p.teamId && !letterOf(p)).map(p => ({ team: { id: 'solo_' + p.token, name: p.name }, members: [p] }));
+  const free = [...freeUnits, ...loners];
+  const minPicks = Math.min(...seeds.map(sd => picks[sd.letter]));
+  const turnSeed = free.length ? seeds.find(sd => picks[sd.letter] === minPicks) : null;
+  const pickerOf = sd => people.filter(p => p.teamId === sd.team.id).sort((a, b) => bestTime(a) - bestTime(b) || String(a.name).localeCompare(String(b.name), 'de'))[0] ?? null;
+  return {
+    seeds, letterOf, members, freeUnits: free, free: free.flatMap(u => u.members), complete: !free.length && seeds.length > 0,
+    unitOf: p => free.find(u => u.members.some(m => m.token === p.token)) ?? null,
+    turn: turnSeed?.letter ?? null, picker: turnSeed ? pickerOf(turnSeed) : null,
+    pickerOf: letter => { const sd = seeds.find(x => x.letter === letter); return sd ? pickerOf(sd) : null; }
+  };
 }
 
 // ----- Finale -----
@@ -118,7 +179,17 @@ export async function revealTeams(db, people, state) {
 export const FINAL_TEAMS = ['A', 'B', 'C', 'D'];
 export const PENALTY_S = 2;   // Strafsekunden pro falscher Waffe
 export const finalMembers = (letter, people) => people.filter(p => p.finalTeam === letter);
-export const finalCaptain = (letter, people) => people.find(p => p.finalTeam === letter && p.finalCaptain) ?? null;
+// Kapitän: vom Admin festgelegt, sonst gewählt – wer zuerst 2 Stimmen hat (bei Teams mit weniger als 2 Leuten reicht 1)
+export function finalCaptain(letter, people) {
+  const mem = finalMembers(letter, people);
+  const fixed = mem.find(p => p.finalCaptain); if (fixed) return fixed;
+  const need = Math.min(2, mem.length), count = {};
+  for (const v of mem.filter(p => p.captainVote && mem.some(m => m.token === p.captainVote)).sort((a, b) => (a.captainVoteAt || 0) - (b.captainVoteAt || 0))) {
+    count[v.captainVote] = (count[v.captainVote] || 0) + 1;
+    if (count[v.captainVote] >= need) return mem.find(m => m.token === v.captainVote) ?? null;
+  }
+  return null;
+}
 // Vorsprung fürs Finale: Summe der Boni aller Mitglieder (Raten + Snake)
 export function finalBonus(letter, people, state) {
   return finalMembers(letter, people).reduce((s, p) => s + bonusOf(p, people, state, true).total, 0);
