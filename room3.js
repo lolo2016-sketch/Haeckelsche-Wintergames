@@ -21,7 +21,7 @@ function letterSprite(ch) {
     g.fillStyle = ch === '❄' ? '#60a5fa' : '#7c2d12'; g.font = `bold ${ch === '❄' ? 120 : 150}px Georgia, serif`;
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(ch, w / 2, h / 2 + 8);
   });
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false })); s.scale.set(1.5, 1.5, 1); return s;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false })); s.scale.set(1.1, 1.1, 1); return s;
 }
 
 // einfache Teamfigur mit Fotogesicht
@@ -81,7 +81,7 @@ export function createSnowRange(container, { cans = [], hits = [], mates = [], o
   [[0.6, 0.6], [0.45, 1.45], [0.3, 2.1]].forEach(([r, y]) => { const b = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), sm); b.position.set(-4.5, y, -7); scene.add(b); });
 
   // Brett mit Dosen: 24 m entfernt (dreimal so weit wie früher); Dosen dafür etwas größer, damit man sie am Handy noch trifft
-  const CAM_Z = 3.4, DIST = 24, CAN_Z = CAM_Z - DIST, SP = 0.8;
+  const CAM_Z = 3.4, DIST = 24, CAN_Z = CAM_Z - DIST, SP = cans.length > 12 ? 0.62 : 0.8;
   const plank = new THREE.Mesh(new THREE.BoxGeometry(cans.length * SP + 0.8, 0.12, 0.8), lam(0x8b5a2b)); plank.position.set(0, 1.0, CAN_Z); scene.add(plank);
   for (const x of [-(cans.length * SP) / 2, 0, (cans.length * SP) / 2]) { const c = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.94, 0.7), lam(0x6b4423)); c.position.set(x, 0.47, CAN_Z); scene.add(c); }
   const canCols = [0xdc2626, 0x2563eb, 0x16a34a, 0xf59e0b, 0x9ca3af];
@@ -128,12 +128,14 @@ export function createSnowRange(container, { cans = [], hits = [], mates = [], o
   const balls = [];
   const BALL_R = 0.11;
   const ballGeo = new THREE.SphereGeometry(BALL_R, 10, 8), ballMat = lam(0xffffff);
-  const G = 9.8;
+  const G = 9.8, DROP_PER_M = 0.027;
   function throwAt(target, origin) {
     const T = 0.6 + origin.distanceTo(target) * 0.02;
     const wob = new THREE.Vector3((Math.random() - 0.5) * 0.16, (Math.random() - 0.5) * 0.12, 0);
     const tgt = target.clone().add(wob);
-    const v = tgt.clone().sub(origin).divideScalar(T); v.y += 0.5 * G * T;   // ballistische Flugbahn
+    // Der Schneeball fällt auf die Entfernung etwas ab (ca. 65 cm auf 24 m): man muss ein bisschen über die Dose zielen
+    const drop = DROP_PER_M * origin.distanceTo(target);
+    const v = tgt.clone().sub(origin).divideScalar(T); v.y += (0.5 * G * T * T - drop) / T;
     const m = new THREE.Mesh(ballGeo, ballMat); m.position.copy(origin); scene.add(m);
     balls.push({ m, v, own: true, life: 3 });
   }

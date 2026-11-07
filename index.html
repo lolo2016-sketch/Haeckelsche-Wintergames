@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <script>
 // Ladefehler sichtbar machen (z. B. fehlende oder veraltete Datei nach dem Hochladen)
-window.APP_VERSION = '20261106b';
+window.APP_VERSION = '20261108a';
 (function () {
   var shown = {};
   window.showLoadError = function (what) {
@@ -148,15 +148,15 @@ window.APP_VERSION = '20261106b';
       getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, addDoc, query, orderBy, limit, arrayUnion, increment, writeBatch
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261106b";
-    import { playDialog, SZENEN, mergeConfig } from "./dialog.js?v=20261106b";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261106b";
-    import { createHall } from "./hall.js?v=20261106b";
+    import { playSnake, playReplay } from "./minigame.js?v=20261108a";
+    import { playDialog, SZENEN, mergeConfig } from "./dialog.js?v=20261108a";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261108a";
+    import { createHall } from "./hall.js?v=20261108a";
     import { PHASES, PHASE_NAMES, phaseIndex, settings, country, teamColor, isPerson, playedSnake, compareSnake, snakeRanking,
       playedBiathlon, teamBiathlon, bonusOf, teamBonus, guessedRight, planTeams,
       FINAL_TEAMS, PENALTY_S, finalMembers, finalCaptain, finalBonus, finalScoreMs, fmtClock, weaponName,
-      finalStage, RIDDLES, WORD2, WORD2_TRIES, riddleRight, word2Shown, word2Tiles, normAnswer, WORD3, CANS,
-      effectivePhase, nextEvent, fmtWhen, revealTeams, draftState, pairRanking } from "./draft.js?v=20261106b";
+      finalStage, RIDDLES, WORD2, WORD2_TRIES, riddleRight, word2Shown, word2Tiles, normAnswer, WORD3, WORD3_LETTERS, CANS, weaponList,
+      effectivePhase, nextEvent, fmtWhen, revealTeams, draftState, pairRanking } from "./draft.js?v=20261108a";
     window.APP_READY = true;   // alle Dateien geladen
 
     const app = initializeApp(firebaseConfig);
@@ -538,7 +538,7 @@ window.APP_VERSION = '20261106b';
       // 3D, wenn möglich, sonst die einfache 2D-Halle
       let use3d = false;
       try {
-        hall3dMod ??= await import('./hall3d.js?v=20261106b');
+        hall3dMod ??= await import('./hall3d.js?v=20261108a');
         use3d = hall3dMod.webglAvailable();
       } catch (e) { use3d = false; console.error(e); window.showLoadError?.('3D-Halle: ' + (e?.message || e)); }
 
@@ -1090,15 +1090,15 @@ window.APP_VERSION = '20261106b';
       const hint = document.getElementById('finHint');
       try {
         if (n === 1) {
-          sceneMods.c ??= await import('./camp.js?v=20261106b');
-          scene3d = sceneMods.c.createCamp(box, { onWeapon: chooseWeapon, onDoor2: () => nextDoor(2) });
+          sceneMods.c ??= await import('./camp.js?v=20261108a');
+          scene3d = sceneMods.c.createCamp(box, { onWeapon: chooseWeapon, onDoor2: () => nextDoor(2), weapons: weaponList(S.state) });
           hint.textContent = '👆 Pfeile antippen = gehen · wischen = umschauen';
         } else if (n === 2) {
-          sceneMods.r2 ??= await import('./room2.js?v=20261106b');
+          sceneMods.r2 ??= await import('./room2.js?v=20261108a');
           scene3d = sceneMods.r2.createRiddleRoom(box, { onPlaque: openRiddle, onDoor: () => nextDoor(3) });
           hint.textContent = '👆 wischen = umschauen · Tafel antippen = Rätsel';
         } else {
-          sceneMods.r3 ??= await import('./room3.js?v=20261106b');
+          sceneMods.r3 ??= await import('./room3.js?v=20261108a');
           const mates = finalMembers(S.me.finalTeam, S.people).filter(p => p.token !== S.me.token).map(p => ({ token: p.token, name: p.name, photoUrl: p.photoUrl }));
           scene3d = sceneMods.r3.createSnowRange(box, { cans: CANS, hits: myFin()?.cans || [], mates, onHit: hitCan, canThrow: () => !myFin()?.solved3At, reload: 2 });
           hint.textContent = '👆 antippen = Schneeball werfen · wischen = zielen';
@@ -1158,9 +1158,13 @@ window.APP_VERSION = '20261106b';
       } else if (sceneNo === 3 && st === 3) {
         const hits = (fin.cans || []).filter(i => CANS[i]);
         h = `<div class="glass" style="border-radius:14px;padding:8px 10px;pointer-events:auto;text-align:center">
-          <div style="display:flex;gap:5px;justify-content:center;margin-bottom:6px">${WORD3.split('').map((_, k) => {
-            const i = built3[k]; return slot(i != null ? CANS[i] : '', '#2563eb');
-          }).join('')}</div>
+          <div style="display:flex;gap:4px 14px;justify-content:center;flex-wrap:wrap;margin-bottom:6px">${(() => {
+            // Wort für Wort (Leerzeichen = Abstand); bricht auf schmalen Handys zwischen den Wörtern um
+            let k = 0;
+            return WORD3.split(' ').map(w => `<span style="display:inline-flex;gap:3px">${w.split('').map(() => {
+              const i = built3[k++]; return slot(i != null ? CANS[i] : '', '#2563eb');
+            }).join('')}</span>`).join('');
+          })()}</div>
           <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap">${hits.length ? hits.map(i => tile('l3', i, CANS[i], built3.includes(i))).join('')
             : '<span style="color:#cbd5e1;font-size:.85rem">Noch keine Buchstaben – werft!</span>'}
             ${built3.length ? '<button id="l3clear" class="secondary" style="margin:0;padding:6px 10px">↺</button>' : ''}</div></div>`;
@@ -1180,11 +1184,11 @@ window.APP_VERSION = '20261106b';
       const L = S.me.finalTeam, fin = myFin(), cap = finalCaptain(L, S.people);
       if (!fin) return;
       if (fin.solved1At) return toast('Raum 1 ist schon gelöst! 🎉');
-      if (cap?.token !== S.me.token) return toast(`${weaponName(id)} – nur euer Kapitän ${cap?.name ?? ''} kann eine Waffe wählen.`);
-      if ((fin.wrong || []).includes(id)) return toast(`${weaponName(id)} war schon falsch.`);
+      if (cap?.token !== S.me.token) return toast(`${weaponName(id, S.state)} – nur euer Kapitän ${cap?.name ?? ''} kann eine Waffe wählen.`);
+      if ((fin.wrong || []).includes(id)) return toast(`${weaponName(id, S.state)} war schon falsch.`);
       const answer = DEMO ? 'schlaeger' : S.state.riddle1Answer;
       if (!answer) return toast('Die richtige Waffe ist noch nicht festgelegt (admin.html).');
-      const bg = modal(`<h2 style="margin:0 0 6px">${escapeHtml(weaponName(id))} wählen?</h2>
+      const bg = modal(`<h2 style="margin:0 0 6px">${escapeHtml(weaponName(id, S.state))} wählen?</h2>
         <p style="margin:0 0 12px;color:#555">Ist es die falsche Waffe, bekommt ihr <strong>+${PENALTY_S} Strafsekunden</strong>.</p>
         <button class="secondary" data-a="no">Abbrechen</button><button data-a="yes">Diese Waffe!</button>`);
       bg.querySelector('[data-a=no]').onclick = () => bg.remove();
@@ -1197,10 +1201,10 @@ window.APP_VERSION = '20261106b';
             f => right ? { solved1At: Date.now(), solvedWeapon: id } : { penalty: (f.penalty || 0) + PENALTY_S, wrong: [...(f.wrong || []), id] });
         } catch (err) { return alert('Speichern fehlgeschlagen: ' + err.message); }
         if (right) {
-          const ov = modal(`<h2 style="margin:0 0 6px">🎉 Richtig!</h2><p>${escapeHtml(weaponName(id))} war die richtige Waffe – Napoleon ist gerettet!</p>
+          const ov = modal(`<h2 style="margin:0 0 6px">🎉 Richtig!</h2><p>${escapeHtml(weaponName(id, S.state))} war die richtige Waffe – Napoleon ist gerettet!</p>
             <p style="color:#555">Die Uhr steht. Rechts neben Napoleon ist eine Tür erschienen.</p><button data-a="ok">Weiter</button>`);
           ov.querySelector('[data-a=ok]').onclick = () => ov.remove();
-        } else toast(`❌ ${weaponName(id)} war falsch: +${PENALTY_S} Strafsekunden`);
+        } else toast(`❌ ${weaponName(id, S.state)} war falsch: +${PENALTY_S} Strafsekunden`);
       };
     }
 
@@ -1275,9 +1279,9 @@ window.APP_VERSION = '20261106b';
     async function tapLetter3(i) {
       if (built3.includes(i)) return;
       built3.push(i); renderFinHud();
-      if (built3.length < WORD3.length) return;
+      if (built3.length < WORD3_LETTERS.length) return;
       const word = built3.map(k => CANS[k]).join('');
-      if (word !== WORD3) { toast('❌ Das ergibt kein Wort – nochmal!'); built3 = []; setTimeout(renderFinHud, 300); return; }
+      if (word !== WORD3_LETTERS) { toast('❌ Das ergibt kein Wort – nochmal!'); built3 = []; setTimeout(renderFinHud, 300); return; }
       try { await finUpdate({ solved3At: Date.now() }, () => ({ solved3At: Date.now() })); } catch (err) { alert('Speichern fehlgeschlagen: ' + err.message); }
     }
     function showFinished() {

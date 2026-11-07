@@ -3,7 +3,7 @@
 // Pfeile am Boden antippen = einen Schritt gehen, wischen = umschauen. Von der Mitte gehen 5 Wege ab, je 4 Schritte.
 // Am Ende eines Weges: die Figur "Hilf unserem Papa" und links daneben der Waffenschrank.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js';
-import { WEAPONS } from './draft.js?v=20261106b';
+import { WEAPONS } from './draft.js?v=20261108a';
 
 const STEP = 6.5;            // Abstand der Wegpunkte (m)
 const STEPS = 4;             // Schritte pro Weg
@@ -277,7 +277,7 @@ function weaponMesh(id) {
 }
 
 // ---------- Szene ----------
-export function createCamp(container, { onWeapon, onLeave, onDoor2 } = {}) {
+export function createCamp(container, { onWeapon, onLeave, onDoor2, weapons: weaponCfg = WEAPONS } = {}) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -482,7 +482,7 @@ export function createCamp(container, { onWeapon, onLeave, onDoor2 } = {}) {
   const crown = new THREE.Mesh(new THREE.BoxGeometry(CW + 0.3, 0.25, 0.6), frameM); crown.position.y = CH + 0.45; cab.add(crown);
   const weapons = {};
   const slotW = CW / COLS, slotH = CH / ROWS;
-  WEAPONS.forEach((w, i) => {
+  weaponCfg.forEach((w, i) => {
     const col = i % COLS, row = Math.floor(i / COLS);
     const slot = new THREE.Group();
     slot.position.set(-CW / 2 + slotW * (col + 0.5), 0.3 + CH - slotH * (row + 0.5) + 0.06, 0);
@@ -492,6 +492,16 @@ export function createCamp(container, { onWeapon, onLeave, onDoor2 } = {}) {
     const sc = Math.min((slotW * 0.82) / (sz.x || 1), (slotH * 0.7) / (sz.y || 1));
     mesh.scale.setScalar(sc); mesh.position.set(-ctr.x * sc, -ctr.y * sc + 0.05, 0);
     slot.add(mesh);
+    // eigenes Bild aus dem Admin (riddle/waffen/…): ersetzt das 3D-Modell, sobald es geladen ist
+    if (w.bild) new THREE.TextureLoader().load(w.bild, t => {
+      t.colorSpace = THREE.SRGBColorSpace;
+      const asp = t.image.width / t.image.height, mw = slotW * 0.86, mh = slotH * 0.7;
+      const pw = Math.min(mw, mh * asp), ph = pw / asp;
+      const pic = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), new THREE.MeshBasicMaterial({ map: t, transparent: true, alphaTest: 0.05 })   /* echte Farben, unabhängig vom Licht */);
+      pic.position.set(0, 0.05, 0.03);
+      mesh.visible = false; slot.add(pic);
+      const wObj = weapons[w.id]; wObj.mats.push(pic.material); if (wObj.wrong) pic.material.color.multiplyScalar(0.35);   // falsch gewählt: dunkel
+    }, undefined, () => {});
     // unsichtbare Trefferfläche zum Antippen
     const hit = new THREE.Mesh(new THREE.PlaneGeometry(slotW * 0.95, slotH * 0.95), new THREE.MeshBasicMaterial({ visible: false }));
     hit.position.z = 0.1; hit.userData.weapon = w.id; slot.add(hit);

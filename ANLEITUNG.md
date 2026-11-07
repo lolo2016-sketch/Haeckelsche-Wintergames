@@ -549,3 +549,15 @@ Dann wechselt die Phase auf allen Handys von selbst (Prüfung alle 15 s):
 - **Deine gespeicherten Dialog-Texte bleiben unverändert.** Nur zwei alte Zeitpunkte werden automatisch angepasst:
   Biathlon-Szene „Auflösung“ → „Biathlon“ (die Paare entstehen jetzt beim Biathlon-Start), Abschluss „nach dem eigenen Finale“ → „Siegerehrung“.
   Den Knopf „Alle Szenen auf Standard“ NICHT drücken – er würde deine Texte ersetzen.
+
+## Update 20261108a
+- **Admin-Link bei Spielern behoben:** Öffnete man die Admin-Seite als `…/admin` (ohne .html), wurden alle Spieler-Links
+  als `…/admin?t=…` gebaut. Jetzt zeigen alle Links immer auf `intro.html?t=…`. Wer noch einen alten falschen Link hat,
+  wird automatisch zu seinem eigenen Einstieg weitergeleitet (QR-Codes müssen nicht neu gedruckt werden).
+- **Waffen ändern (Raum 1):** Admin → „🗡️ Waffenschrank (Raum 1)“: 24 Fächer (von links oben nach rechts unten),
+  je Name und optional ein eigenes Bild. Bilder in den Ordner `riddle/waffen/` im Repo laden (PNG mit durchsichtigem
+  Hintergrund ist am schönsten), dann im Feld auswählen und „Waffen speichern“. Ohne Bild bleibt das eingebaute 3D-Modell.
+  Die richtige Waffe wählst du wie bisher in der Finale-Karte (dort stehen jetzt die neuen Namen).
+- **Raum 3:** Lösungswort **DER WINTER NAHT** (16 Dosen: 13 Buchstaben + 3 leere). Die Wortfelder stehen Wort für Wort.
+  Der Schneeball fällt auf die Entfernung etwas ab (ca. 65 cm auf 24 m) – man muss etwas über die Dose zielen.
+  Stärke ändern: `DROP_PER_M` in `room3.js` (0.027 = 65 cm; größer = fällt stärker).

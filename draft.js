@@ -5,7 +5,7 @@
 // Bonussekunden fürs Finale: richtig geraten (pro Person) + Snake-Platz 1–3.
 // Rollen aus früheren Versionen ("captain"/"player") spielen keine Rolle, nur "admin" wird ausgelassen.
 import { doc, collection, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { biathlonRank } from "./biathlon.js?v=20261106b";
+import { biathlonRank } from "./biathlon.js?v=20261108a";
 
 // Phasen in Reihenfolge
 export const PHASES = ['setup', 'snake', 'guess', 'pairs', 'biathlon', 'done', 'final', 'ende'];
@@ -242,9 +242,10 @@ export const word2Tiles = solvedIdx => RIDDLES.flatMap((r, i) => (solvedIdx || [
 export const word2Shown = solvedIdx => WORD2.split('').map(ch => RIDDLES.some((r, i) => r.letter === ch && (solvedIdx || []).includes(i)) ? ch : '_');
 
 // ----- Raum 3: Schneeball auf Dosen -----
-export const WORD3 = 'VEREIST';
+export const WORD3 = 'DER WINTER NAHT';
+export const WORD3_LETTERS = WORD3.replace(/ /g, '');   // ohne Leerzeichen (so wird es aus den Dosen gelegt)
 // Dosen von links nach rechts: Buchstabe oder '' (leere Dose = nur Schnee); Buchstaben gemischt
-export const CANS = ['E', '', 'S', 'R', '', 'T', 'V', '', 'I', 'E'];
+export const CANS = ['N', '', 'T', 'E', 'A', 'R', 'D', '', 'W', 'H', 'I', '', 'N', 'R', 'E', 'T'];   // gemischt: Buchstaben von DER WINTER NAHT + 3 leere Dosen
 
 export const fmtClock = ms => {
   const neg = ms < 0, a = Math.abs(ms);
@@ -258,4 +259,6 @@ export const WEAPONS = [
   ['pistole9', 'Pistole (9 mm)'], ['axt', 'Axt'], ['scharfschuetzen', 'Scharfschützengewehr'], ['dolch', 'Dolch'], ['blunderbuss', 'Donnerbüchse'], ['armbrust', 'Armbrust'],
   ['derringer', 'Taschenpistole'], ['bogen', 'Pfeil und Bogen'], ['sturmgewehr', 'Sturmgewehr'], ['hellebarde', 'Hellebarde'], ['granate', 'Handgranate'], ['schlaeger', 'Baseballschläger']
 ].map(([id, name]) => ({ id, name }));
-export const weaponName = id => WEAPONS.find(w => w.id === id)?.name ?? id;
+// Namen/Bilder der Waffen kann man im Admin ändern (state.waffen = { id: { name, bild } }); die Fächer (ids) bleiben gleich
+export const weaponList = state => WEAPONS.map(w => ({ ...w, name: state?.waffen?.[w.id]?.name || w.name, bild: state?.waffen?.[w.id]?.bild || '' }));
+export const weaponName = (id, state) => weaponList(state).find(w => w.id === id)?.name ?? id;

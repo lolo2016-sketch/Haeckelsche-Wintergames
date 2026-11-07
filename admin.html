@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <script>
 // Ladefehler sichtbar machen (z. B. fehlende oder veraltete Datei nach dem Hochladen)
-window.APP_VERSION = '20261106b';
+window.APP_VERSION = '20261108a';
 (function () {
   var shown = {};
   window.showLoadError = function (what) {
@@ -63,12 +63,12 @@ window.APP_VERSION = '20261106b';
       collection, getDocs
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261106b";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261106b";
+    import { playSnake, playReplay } from "./minigame.js?v=20261108a";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261108a";
     import { PHASES, PHASE_NAMES, phaseIndex, settings, DEFAULTS, COUNTRIES, country, isPerson, teamColor, snakeRanking,
-      guessedRight, teamBonus, teamBiathlon, revealTeams, FINAL_TEAMS, finalMembers, finalBonus, finalScoreMs, fmtClock, WEAPONS, weaponName,
-      SCHEDULE, effectivePhase, nextEvent, fmtWhen, draftState, finalCaptain } from "./draft.js?v=20261106b";
-    import { SZENEN, WANN, PLATZHALTER, mergeConfig, playDialog } from "./dialog.js?v=20261106b";
+      guessedRight, teamBonus, teamBiathlon, revealTeams, FINAL_TEAMS, finalMembers, finalBonus, finalScoreMs, fmtClock, WEAPONS, weaponName, weaponList,
+      SCHEDULE, effectivePhase, nextEvent, fmtWhen, draftState, finalCaptain } from "./draft.js?v=20261108a";
+    import { SZENEN, WANN, PLATZHALTER, mergeConfig, playDialog } from "./dialog.js?v=20261108a";
     window.APP_READY = true;   // alle Dateien geladen
 
     const app = initializeApp(firebaseConfig);
@@ -76,9 +76,12 @@ window.APP_VERSION = '20261106b';
     const root = document.getElementById('app');
 
     // Basis-URLs automatisch ermitteln
-    const baseUrl = location.href.replace(/admin\.html.*$/, 'index.html');
-    const adminUrl = location.href.replace(/admin\.html.*$/, 'admin.html');
-    const introUrl = location.href.replace(/admin\.html.*$/, 'intro.html');
+    // Ordner der Seite – funktioniert auch, wenn GitHub Pages die Admin-Seite als …/admin (ohne .html) öffnet.
+    // Vorher wurde „admin.html“ in der Adresse ersetzt; ohne .html blieb dann „…/admin“ stehen und alle Spieler-Links zeigten auf den Admin.
+    const pageBase = location.origin + location.pathname.replace(/[^/]*$/, '');
+    const baseUrl = pageBase + 'index.html';
+    const adminUrl = pageBase + 'admin.html';
+    const introUrl = pageBase + 'intro.html';
 
     let lastTest = null; // letzter Snake-Testversuch (nur im Browser, wird nicht gespeichert)
     let lastBiathlon = null; // letzter Biathlon-Testlauf
@@ -97,8 +100,9 @@ window.APP_VERSION = '20261106b';
         return (await r.json()).filter(f => f.type === 'file').map(f => f.path);
       };
       try {
-        const [photos, faces, videos, agents, dialog] = await Promise.all([list('photos'), list('faces'), list('videos'), list('agents'), list('dialog')]);
+        const [photos, faces, videos, agents, dialog, waffen] = await Promise.all([list('photos'), list('faces'), list('videos'), list('agents'), list('dialog'), list('riddle/waffen')]);
         repoFiles = {
+          waffen: waffen.filter(f => /\.(png|jpe?g|webp)$/i.test(f)),
           dialog: dialog.filter(f => /\.(png|jpe?g|webp|gif)$/i.test(f)),
           agents: agents.filter(f => /\.(png|webp)$/i.test(f)),
           photos: [...photos, ...faces].filter(f => /\.(png|jpe?g|webp|gif)$/i.test(f)),
@@ -110,6 +114,7 @@ window.APP_VERSION = '20261106b';
       return `<datalist id="photoFiles">${repoFiles.photos.map(f => `<option value="${f}">`).join('')}</datalist>
         <datalist id="videoFiles">${repoFiles.videos.map(f => `<option value="${f}">`).join('')}</datalist>
         <datalist id="agentFiles">${(repoFiles.agents || []).map(f => `<option value="${f}">`).join('')}</datalist>
+        <datalist id="waffenFiles">${(repoFiles.waffen || []).map(f => `<option value="${f}">`).join('')}</datalist>
         <datalist id="dialogFiles">${[...(repoFiles.dialog || []), ...repoFiles.photos].map(f => `<option value="${f}">`).join('')}</datalist>`;
     }
     function filesHint() {
@@ -484,12 +489,23 @@ window.APP_VERSION = '20261106b';
           <p style="margin:6px 0;color:#555">${d.complete ? '✅ Alle sind verteilt.' : `Dran: Team ${d.turn} (${escA(d.picker?.name ?? '?')}) · noch frei: ${d.freeUnits.map(u => u.members.map(p => escA(p.name)).join(' &amp; ')).join(' · ')}`}
             · Korrigieren kannst du unten in der Finale-Karte.</p></div>`;
       }
+      // Waffenschrank Raum 1: Namen und eigene Bilder der 24 Fächer
+      html += `<div class="card"><details><summary style="cursor:pointer;font-weight:700;font-size:1.1rem">🗡️ Waffenschrank (Raum 1) – Namen und Bilder</summary>
+        <p style="font-size:.9rem;color:#555">24 Fächer (6 × 4, von links oben nach rechts unten). Name ändern und optional ein eigenes Bild:
+          Bild in den Ordner <code>riddle/waffen/</code> im Repo laden (am besten PNG mit durchsichtigem Hintergrund), dann hier auswählen.
+          Ohne Bild bleibt das eingebaute 3D-Modell. Die richtige Waffe wählst du unten in der Finale-Karte.</p>
+        <div style="display:grid;grid-template-columns:auto 1fr 1fr;gap:4px 8px;align-items:center">
+          ${weaponList(state).map((w, i) => `<span style="color:#888">${i + 1}.</span>
+            <input class="wName" data-id="${w.id}" value="${escA(w.name)}" placeholder="${escA(WEAPONS[i].name)}">
+            <input class="wBild" data-id="${w.id}" list="waffenFiles" value="${escA(w.bild)}" placeholder="riddle/waffen/…png">`).join('')}
+        </div>
+        <button id="saveWaffen" style="margin-top:8px">💾 Waffen speichern</button></details></div>`;
       html += `<div class="card"><h2>🏆 Finale</h2>
         <p style="font-size:.9rem;color:#555;margin:2px 0 6px">Viererteams A–D und je ein Kapitän (★). Nach „Finale freigeben“ kann jedes Team zu seinem
         eigenen Termin spielen: Der Kapitän tippt in der Halle im Agentenmodus 🕶️ die Tür unten im Eis-Pokal an, dann läuft die Uhr des Teams und alle gehen hinein.
         Mehrere Teams können gleichzeitig spielen.</p>
         <label>Richtige Waffe in Rätsel 1: <select id="riddle1Answer"><option value="">– bitte wählen –</option>
-          ${WEAPONS.map(w => `<option value="${w.id}" ${state.riddle1Answer === w.id ? 'selected' : ''}>${w.name}</option>`).join('')}</select></label>
+          ${weaponList(state).map(w => `<option value="${w.id}" ${state.riddle1Answer === w.id ? 'selected' : ''}>${w.name}</option>`).join('')}</select></label>
         <button class="secondary" id="saveAnswer">Speichern</button>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px;margin-top:10px">
         ${people.slice().sort(byName).map(p => `<label style="display:flex;gap:6px;align-items:center">
@@ -504,8 +520,8 @@ window.APP_VERSION = '20261106b';
           return `<div style="margin:6px 0"><strong>Team ${L}</strong>: ${mem.map(m => (m.finalCaptain ? '★ ' : '') + m.name).join(', ')}
             ${caps.length !== 1 ? '<span style="color:#b91c1c;font-weight:600"> ⚠️ genau einen Kapitän wählen</span>' : ''}
             <br><span style="font-size:.9rem">Vorsprung ${bonus} s · ${fin?.solved3At ? `🏁 fertig, Wertung <b>${fmtClock(sc)}</b>` : fin?.startedAt ? `⏳ gestartet ${new Date(fin.startedAt).toLocaleTimeString('de-DE')}, Zeit bisher ${fmtClock(sc)}` : 'nicht gestartet'}
-            ${fin?.startedAt ? `<br>Raum 1: ${fin.solved1At ? '✅ ' + weaponName(fin.solvedWeapon) : '…'} · Raum 2: ${fin.solved2At ? '✅' : fin.start2At ? `${(fin.riddles || []).length}/6 Rätsel, ${fin.wordTries || 0}/5 Rateversuche` : '–'} · Raum 3: ${fin.solved3At ? '✅' : fin.start3At ? `${(fin.cans || []).length} Dosen getroffen` : '–'}` : ''}
-            ${fin?.penalty ? ` · Strafe +${fin.penalty} s (${(fin.wrong || []).map(weaponName).join(', ')})` : ''}</span>
+            ${fin?.startedAt ? `<br>Raum 1: ${fin.solved1At ? '✅ ' + weaponName(fin.solvedWeapon, state) : '…'} · Raum 2: ${fin.solved2At ? '✅' : fin.start2At ? `${(fin.riddles || []).length}/6 Rätsel, ${fin.wordTries || 0}/5 Rateversuche` : '–'} · Raum 3: ${fin.solved3At ? '✅' : fin.start3At ? `${(fin.cans || []).length} Dosen getroffen` : '–'}` : ''}
+            ${fin?.penalty ? ` · Strafe +${fin.penalty} s (${(fin.wrong || []).map(id => weaponName(id, state)).join(', ')})` : ''}</span>
             ${fin ? `<button class="secondary resetFinal" data-team="${L}" style="padding:4px 10px">Zurücksetzen</button>` : ''}</div>`;
         }).join('')}</div>
       </div>`;
@@ -638,6 +654,15 @@ window.APP_VERSION = '20261106b';
         await setDoc(doc(db, 'state', 'current'), { ...state, ...extra, phase, auto: false }); loadAll();
       };
       document.getElementById('toEnde').addEventListener('click', () => setPhase('ende'));
+      document.getElementById('saveWaffen').addEventListener('click', async () => {
+        const waffen = {};
+        WEAPONS.forEach(w => {
+          const name = document.querySelector(`.wName[data-id="${w.id}"]`).value.trim();
+          const bild = document.querySelector(`.wBild[data-id="${w.id}"]`).value.trim();
+          if ((name && name !== w.name) || bild) waffen[w.id] = { ...(name && name !== w.name ? { name } : {}), ...(bild ? { bild } : {}) };
+        });
+        await setDoc(doc(db, 'state', 'current'), { ...state, waffen }); loadAll();
+      });
       document.getElementById('saveSched').addEventListener('click', async () => {
         const schedule = {};
         document.querySelectorAll('.schedIn').forEach(i => { if (i.value) schedule[i.dataset.k] = new Date(i.value).getTime(); });
@@ -764,6 +789,8 @@ window.APP_VERSION = '20261106b';
           history.replaceState(null, '', location.pathname); // Token aus der Adresszeile entfernen
           return loadAll();
         }
+        // Spieler mit einem (falschen) Admin-Link: direkt zu seinem eigenen Einstieg weiterleiten
+        if (snap.exists()) { location.replace(introUrl + '?t=' + encodeURIComponent(t)); return; }
       }
 
       root.innerHTML = `<div class="card" style="max-width:360px">
