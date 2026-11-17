@@ -616,3 +616,9 @@ Dann wechselt die Phase auf allen Handys von selbst (Prüfung alle 15 s):
   - `videos/finale.mp4`: nach dem Dialog „Finale eröffnet“.
   - `videos/ende.mp4`: vor der Siegerehrung.
 - **Achtung bei gespeicherten Texten:** Für deine schon gespeicherten Szenen gelten die Startwerte nur, solange dort noch kein eigenes Video eingetragen ist. Die Felder sind also schon ausgefüllt. Einmal „💾 Alle Szenen speichern“ schreibt sie fest. Deine Texte bleiben dabei unverändert.
+
+## Update 20261117a – mehrere Videos pro Szene
+- In „Video davor“ / „Video danach“ können mehrere Dateien stehen, getrennt durch Komma. Sie laufen nacheinander.
+- Startwerte: Szene 0 „Ankunft“ = `videos/ankunft.mp4, videos/ankunft2.mp4` (Schattenwolf, dann Eisdrache);
+  „Finale eröffnet“ danach = `videos/finale1.mp4, videos/finale2.mp4, videos/finale3.mp4, videos/finale4.mp4` (der ~1-Minuten-Kampf).
+- Hast du die Szenen im Admin schon einmal gespeichert, stehen dort deine Werte – dann die Felder bitte selbst so eintragen.

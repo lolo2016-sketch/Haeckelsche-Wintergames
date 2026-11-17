@@ -46,7 +46,7 @@ export const STANDARD = {
   szenen: {
     // nur das Video (Text optional): danach laufen die beiden durchs Tor und stellen sich an den Eingang des Kreises
     ankunft: { bilder: 'eins', bildBeide: 'dialog/beide4.png', bildA: 'dialog/beide4_links.png', bildB: 'dialog/beide4_rechts.png', wann: 'alleDa',
-      videoVor: 'videos/ankunft.mp4', zeilen: [] },
+      videoVor: 'videos/ankunft.mp4, videos/ankunft2.mp4', zeilen: [] },
     intro: { bilder: 'eins', bildBeide: 'dialog/beide1.png', bildA: 'dialog/beide1_links.png', bildB: 'dialog/beide1_rechts.png', wann: 'einlauf', zeilen: [
       { s: 'a', t: 'Willkommen, {name}. Schön, dass du es zu den Haeckelschen Wintergames geschafft hast.' },
       { s: 'b', t: 'Wir haben dich nicht ohne Grund eingeladen. Irgendwo hier wartet der Pokal 2026.' },
@@ -89,7 +89,7 @@ export const STANDARD = {
       { s: 'b', t: 'Steht euer Team, wählt ihr euren Kapitän: Wer die meisten Stimmen bekommt, führt euch ins Finale.' },
       { s: 'ich', wahl: ['Ich weiß schon, wen ich will.', 'Hauptsache, ich werde gewählt!'] }
     ] },
-    finale: { bilder: 'eins', bildBeide: 'dialog/beide2.png', bildA: 'dialog/beide2_links.png', bildB: 'dialog/beide2_rechts.png', wann: 'final', videoNach: 'videos/finale.mp4', zeilen: [
+    finale: { bilder: 'eins', bildBeide: 'dialog/beide2.png', bildA: 'dialog/beide2_links.png', bildB: 'dialog/beide2_rechts.png', wann: 'final', videoNach: 'videos/finale1.mp4, videos/finale2.mp4, videos/finale3.mp4, videos/finale4.mp4', zeilen: [
       { s: 'b', t: 'Das Finale ist eröffnet! Du spielst in Team {finaleTeam} mit {mitspieler}, Kapitän ist {kapitaen}.' },
       { s: 'a', t: 'Ihr habt Zeit bis {naechstesEvent}. Macht euch einen Termin aus und spielt alle zusammen.' },
       { s: 'b', t: 'Drei Räume warten: Napoleons Lager, die Rätselkammer und der Schneeballwurf. Alle Vorsprung-Sekunden eures Teams werden abgezogen.' },
@@ -202,9 +202,14 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 export async function playDialog(id, opts = {}) {
   const sz = (opts.cfg || mergeConfig(null)).szenen[id];
   if (!sz) return;
-  await playVideo(sz.videoVor, { skip: !opts.wertung });
+  await playVideos(sz.videoVor, { skip: !opts.wertung });
   await playLines(id, opts);
-  await playVideo(sz.videoNach, { skip: !opts.wertung });
+  await playVideos(sz.videoNach, { skip: !opts.wertung });
+}
+
+// Mehrere Videos hintereinander: im Admin mit Komma trennen, z. B. „videos/finale1.mp4, videos/finale2.mp4“
+async function playVideos(list, opt) {
+  for (const url of String(list || '').split(/[,\n]+/).map(x => x.trim()).filter(Boolean)) await playVideo(url, opt);
 }
 
 // Vollbild-Video. Fehlt die Datei (noch nicht hochgeladen), wird es einfach übersprungen.
