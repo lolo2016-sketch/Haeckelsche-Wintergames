@@ -4,7 +4,7 @@
 // Wer ins selbe Team kommt, bekommt dieselbe Farbe und setzt sich neben die anderen Teammitglieder.
 // Die eigene Figur läuft in der Third-Person-Ansicht ein, danach sieht man die Runde aus ihren Augen.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js';
-import { buildWinterWorld, EIS_X } from './winter.js?v=20261108a';
+import { buildWinterWorld, EIS_X } from './winter.js?v=20261116a';
 
 const BENCH_SHIRT = 0xe2e8f0;
 const HAIR = 0x4a2f1b;
@@ -93,7 +93,7 @@ function faceTexture(name) {
 }
 
 // Namensschild; mit Flagge steht die Flagge groß über dem Namen (Schild ist dann doppelt so hoch)
-function labelTexture(text, captain, flag = null) {
+function labelTexture(text, captain, flag = null, border = null) {
   const top = flag ? 112 : 0;
   return canvasTex(512, 112 + top, (g, w, h) => {
     if (flag) {
@@ -106,6 +106,8 @@ function labelTexture(text, captain, flag = null) {
     const x = (w - tw) / 2;
     g.fillStyle = captain ? 'rgba(250,204,21,.95)' : 'rgba(15,23,42,.72)';
     g.beginPath(); g.roundRect(x, top + 18, tw, 76, 38); g.fill();
+    // farbiger Rahmen (Teamwahl: rot = vergeben, grün = wählbar)
+    if (border != null) { g.lineWidth = 10; g.strokeStyle = '#' + border.toString(16).padStart(6, '0'); g.beginPath(); g.roundRect(x + 5, top + 23, tw - 10, 66, 33); g.stroke(); }
     g.fillStyle = captain ? '#422006' : '#fff';
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillText(text, w / 2, top + 58, w - 60);
@@ -259,6 +261,9 @@ function makeCharacter(p) {
   HALO_TEX ??= haloTexture();
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: HALO_TEX, depthWrite: false, transparent: true }));
   halo.scale.set(0.95, 0.95, 1); halo.position.y = 1.74; halo.visible = false; body.add(halo);
+  // farbiger Ring am Boden (Teamwahl: rot = vergeben, grün = wählbar / wählt gerade)
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.36, 0.5, 40), new THREE.MeshBasicMaterial({ color: 0x22c55e, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; ring.visible = false; root.add(ring);
   const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.32, 12), mat.band);
   arrow.rotation.x = Math.PI; arrow.position.y = 2.6; arrow.visible = false; root.add(arrow);
 
@@ -269,7 +274,7 @@ function makeCharacter(p) {
   bubble.center.set(0.5, 0); bubble.position.y = 2.36; bubble.visible = false; bubble.renderOrder = 11; root.add(bubble);
 
   return {
-    token: p.token, founder: false, name: p.name, band, faceG, agentUrl: null, agentMesh: null, root, body, shirt, legs, arms, head, label, halo, arrow, blob, bubble, bubbleText: null,
+    token: p.token, founder: false, name: p.name, band, faceG, agentUrl: null, agentMesh: null, root, body, shirt, legs, arms, head, label, halo, ring, arrow, blob, bubble, bubbleText: null,
     sit: 0, walkPhase: 0, walkAmt: 0, yaw: 0, actions: [], cur: null, data: p
   };
 }
@@ -295,12 +300,40 @@ function setAgent(ch, url) {
   }, undefined, () => { ch.faceG.visible = true; });   // Bild fehlt: normales Gesicht zeigen
 }
 
+// Orga-Look wie auf dem Pokal-Bild: Retro-Skianzug (1 = lila/gelb, 2 = petrol/grau) und Biathlon-Gewehr auf dem Rücken
+const SUITS = {
+  1: { main: 0x6d28d9, stripe: 0xfacc15, stripe2: 0xbe185d, pants: 0x1e1b4b },
+  2: { main: 0x0f766e, stripe: 0xcbd5e1, stripe2: 0x1e3a8a, pants: 0x0f172a }
+};
+function dressSuit(ch, n) {
+  const c = SUITS[n] || SUITS[1];
+  if (ch.suit === n) return;
+  ch.suit = n;
+  ch.shirt.color.setHex(c.main); ch.suitColor = c.main;
+  const pants = new THREE.MeshLambertMaterial({ color: c.pants }), boot = new THREE.MeshLambertMaterial({ color: 0x111827 });
+  ch.body.traverse(o => { if (o.material === mat.pants) o.material = pants; else if (o.material === mat.shoe) o.material = boot; });
+  // Streifen quer über die Brust (Chevron-Look)
+  for (const [y, col] of [[1.3, c.stripe], [1.2, c.stripe2]]) {
+    const st = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.07, 0.3), new THREE.MeshLambertMaterial({ color: col }));
+    st.position.set(0, y, 0); ch.body.add(st);
+  }
+  // Gewehr schräg auf dem Rücken
+  const g = new THREE.Group();
+  const wood = new THREE.MeshLambertMaterial({ color: 0x7c4a1e }), metal = new THREE.MeshLambertMaterial({ color: 0x1f2937 });
+  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.42, 0.06), wood); stock.position.y = -0.22; g.add(stock);
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.5, 8), metal); barrel.position.y = 0.24; g.add(barrel);
+  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.06), metal); mag.position.set(0.05, -0.02, 0); g.add(mag);
+  g.position.set(0, 1.2, -0.19); g.rotation.z = 0.55; ch.body.add(g);
+  const strap = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.62, 0.02), new THREE.MeshLambertMaterial({ color: 0x111827 }));
+  strap.position.set(0, 1.22, 0.175); strap.rotation.z = -0.62; ch.body.add(strap);
+}
+
 // Teamgründer: goldenes Namensschild mit Stern und Armbinde
-function setFounder(ch, founder, name, flag = null) {
-  if (ch.founder === founder && ch.name === name && ch.flag === flag) return;
-  ch.founder = founder; ch.name = name; ch.flag = flag;
+function setFounder(ch, founder, name, flag = null, border = null) {
+  if (ch.founder === founder && ch.name === name && ch.flag === flag && ch.border === border) return;
+  ch.founder = founder; ch.name = name; ch.flag = flag; ch.border = border;
   ch.label.material.map?.dispose();
-  ch.label.material.map = labelTexture((founder ? '★ ' : '') + name, founder, flag);
+  ch.label.material.map = labelTexture((founder ? '★ ' : '') + name, founder, flag, border);
   ch.label.material.needsUpdate = true;
   // Schild mit Flagge: doppelt so hoch, Unterkante (Name) bleibt an derselben Stelle
   ch.label.scale.y = flag ? 0.5 : 0.25; ch.label.position.y = flag ? 2.305 : 2.18;
@@ -451,7 +484,7 @@ export function createHall3D(container, { meToken, onPersonTap, onDoorTap } = {}
   for (const [i, z] of [[1, -2.3], [2, 2.3]]) {
     const ch = makeCharacter({ token: 'org' + i, name: '', photoUrl: `faces/face${i}.png`, hair: 'kurz' });
     ch.root.scale.setScalar(1.35); ch.label.visible = false; ch.root.userData.token = null;
-    ch.root.position.set(SHRINE.x + 0.4, 0, z); ch.yaw = Math.PI / 2; ch.shirt.color.setHex(0x111827);
+    ch.root.position.set(SHRINE.x + 0.4, 0, z); ch.yaw = Math.PI / 2; dressSuit(ch, i);
     ch.arms[i === 1 ? 1 : 0].sh.rotation.z = (i === 1 ? 1 : -1) * 0.5;   // Arm Richtung Pokal
     applyPose(ch); ch.root.rotation.y = Math.PI / 2;
     ch.noLabel = true; scene.add(ch.root); organizers.push(ch.root);
@@ -465,7 +498,8 @@ export function createHall3D(container, { meToken, onPersonTap, onDoorTap } = {}
   let lookBase = 0;
   let transition = null;
   let pickableSet = new Set();
-  let turnToken = null;
+  let ringMap = new Map(), strongSet = new Set();
+  let turnToken = null, orgaHere = false;
 
   // ----- Sitzplätze -----
   // 1. Grundplatz nach Ankunft (mittig, dann links/rechts im Wechsel)
@@ -524,6 +558,12 @@ export function createHall3D(container, { meToken, onPersonTap, onDoorTap } = {}
         color: p.teamId && colorOf[p.teamId] != null ? colorOf[p.teamId] : BENCH_SHIRT
       };
     }
+    // Orga: steht am Eingang des Kreises (Öffnung der Bank Richtung Tor) und schaut zur Mitte
+    (data.orga || []).forEach((o, i, all) => {
+      const off = (i - (all.length - 1) / 2) * 1.1;
+      const pos = new THREE.Vector3(ring.R - 0.5, 0, CENTER.z + off);
+      res[o.token] = { kind: 'stand', yaw: -Math.PI / 2, pos, front: pos, color: (SUITS[o.suit] || SUITS[1]).main };
+    });
     return { res, ringChanged };
   }
 
@@ -540,18 +580,18 @@ export function createHall3D(container, { meToken, onPersonTap, onDoorTap } = {}
       const f = ch.prevFront;
       ch.actions.push({ type: 'stand', at: f ? f.clone() : new THREE.Vector3(ch.root.position.x, 0, ch.root.position.z) });
     }
-    ch.prevFront = t.front;
+    ch.prevFront = t.kind === 'seat' ? t.front : null;
     ch.actions.push({ type: 'walk', to: t.front });
     ch.actions.push({ type: 'turn', to: t.yaw });
-    ch.actions.push({ type: 'sit', at: t.pos });
+    if (t.kind === 'seat') ch.actions.push({ type: 'sit', at: t.pos });
   }
 
   function placeDirect(ch, t) {
     ch.actions = []; ch.cur = null;
     ch.root.position.copy(t.pos);
     ch.yaw = t.yaw;
-    ch.sit = 1;
-    ch.prevFront = t.front;
+    ch.sit = t.kind === 'seat' ? 1 : 0;
+    ch.prevFront = t.kind === 'seat' ? t.front : null;
     applyPose(ch);
   }
 
@@ -569,7 +609,8 @@ export function createHall3D(container, { meToken, onPersonTap, onDoorTap } = {}
     const founders = new Set((data.teams || []).map(t => t.captainToken).filter(Boolean));
     const tokens = new Set(Object.keys(res));
     for (const t of Object.keys(chars)) if (!tokens.has(t)) { scene.remove(chars[t].root); delete chars[t]; }
-    for (const p of data.people) {
+    const orgaSet = new Set((data.orga || []).map(o => o.token));
+    for (const p of [...data.people, ...(data.orga || [])]) {
       const t = res[p.token];
       if (!t) continue;
       let ch = chars[p.token];
@@ -583,13 +624,17 @@ export function createHall3D(container, { meToken, onPersonTap, onDoorTap } = {}
         routeTo(ch, t, false);               // z. B. ins Team gewählt: rückt neben den Gründer
       }
       ch.target = t;
-      ch.shirt.color.setHex(t.color);
-      setFounder(ch, founders.has(p.token), p.name, p.flagEmoji || null);
+      if (orgaSet.has(p.token)) dressSuit(ch, p.suit || 1); else ch.shirt.color.setHex(t.color);
+      setFounder(ch, founders.has(p.token), p.name, p.flagEmoji || null, data.rings?.[p.token] ?? null);
       setAgent(ch, p.agent ? (p.agentUrl || DEFAULT_AGENT) : null);
     }
     // leuchtende Figuren: entweder ausdrücklich angegeben (z. B. der eigene Tipp beim Raten) oder alle Freien beim Wählen
     pickableSet = new Set(data.pickTokens ?? (data.pickable ? data.people.filter(p => !p.teamId && p.token !== meToken).map(p => p.token) : []));
     turnToken = data.turnToken ?? null;
+    orgaHere = orgaSet.size > 0;
+    organizers.forEach(o => { o.visible = !agentMood && !orgaHere; });
+    ringMap = new Map(Object.entries(data.rings || {}));   // token → Farbe (Zahl)
+    strongSet = new Set(data.strongTokens || []);           // diese leuchten zusätzlich (z. B. wer gerade wählt)
     if (first) {
       first = false;
       if (chars[meToken]) setView('first'); else setView('orbit');
@@ -775,8 +820,18 @@ export function createHall3D(container, { meToken, onPersonTap, onDoorTap } = {}
     for (const ch of Object.values(chars)) {
       tick(ch, dt);
       const pk = pickableSet.has(ch.token) && !ch.cur;
-      ch.halo.visible = pk;
-      if (pk) { const s = 0.85 + Math.sin(time * 5) * 0.15; ch.halo.scale.set(s, s, 1); }
+      const rc = ringMap.get(ch.token), strong = strongSet.has(ch.token) && !ch.cur;
+      ch.ring.visible = rc != null && !ch.cur;
+      if (ch.ring.visible) {
+        ch.ring.material.color.setHex(rc); const rs = strong ? 1 + Math.sin(time * 5) * 0.12 : 1; ch.ring.scale.set(rs, rs, 1);
+        // am Boden vor den Füßen (sitzend liegt der Körper-Ursprung über der Bank)
+        ch.ring.position.set(0, -ch.root.position.y + 0.03, ch.sit > 0.5 ? 0.42 : 0);
+      }
+      // Leuchten hinter dem Kopf: weiß = ausgewählt, sonst in der Ringfarbe (rot/grün), wer gerade wählt pulsiert
+      ch.halo.visible = pk || rc != null && !ch.cur;
+      ch.halo.material.color.setHex(pk ? 0xffffff : rc ?? 0xffffff);
+      ch.halo.material.opacity = pk || strong ? 1 : 0.75;
+      if (ch.halo.visible) { const s = pk || strong ? 0.85 + Math.sin(time * 5) * 0.15 : 0.8; ch.halo.scale.set(s, s, 1); }
       const camDist = camera.position.distanceTo(ch.label.getWorldPosition(_v));
       ch.label.visible = camDist > 2.6;
       ch.bubble.visible = !!ch.bubbleText && camDist > 1.4;
@@ -820,7 +875,7 @@ export function createHall3D(container, { meToken, onPersonTap, onDoorTap } = {}
   function setAgentMode(on) {
     if (agentMood === !!on) return;
     agentMood = !!on; world.setMood(agentMood);
-    shrine.setAgent(agentMood); organizers.forEach(o => { o.visible = !agentMood; });
+    shrine.setAgent(agentMood); organizers.forEach(o => { o.visible = !agentMood && !orgaHere; });
   }
 
   return {

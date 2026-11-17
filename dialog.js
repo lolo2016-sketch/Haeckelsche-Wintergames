@@ -6,6 +6,7 @@
 
 // Szenen in ihrer Reihenfolge
 export const SZENEN = [
+  { id: 'ankunft', titel: '0 · Ankunft der Orga (wenn alle da sind)' },
   { id: 'intro', titel: '1 · Intro (nach dem Video, vor dem Einlauf)' },
   { id: 'snake', titel: '2 · Vor Snake (Spiel erklären)' },
   { id: 'wahl', titel: '3 · Auswertung Snake + Wählen' },
@@ -17,6 +18,7 @@ export const SZENEN = [
 // Wann eine Szene kommt (jede Szene läuft pro Person genau einmal)
 export const WANN = [
   ['einlauf', 'Beim ersten Öffnen, vor dem Einlauf'],
+  ['alleDa', 'Sobald alle Teilnehmer angekommen sind'],
   ['snake', 'Phase 1: Snake'],
   ['guess', 'Phase 2: Auswertung Snake + Wählen'],
   ['pairs', 'Phase 3: Auflösung (nur bei Handbetrieb)'],
@@ -42,6 +44,9 @@ export const STANDARD = {
   namen: { a: 'Orga 1', b: 'Orga 2' },
   hintergrund: 'dialog/hintergrund.jpg',
   szenen: {
+    // nur das Video (Text optional): danach laufen die beiden durchs Tor und stellen sich an den Eingang des Kreises
+    ankunft: { bilder: 'eins', bildBeide: 'dialog/beide4.png', bildA: 'dialog/beide4_links.png', bildB: 'dialog/beide4_rechts.png', wann: 'alleDa',
+      videoVor: 'videos/ankunft.mp4', zeilen: [] },
     intro: { bilder: 'eins', bildBeide: 'dialog/beide1.png', bildA: 'dialog/beide1_links.png', bildB: 'dialog/beide1_rechts.png', wann: 'einlauf', zeilen: [
       { s: 'a', t: 'Willkommen, {name}. Schön, dass du es zu den Haeckelschen Wintergames geschafft hast.' },
       { s: 'b', t: 'Wir haben dich nicht ohne Grund eingeladen. Irgendwo hier wartet der Pokal 2026.' },
@@ -49,7 +54,7 @@ export const STANDARD = {
       { s: 'a', t: 'Mehrere Runden, ein Ziel: Wer am Ende das Finale am schnellsten löst, holt sich den Pokal.' },
       { s: 'b', t: 'Geh rein und such dir deinen Platz auf der Bank. Wir melden uns, sobald es losgeht.' }
     ] },
-    snake: { bilder: 'eins', bildBeide: 'dialog/beide2.png', bildA: 'dialog/beide2_links.png', bildB: 'dialog/beide2_rechts.png', wann: 'snake', zeilen: [
+    snake: { bilder: 'eins', bildBeide: 'dialog/beide2.png', bildA: 'dialog/beide2_links.png', bildB: 'dialog/beide2_rechts.png', wann: 'snake', videoNach: 'videos/snake.mp4', zeilen: [
       { s: 'a', t: 'Runde 1: Winter-Snake! Du findest das Spiel unten im Tab 🎮 Minispiel.' },
       { s: 'b', t: 'Du bist der Kopf der Schlange – mit Weihnachtsmütze. Sammle so viele Gesichter wie möglich. Jedes Gesicht ist ein Punkt und hängt sich hinten an.' },
       { s: 'a', t: 'Steuern kannst du mit den Pfeilen unten oder durch Wischen auf dem Spielfeld.' },
@@ -68,7 +73,7 @@ export const STANDARD = {
       { s: 'ich', wahl: ['Ich verrate nichts. 🤫', 'Welche Flagge habe ich nochmal?'] },
       { s: 'a', t: 'Tippe rechts auf 🏳️: Dort siehst du deine Flagge, kannst dich 5 Minuten enttarnen – oder einmal heimlich jemanden ausspionieren. Die Auflösung kommt {naechstesEvent}.' }
     ] },
-    biathlon: { bilder: 'eins', bildBeide: 'dialog/beide4.png', bildA: 'dialog/beide4_links.png', bildB: 'dialog/beide4_rechts.png', wann: 'biathlon', zeilen: [
+    biathlon: { bilder: 'eins', bildBeide: 'dialog/beide4.png', bildA: 'dialog/beide4_links.png', bildB: 'dialog/beide4_rechts.png', wann: 'biathlon', videoNach: 'videos/biathlon.mp4', zeilen: [
       { s: 'a', t: 'Die Auflösung ist da! Dein Partner ist {partner}.' },
       { s: 'b', t: 'Runde 2: Biathlon! Ihr spielt als Paar. Im Tab 🎮 Minispiel fährst du mit ◀ ▶, springst mit ▲ und legst dich mit ▼ hin.' },
       { s: 'a', t: 'Hindernisse lassen dich stürzen – 2 Sekunden zum Aufstehen. Trainieren kannst du so oft du willst.' },
@@ -81,10 +86,10 @@ export const STANDARD = {
       { s: 'a', t: 'Jetzt werden die Teams fürs Finale gebildet. Die vier schnellsten Paare sind die Teams A bis D.' },
       { s: 'b', t: 'Das beste Paar wählt zuerst zwei weitere Leute, dann das zweitbeste und so weiter. Gewählt wird in der Halle: antippen, dann bestätigen.' },
       { s: 'a', t: 'Wählen darf aus jedem Paar, wer im Biathlon schneller war – bei euch {waehler}.' },
-      { s: 'b', t: 'Steht euer Team, wählt ihr euren Kapitän: Wer zuerst 2 Stimmen hat, führt euch ins Finale.' },
+      { s: 'b', t: 'Steht euer Team, wählt ihr euren Kapitän: Wer die meisten Stimmen bekommt, führt euch ins Finale.' },
       { s: 'ich', wahl: ['Ich weiß schon, wen ich will.', 'Hauptsache, ich werde gewählt!'] }
     ] },
-    finale: { bilder: 'eins', bildBeide: 'dialog/beide2.png', bildA: 'dialog/beide2_links.png', bildB: 'dialog/beide2_rechts.png', wann: 'final', zeilen: [
+    finale: { bilder: 'eins', bildBeide: 'dialog/beide2.png', bildA: 'dialog/beide2_links.png', bildB: 'dialog/beide2_rechts.png', wann: 'final', videoNach: 'videos/finale.mp4', zeilen: [
       { s: 'b', t: 'Das Finale ist eröffnet! Du spielst in Team {finaleTeam} mit {mitspieler}, Kapitän ist {kapitaen}.' },
       { s: 'a', t: 'Ihr habt Zeit bis {naechstesEvent}. Macht euch einen Termin aus und spielt alle zusammen.' },
       { s: 'b', t: 'Drei Räume warten: Napoleons Lager, die Rätselkammer und der Schneeballwurf. Alle Vorsprung-Sekunden eures Teams werden abgezogen.' },
@@ -92,7 +97,7 @@ export const STANDARD = {
       { s: 'ich', wahl: ['Wir sind bereit.', 'Was, wenn wir die falsche Waffe nehmen?'] },
       { s: 'b', t: 'Jede falsche Waffe kostet 2 Strafsekunden. Wer am wenigsten Zeit braucht, gewinnt. Viel Glück, Agent {name}!' }
     ] },
-    ende: { bilder: 'eins', bildBeide: 'dialog/beide3.png', bildA: 'dialog/beide3_links.png', bildB: 'dialog/beide3_rechts.png', wann: 'ende', zeilen: [
+    ende: { bilder: 'eins', bildBeide: 'dialog/beide3.png', bildA: 'dialog/beide3_links.png', bildB: 'dialog/beide3_rechts.png', wann: 'ende', videoVor: 'videos/ende.mp4', zeilen: [
       { s: 'a', t: 'Die Haeckelschen Wintergames sind vorbei. Zeit für die Siegerehrung!' },
       { s: 'b', t: 'Gewonnen hat Team {siegerTeam}: {siegerNamen} mit {siegerZeit}. Herzlichen Glückwunsch!' },
       { s: 'a', t: 'Dein Team {finaleTeam} ist auf Platz {finalePlatz} gelandet. Danke, dass du dabei warst, {name}!' },
@@ -101,7 +106,7 @@ export const STANDARD = {
   }
 };
 // Standardwerte für die Bilder einer Szene
-const BILD_STANDARD = { bilder: 'zwei', bildA: 'dialog/sprecher1.png', bildB: 'dialog/sprecher2.png', bildBeide: 'dialog/beide.png', hintergrund: '' };
+const BILD_STANDARD = { bilder: 'zwei', bildA: 'dialog/sprecher1.png', bildB: 'dialog/sprecher2.png', bildBeide: 'dialog/beide.png', hintergrund: '', videoVor: '', videoNach: '' };
 const ERSATZ = { a: 'faces/face1.png', b: 'faces/face2.png', hintergrund: 'agents/welt/eispokal_vorne.png' };
 
 // Gespeicherte Einstellungen (Firebase) über die Startwerte legen
@@ -121,6 +126,11 @@ export function mergeConfig(remote) {
 }
 
 const CSS = `
+.dlg-vid{position:fixed;inset:0;z-index:9100;background:#000;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .4s}
+.dlg-vid.on{opacity:1}
+.dlg-vid video{width:100%;height:100%;object-fit:contain;background:#000}
+.dlg-vid-play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:1.3rem;padding:16px 26px;border-radius:999px;border:none;background:#fff;color:#0b1a2e;font-weight:700}
+.dlg-vid-skip{position:absolute;right:16px;bottom:calc(20px + env(safe-area-inset-bottom));padding:10px 16px;border-radius:999px;border:1px solid rgba(255,255,255,.4);background:rgba(0,0,0,.45);color:#fff;font-size:1rem}
 .dlg{position:fixed;inset:0;z-index:9000;overflow:hidden;background:#0b1a2e;color:#f3ead7;font-family:Georgia,'Times New Roman',serif;
   user-select:none;-webkit-user-select:none;touch-action:manipulation;opacity:0;transition:opacity .45s}
 .dlg.on{opacity:1}
@@ -188,7 +198,50 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 
 // Spielt eine Szene ab. Ergebnis: Promise, das erfüllt wird, wenn die Szene zu Ende ist (oder übersprungen wurde).
 // onAnswer(zeile, gewählt, richtig): wird bei jeder Antwort aufgerufen; wertung = true zeigt „+1 s“ bei richtigen Antworten
-export function playDialog(id, { cfg = mergeConfig(null), name = '', agentUrl = 'agents/agent1.png', vars = {}, onAnswer = null, wertung = false } = {}) {
+// Szene abspielen: Video davor (falls eingetragen und vorhanden) → Dialog → Video danach
+export async function playDialog(id, opts = {}) {
+  const sz = (opts.cfg || mergeConfig(null)).szenen[id];
+  if (!sz) return;
+  await playVideo(sz.videoVor, { skip: !opts.wertung });
+  await playLines(id, opts);
+  await playVideo(sz.videoNach, { skip: !opts.wertung });
+}
+
+// Vollbild-Video. Fehlt die Datei (noch nicht hochgeladen), wird es einfach übersprungen.
+// Beim ersten Ansehen nicht überspringbar (wie das Intro) – außer es hängt; beim nochmal Ansehen (💬) jederzeit.
+export async function playVideo(url, { skip = false } = {}) {
+  url = String(url || '').trim();
+  if (!url) return;
+  try { const r = await fetch(url, { method: 'HEAD', cache: 'no-store' }); if (!r.ok) return; } catch (e) { return; }
+  injectCss();
+  return new Promise(resolve => {
+    const ov = document.createElement('div'); ov.className = 'dlg-vid';
+    ov.innerHTML = `<video playsinline preload="auto"></video>
+      <button class="dlg-vid-play" hidden>▶ Video abspielen</button>
+      <button class="dlg-vid-skip" hidden>Überspringen ⏭</button>`;
+    document.body.appendChild(ov);
+    const v = ov.querySelector('video'), playBtn = ov.querySelector('.dlg-vid-play'), skipBtn = ov.querySelector('.dlg-vid-skip');
+    let done = false, lastT = -1, stuck = 0;
+    const end = () => { if (done) return; done = true; clearInterval(watch); v.pause(); ov.classList.remove('on'); setTimeout(() => ov.remove(), 400); resolve(); };
+    const showSkip = () => { skipBtn.hidden = false; };
+    if (skip) showSkip();
+    v.src = url;
+    v.addEventListener('ended', end);
+    v.addEventListener('error', end);
+    skipBtn.onclick = end;
+    const tryPlay = () => v.play().then(() => { playBtn.hidden = true; }).catch(() => { playBtn.hidden = false; });   // Autoplay mit Ton blockiert → Knopf
+    playBtn.onclick = () => { v.muted = false; tryPlay(); };
+    // hängt das Video 10 s ohne Fortschritt, darf man überspringen
+    const watch = setInterval(() => {
+      if (v.paused && !playBtn.hidden) return;
+      if (v.currentTime === lastT) { if (++stuck >= 10) showSkip(); } else { stuck = 0; lastT = v.currentTime; }
+    }, 1000);
+    requestAnimationFrame(() => ov.classList.add('on'));
+    tryPlay();
+  });
+}
+
+function playLines(id, { cfg = mergeConfig(null), name = '', agentUrl = 'agents/agent1.png', vars = {}, onAnswer = null, wertung = false } = {}) {
   const sz = cfg.szenen[id];
   const lines = (sz?.zeilen || []).map((z, idx) => ({ ...z, idx }))
     .filter(z => (z.s === 'ich' ? z.wahl?.some(w => w.trim()) : String(z.t ?? '').trim()));

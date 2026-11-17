@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <script>
 // Ladefehler sichtbar machen (z. B. fehlende oder veraltete Datei nach dem Hochladen)
-window.APP_VERSION = '20261108a';
+window.APP_VERSION = '20261117a';
 (function () {
   var shown = {};
   window.showLoadError = function (what) {
@@ -63,12 +63,12 @@ window.APP_VERSION = '20261108a';
       collection, getDocs
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261108a";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261108a";
+    import { playSnake, playReplay } from "./minigame.js?v=20261117a";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261117a";
     import { PHASES, PHASE_NAMES, phaseIndex, settings, DEFAULTS, COUNTRIES, country, isPerson, teamColor, snakeRanking,
       guessedRight, teamBonus, teamBiathlon, revealTeams, FINAL_TEAMS, finalMembers, finalBonus, finalScoreMs, fmtClock, WEAPONS, weaponName, weaponList,
-      SCHEDULE, effectivePhase, nextEvent, fmtWhen, draftState, finalCaptain } from "./draft.js?v=20261108a";
-    import { SZENEN, WANN, PLATZHALTER, mergeConfig, playDialog } from "./dialog.js?v=20261108a";
+      SCHEDULE, effectivePhase, nextEvent, fmtWhen, draftState, finalCaptain } from "./draft.js?v=20261117a";
+    import { SZENEN, WANN, PLATZHALTER, mergeConfig, playDialog } from "./dialog.js?v=20261117a";
     window.APP_READY = true;   // alle Dateien geladen
 
     const app = initializeApp(firebaseConfig);
@@ -227,6 +227,9 @@ window.APP_VERSION = '20261108a';
             : `<label>${escA(N.a)} <input id="dlgBildA" list="dialogFiles" value="${escA(sz.bildA)}" style="width:200px"></label>${thumb(sz.bildA)}
                <label style="margin-left:8px">${escA(N.b)} <input id="dlgBildB" list="dialogFiles" value="${escA(sz.bildB)}" style="width:200px"></label>${thumb(sz.bildB)}`}
           <div style="margin-top:6px"><label>Eigener Hintergrund nur für diese Szene (leer = allgemeiner) <input id="dlgBgOne" list="dialogFiles" value="${escA(sz.hintergrund)}" style="width:200px"></label></div>
+          <div style="margin-top:6px;background:#eef6ff;border-radius:8px;padding:6px 8px">🎬 <label>Video davor <input id="dlgVidVor" value="${escA(sz.videoVor || '')}" placeholder="z. B. videos/ankunft.mp4" style="width:190px"></label>
+            <label style="margin-left:8px">Video danach <input id="dlgVidNach" value="${escA(sz.videoNach || '')}" placeholder="z. B. videos/snake.mp4" style="width:190px"></label>
+            <div style="font-size:.82rem;color:#555;margin-top:3px">Videos in den Ordner <code>videos/</code> im Repo laden (MP4, H.264, am besten unter 20 MB). Fehlt die Datei, wird das Video einfach übersprungen. Leer = kein Video. Mehrere Videos nacheinander: mit Komma trennen.</div></div>
           <div style="margin-top:10px">${sz.zeilen.map((z, k) => `<div style="display:flex;gap:6px;align-items:flex-start;margin:6px 0;${z.s === 'ich' ? 'background:#fff7e0;border-radius:8px;padding:4px' : ''}">
               <span style="min-width:22px;color:#888;padding-top:6px">${k + 1}.</span>${who(z, k)}
               ${z.s === 'ich'
@@ -254,6 +257,8 @@ window.APP_VERSION = '20261108a';
       q('dlgNameB').oninput = e => { N.b = e.target.value; changed(); };
       q('dlgBgAll').oninput = e => { dlgCfg.hintergrund = e.target.value.trim(); changed(); };
       q('dlgBgOne').oninput = e => { sz.hintergrund = e.target.value.trim(); changed(); };
+      q('dlgVidVor').oninput = e => { sz.videoVor = e.target.value.trim(); changed(); };
+      q('dlgVidNach').oninput = e => { sz.videoNach = e.target.value.trim(); changed(); };
       q('dlgWann').onchange = e => { sz.wann = e.target.value; changed(); };
       el.querySelectorAll('input[name=dlgMode]').forEach(r => r.onchange = () => { sz.bilder = r.value; changed(true); });
       for (const [id, key] of [['dlgBildA', 'bildA'], ['dlgBildB', 'bildB'], ['dlgBildBeide', 'bildBeide']]) {
@@ -315,6 +320,7 @@ window.APP_VERSION = '20261108a';
       // Alle außer Admins sind Teilnehmer (frühere Rollen Kapitän/Spieler werden nicht mehr unterschieden)
       const people = participants.filter(isPerson);
       const admins = participants.filter(p => p.role === 'admin');
+      const orgas = participants.filter(p => p.role === 'orga');
       const st = settings(state);
       const PI = phaseIndex(effectivePhase(state));        // mit Zeitplan: die Phase, die gerade gilt
       const toLocal = ms => ms ? new Date(ms - new Date(ms).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
@@ -362,7 +368,7 @@ window.APP_VERSION = '20261108a';
         </div>
         <div style="margin-top:10px">
           <span>🏟️ In der Halle: ${people.filter(p => p.arrivedAt).length} von ${people.length}</span>
-          <button class="secondary" id="resetArrivals">Halle leeren (alle wieder „noch nicht da“)</button>
+          <button class="secondary" id="resetArrivals">Halle leeren (alle wieder „noch nicht da“, Dialoge von vorn)</button>
           <span style="color:#666;font-size:.85rem">Leert die Halle und macht alle QR-Codes wieder „frisch“ (Einlauf + Intro-Video wie beim ersten Mal).</span>
         </div>
         <div style="margin-top:10px">
@@ -452,6 +458,20 @@ window.APP_VERSION = '20261108a';
         <div>${mediaInputs('newPl-')}</div>
         <p class="filesHint" style="font-size:.85rem;color:#666;margin:4px 0">${filesHint()}</p>
         <button id="addPlayer">Hinzufügen</button>
+      </div>`;
+
+      html += `<div class="card"><h2>🎿 Orga in der Halle (${orgas.length})</h2>
+        <p style="font-size:0.9rem;color:#555;margin-top:0">Eure eigenen Spieler-Links für die Halle: Ihr steht im Skianzug mit Biathlon-Gewehr am Eingang des Kreises,
+          sobald alle Teilnehmer angekommen sind, und könnt mit allen chatten. Ihr spielt nicht mit (kein Raten, keine Teams, kein Bonus).
+          Anzug 1 = lila/gelb (links auf dem Pokal-Bild), Anzug 2 = petrol/grau (rechts).</p>
+        <label style="display:block;margin:6px 0"><input type="checkbox" id="orgaShow" ${state.orgaShow ? 'checked' : ''}> Orga jetzt erscheinen lassen – mit Ankunfts-Video –, auch wenn noch nicht alle da sind</label>
+        ${orgas.map(o => { const l = `${introUrl}?t=${o.token}`; return `<div class="token-list" style="border-top:1px solid #eee;padding-top:8px;margin-top:8px">
+          <strong>${escA(o.name)}</strong> · Anzug ${o.suit || 1} · Gesicht ${escA(o.photoUrl || '–')}
+          <br>Link: <a href="${l}" target="_blank">${l}</a> ${qrImg(l, 110)}
+          <button class="danger remove" data-token="${o.token}">Entfernen</button></div>`; }).join('')}
+        <div style="margin-top:10px"><input id="orgaName" placeholder="Name"> <input id="orgaPhoto" placeholder="faces/face1.png" style="width:150px">
+          <select id="orgaSuit"><option value="1">Anzug 1 (lila/gelb)</option><option value="2">Anzug 2 (petrol/grau)</option></select>
+          <button id="addOrga">Orga-Link anlegen</button></div>
       </div>`;
 
       html += `<div class="card">
@@ -557,7 +577,10 @@ window.APP_VERSION = '20261108a';
       mountDlg();
       document.getElementById('resetArrivals')?.addEventListener('click', async () => {
         if (!confirm('Alle Teilnehmer wieder auf "noch nicht da" setzen? Die Halle ist danach leer, jeder läuft beim nächsten Öffnen neu ein und sieht sein Intro-Video wieder wie beim ersten Mal (nicht überspringbar).')) return;
-        for (const p of participants.filter(x => x.role !== 'admin')) await updateDoc(doc(db, 'participants', p.token), { arrivedAt: null, videoViews: 0 });
+        // auch gesehene Dialoge, Dialog-Punkte, Enttarnen und Spionage zurücksetzen – sonst kommt z. B. das Intro bei allen,
+        // die es beim Testen schon gesehen haben, nicht noch einmal
+        for (const p of participants.filter(x => x.role !== 'admin')) await updateDoc(doc(db, 'participants', p.token),
+          { arrivedAt: null, videoViews: 0, dialogsSeen: [], dialogPoints: [], revealUntil: null, spyUsed: null, spyAt: null });
         loadAll();
       });
       document.getElementById('freshStart')?.addEventListener('click', async () => {
@@ -611,6 +634,18 @@ window.APP_VERSION = '20261108a';
         lastAdded = token;
         await loadAll();
         document.getElementById('freshCard')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+
+      document.getElementById('addOrga').addEventListener('click', async () => {
+        const name = document.getElementById('orgaName').value.trim();
+        if (!name) return;
+        const suit = Number(document.getElementById('orgaSuit').value) || 1;
+        const photoUrl = document.getElementById('orgaPhoto').value.trim() || `faces/face${suit}.png`;
+        await setDoc(doc(db, 'participants', genToken()), { name, role: 'orga', suit, photoUrl, hair: 'kurz' });
+        loadAll();
+      });
+      document.getElementById('orgaShow').addEventListener('change', async e => {
+        await setDoc(doc(db, 'state', 'current'), { ...state, orgaShow: e.target.checked }); loadAll();
       });
 
       document.getElementById('addAdmin').addEventListener('click', async () => {

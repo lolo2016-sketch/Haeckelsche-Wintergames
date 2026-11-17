@@ -532,7 +532,7 @@ Dann wechselt die Phase auf allen Handys von selbst (Prüfung alle 15 s):
 5. **Biathlon endet → Teams fürs Finale wählen:** Die 4 schnellsten Paare (Summe der Bestzeiten) sind die Teams A–D.
    Reihum (A zuerst) wählt aus jedem Paar **der/die Schnellere** in der Halle die fehlenden Leute (bei 16 Personen je 2):
    antippen (gelb) → „Bestätigen“ → „Willst du wirklich bestätigen …?“. Danach wählt jedes Team seinen **Kapitän**:
-   wer zuerst 2 Stimmen hat. Admin-Karte „🧩 Teamwahl“ zeigt den Stand; korrigieren in der Finale-Karte (Team/Kapitän setzen).
+   wer die meisten Stimmen hat, sobald alle abgestimmt haben. Admin-Karte „🧩 Teamwahl“ zeigt den Stand; korrigieren in der Finale-Karte (Team/Kapitän setzen).
 6. **Finale startet:** Dialog „Finale eröffnet“, Tür unten im Eis-Pokal; nur der Kapitän öffnet sie.
 7. **Siegerehrung:** Finale ist zu, Dialog „Siegerehrung“ ({siegerTeam}, {siegerNamen}, {siegerZeit}, {finalePlatz}).
 
@@ -561,3 +561,58 @@ Dann wechselt die Phase auf allen Handys von selbst (Prüfung alle 15 s):
 - **Raum 3:** Lösungswort **DER WINTER NAHT** (16 Dosen: 13 Buchstaben + 3 leere). Die Wortfelder stehen Wort für Wort.
   Der Schneeball fällt auf die Entfernung etwas ab (ca. 65 cm auf 24 m) – man muss etwas über die Dose zielen.
   Stärke ändern: `DROP_PER_M` in `room3.js` (0.027 = 65 cm; größer = fällt stärker).
+
+## Update 20261108b
+- **„Halle leeren“ setzt jetzt auch die Dialoge zurück** (gesehene Szenen, Dialog-Punkte, Enttarnen, Spionage).
+  Vorher bekamen alle, die das Intro beim Testen schon gesehen hatten, es nach dem Leeren nicht noch einmal.
+  Ergebnisse, Teams und Chat bleiben dabei erhalten (die löscht nur „Neu starten“).
+
+## Update 20261116a – Sofort-Rückmeldung beim Raten, Teamwahl in Farbe, Orga in der Halle, Videos
+
+**Raten (Phase Wählen)**
+- Niemand wartet mehr auf die anderen: Wer eine Person antippt und bestätigt, sieht sofort
+  „🎉 Richtig geraten!“ oder „❌ Leider falsch – die Person hat 🇫🇷 Frankreich“. Das sieht nur er selbst.
+- Es gibt nur **einen** Tipp. Die Flagge der getippten Person bleibt für dich danach sichtbar.
+- Sobald alle getippt haben, wird der Flaggen-Knopf 🏳️ zum Umschalter **Agent 🕶️ ↔ Gesichter 🙂**.
+  Die Flaggen hängen dann bei allen über dem Namen.
+
+**Ausspionieren**
+- Wer jemanden ausspioniert, wird dabei automatisch selbst **5 Minuten für alle enttarnt**.
+
+**Teamwahl nach dem Biathlon**
+- Namensschilder mit grünem Rahmen: Diese Personen sind noch wählbar.
+- Namensschilder mit rotem Rahmen: Diese Personen sind schon vergeben, also die Plätze 1–4 und alle bereits Gewählten.
+- Das Paar, das gerade wählen darf, leuchtet grün und pulsiert.
+- Sind alle Teams komplett, setzen sich die Viererteams nebeneinander. Jeder bekommt dann
+  „🎉 Ihr habt euer Team gefunden! Wählt jetzt euren Kapitän“.
+- Kapitän wird, **wer die meisten Stimmen hat, sobald alle im Team abgestimmt haben**.
+  Bei Gleichstand gewinnt, wer diese Stimmenzahl zuerst erreicht hat.
+- Im Admin kann man den Kapitän weiterhin fest setzen.
+- Hinweis zu deinen gespeicherten Dialogtexten: Szene 5 sagt evtl. noch „Wer zuerst 2 Stimmen hat …“. Bitte im Dialog-Editor anpassen.
+
+**Orga in der Halle (eure eigenen Links)**
+- **Anlegen:** In `admin.html` gibt es die Karte „🎿 Orga in der Halle“. Dort Name, Gesicht und Anzug eintragen und dann „Orga-Link anlegen“ drücken.
+  - Anzug 1 ist lila/gelb, wie links auf dem Pokal-Bild.
+  - Anzug 2 ist petrol/grau, wie rechts auf dem Pokal-Bild.
+  - Ohne Angabe nimmt das Gesicht `faces/face1.png` bzw. `faces/face2.png`.
+- **Was der Link kann:** Er führt in die Halle. Ihr könnt chatten, die Leute antippen und das Leaderboard ansehen.
+- **Was der Link nicht kann:** Ihr spielt nicht mit, also kein Raten, kein Team und kein Bonus. Ihr seht auch keine Dialoge.
+- **Wann ihr erscheint:** Sobald **alle Teilnehmer angekommen** sind, sieht jeder einmal das Ankunfts-Video (Szene 0). Danach lauft ihr im Skianzug mit Biathlon-Gewehr durchs Tor und stellt euch an den Eingang des Kreises.
+- **Früher erscheinen:** Mit dem Haken „Orga jetzt erscheinen lassen“ geht das, auch wenn noch nicht alle da sind.
+- Die beiden Figuren neben dem Pokal werden dann ausgeblendet.
+
+**Videos**
+- **Einstellen:** Jede Dialog-Szene hat jetzt im Admin „🎬 Video davor“ und „🎬 Video danach“.
+- **Hochladen:** Die Videos kommen in den Ordner `videos/` im Repo. Format MP4 (H.264 + AAC), Hochformat 9:16 oder 16:9, am besten unter 20 MB.
+- **Fehlende Datei:** Gibt es eine eingetragene Datei noch nicht, wird sie einfach übersprungen.
+- **Überspringen:**
+  - Beim ersten Ansehen geht es nicht, wie beim Intro. Nur wenn das Video 10 s hängt, erscheint „Überspringen“.
+  - Beim nochmal Ansehen über 💬 geht es jederzeit.
+- **Ton:** Blockiert das Handy den Ton beim automatischen Start, erscheint „▶ Video abspielen“.
+- **Voreingestellt (Startwerte):**
+  - `videos/ankunft.mp4`: Szene 0 „Ankunft der Orga“, wenn alle da sind.
+  - `videos/snake.mp4`: nach dem Dialog vor Snake.
+  - `videos/biathlon.mp4`: nach dem Dialog vor dem Biathlon.
+  - `videos/finale.mp4`: nach dem Dialog „Finale eröffnet“.
+  - `videos/ende.mp4`: vor der Siegerehrung.
+- **Achtung bei gespeicherten Texten:** Für deine schon gespeicherten Szenen gelten die Startwerte nur, solange dort noch kein eigenes Video eingetragen ist. Die Felder sind also schon ausgefüllt. Einmal „💾 Alle Szenen speichern“ schreibt sie fest. Deine Texte bleiben dabei unverändert.

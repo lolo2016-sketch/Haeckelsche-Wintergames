@@ -5,7 +5,7 @@
 // Bonussekunden fürs Finale: richtig geraten (pro Person) + Snake-Platz 1–3.
 // Rollen aus früheren Versionen ("captain"/"player") spielen keine Rolle, nur "admin" wird ausgelassen.
 import { doc, collection, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { biathlonRank } from "./biathlon.js?v=20261108a";
+import { biathlonRank } from "./biathlon.js?v=20261116a";
 
 // Phasen in Reihenfolge
 export const PHASES = ['setup', 'snake', 'guess', 'pairs', 'biathlon', 'done', 'final', 'ende'];
@@ -70,7 +70,8 @@ export const TEAM_COLORS = ['#dc2626', '#2563eb', '#16a34a', '#facc15', '#9333ea
   '#f97316', '#84cc16', '#78350f', '#1e293b', '#14b8a6', '#f472b6', '#a3e635'];
 export const teamColor = i => TEAM_COLORS[((i % TEAM_COLORS.length) + TEAM_COLORS.length) % TEAM_COLORS.length];
 
-export const isPerson = p => p && p.role !== 'admin';
+export const isPerson = p => p && p.role !== 'admin' && p.role !== 'orga';   // Orga (Veranstalter in der Halle) spielt nicht mit
+export const isOrga = p => !!p && p.role === 'orga';
 
 // ----- Snake: beste Leistung pro Person -----
 export const playedSnake = p => !!p.minigamePlayed;
@@ -179,16 +180,21 @@ export function draftState(teams, people) {
 export const FINAL_TEAMS = ['A', 'B', 'C', 'D'];
 export const PENALTY_S = 2;   // Strafsekunden pro falscher Waffe
 export const finalMembers = (letter, people) => people.filter(p => p.finalTeam === letter);
-// Kapitän: vom Admin festgelegt, sonst gewählt – wer zuerst 2 Stimmen hat (bei Teams mit weniger als 2 Leuten reicht 1)
+// Kapitän: vom Admin festgelegt, sonst gewählt – sobald alle im Team abgestimmt haben, gewinnt, wer die meisten Stimmen hat
+// (bei Gleichstand: wer diese Stimmenzahl zuerst erreicht hat)
 export function finalCaptain(letter, people) {
   const mem = finalMembers(letter, people);
   const fixed = mem.find(p => p.finalCaptain); if (fixed) return fixed;
-  const need = Math.min(2, mem.length), count = {};
-  for (const v of mem.filter(p => p.captainVote && mem.some(m => m.token === p.captainVote)).sort((a, b) => (a.captainVoteAt || 0) - (b.captainVoteAt || 0))) {
+  const votes = mem.filter(p => p.captainVote && mem.some(m => m.token === p.captainVote));
+  if (!mem.length || votes.length < mem.length) return null;          // noch nicht alle haben gewählt
+  const count = {}, reached = {};
+  for (const v of votes.sort((a, b) => (a.captainVoteAt || 0) - (b.captainVoteAt || 0))) {
     count[v.captainVote] = (count[v.captainVote] || 0) + 1;
-    if (count[v.captainVote] >= need) return mem.find(m => m.token === v.captainVote) ?? null;
+    reached[v.captainVote + ':' + count[v.captainVote]] ??= v.captainVoteAt || 0;
   }
-  return null;
+  const max = Math.max(...Object.values(count));
+  const best = Object.keys(count).filter(t => count[t] === max).sort((a, b) => reached[a + ':' + max] - reached[b + ':' + max])[0];
+  return mem.find(m => m.token === best) ?? null;
 }
 // Vorsprung fürs Finale: Summe der Boni aller Mitglieder (Raten + Snake)
 export function finalBonus(letter, people, state) {
