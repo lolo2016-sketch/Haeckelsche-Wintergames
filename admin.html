@@ -329,7 +329,12 @@ window.APP_VERSION = '20261118b';
       const nameOf = tok => people.find(p => p.token === tok)?.name ?? '?';
       const step = (i, id, label, extra = '') => `<button id="${id}" ${PI === i ? '' : 'disabled class="secondary"'} ${extra}>${label}</button>`;
 
-      let html = `<div class="card"><h2>⏰ Zeitplan</h2>
+      let html = `<div class="card" style="border:3px solid #dc2626">
+        <h2>🧪 Probelauf – ganzen Ablauf testen</h2>
+        <p style="font-size:0.9rem;color:#555">Spielt alles mit 16 Test-Spielern durch: Ankunft, Snake, Raten, Paare, Biathlon, Teamwahl, Kapitän, Finale, Siegerehrung. Nur in diesem Browser – die echten Daten bleiben unberührt.</p>
+        <a href="probelauf.html?v=${Date.now().toString(36)}" target="_blank"><button type="button" style="background:#dc2626">🧪 Probelauf öffnen</button></a>
+      </div>`;
+      html += `<div class="card"><h2>⏰ Zeitplan</h2>
         <p style="margin:2px 0 8px;color:#555;font-size:.9rem">Ist die Automatik an, wechselt die Phase auf allen Handys von selbst zur eingestellten Zeit
           (die Paare werden beim Biathlon-Start automatisch gebildet). Unter dem Schriftzug „Haeckelsche Games“ steht dann der nächste Termin.</p>
         <label style="font-weight:600"><input type="checkbox" id="autoOn" ${state.auto ? 'checked' : ''}> Automatisch nach Zeitplan</label>
@@ -433,6 +438,7 @@ window.APP_VERSION = '20261118b';
         <a href="${baseUrl}?demo=raten&v=${Date.now().toString(36)}" target="_blank"><button class="secondary" type="button">🏟️ Demo: Flagge raten</button></a>
         <a href="${baseUrl}?demo=finale&v=${Date.now().toString(36)}" target="_blank"><button class="secondary" type="button">🏆 Demo: Finale (Rätsel 1)</button></a>
         <button class="secondary" id="testReplay" ${lastTest ? '' : 'disabled'}>Letzten Test als Wiedergabe ansehen</button>
+        <a href="probelauf.html?v=${Date.now().toString(36)}" target="_blank"><button class="secondary" type="button">🧪 Probelauf (ganzer Ablauf)</button></a>
       </div>`;
 
       html += `<div class="card" id="dlgCard"></div>`;
