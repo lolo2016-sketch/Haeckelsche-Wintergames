@@ -627,3 +627,22 @@ Dann wechselt die Phase auf allen Handys von selbst (Prüfung alle 15 s):
 - Admin → Karte „🎬 Orga in der Halle“ → Feld **Ankunfts-Video**. Es spielt bei jedem Spieler, sobald *alle* Spieler
   angekommen sind (Zähler „x von y da“ steht daneben). Danach laufen die beiden Orgas im Skianzug durchs Tor an den Kreis.
 - Startwerte der Videos: Ankunft = intro1–3, Biathlon danach = biathlon + biathlon2, Finale danach = finale1–5.
+- Videos kürzen ohne Schnittprogramm: hinter den Dateinamen `#t=Start,Ende` schreiben, z. B. `videos/biathlon.mp4#t=0,10` spielt nur die ersten 10 Sekunden.
+
+## Update 20261118b – Probelauf, Dialog-Paar, Video-Ausschnitte
+
+**Neue Dateien (ins Hauptverzeichnis):** `fb.js`, `sim-firestore.js`, `probelauf.html`.
+**Ersetzen:** `index.html`, `admin.html`, `intro.html`, `draft.js`, `dialog.js`, `minigame.js`, `biathlon.js`, `hall3d.js`, `camp.js`. `firebase-config.js` bleibt unverändert.
+
+### Probelauf (`…/probelauf.html`)
+- „🧪 Probelauf starten“ liest deine echten Einstellungen nur (Dialogtexte, Videos, Orga mit Gesicht, Waffen, Namen/Bilder echter Spieler) und legt eine **Test-Datenbank nur in diesem Browser** an: 16 Spieler, alle sitzen, 8 Flaggen-Paare. Die echte Datenbank wird nie beschrieben.
+- Links die Schritte: Ankunft (Intro-Video + Einlauf der Spielleiter) → Snake → Raten → Paare → Biathlon → Teamwahl → Kapitänswahl → Finale → Siegerehrung. „▶ Starten“ schaltet weiter, die grauen Knöpfe simulieren die anderen Spieler.
+- Rechts das Handy-Fenster: du bist „Du (Test)“. Über „Ansicht als“ schlüpfst du in jeden anderen Spieler (z. B. den aktuellen Wähler bei der Teamwahl) oder in einen Spielleiter.
+- „📋 Kontrolle“ zeigt live Tipp ✓/✗, Snake, Biathlon, Team, Kapitänsstimme und die Finalzeiten mit Bonus und Strafe – zum Gegenprüfen mit dem 🏆-Leaderboard im Handy-Fenster.
+- Solange der Probelauf an ist, zeigen Spiel- und Admin-Seite **in diesem Browser** oben „🧪 PROBELAUF – Testdaten“. „Probelauf beenden“ schaltet zurück auf die echte Datenbank.
+
+### Dialog
+- Mit Bild „beide“ stehen die zwei Sprecher jetzt direkt nebeneinander; nur wer redet, ist hell, umrandet und leicht vergrößert.
+
+### Video-Ausschnitt
+- `videos/biathlon.mp4#t=0,10, videos/biathlon2.mp4` spielt von Clip 1 nur Sekunde 0–10, dann Clip 2 komplett.

@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Probelauf – Haeckelsche Wintergames</title>
+<style>
+  :root { --rot:#dc2626; --gruen:#16a34a; --blau:#2563eb; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, sans-serif; background:#f1f5f9; color:#0f172a; }
+  header { background:#0b1a2e; color:#fff; padding:12px 16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:1.15rem; margin:0; flex:1; }
+  header .tag { background:var(--rot); border-radius:999px; padding:3px 10px; font-size:.8rem; font-weight:600; }
+  main { display:grid; grid-template-columns: minmax(320px, 480px) 1fr; gap:16px; padding:16px; align-items:start; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card { background:#fff; border-radius:12px; padding:14px 16px; box-shadow:0 1px 3px rgba(0,0,0,.08); margin-bottom:14px; }
+  .card h2 { font-size:1rem; margin:0 0 8px; }
+  button { font:inherit; border:none; border-radius:8px; padding:8px 12px; background:var(--blau); color:#fff; cursor:pointer; }
+  button.sec { background:#e2e8f0; color:#0f172a; }
+  button.rot { background:var(--rot); }
+  button:disabled { opacity:.45; cursor:default; }
+  ol.steps { list-style:none; padding:0; margin:0; counter-reset:s; }
+  ol.steps li { counter-increment:s; display:flex; gap:10px; align-items:flex-start; padding:9px 8px; border-radius:8px; }
+  ol.steps li::before { content:counter(s); flex:0 0 26px; height:26px; border-radius:50%; background:#e2e8f0; display:grid; place-items:center; font-weight:700; font-size:.85rem; }
+  ol.steps li.done::before { content:'✓'; background:var(--gruen); color:#fff; }
+  ol.steps li.cur { background:#eff6ff; outline:2px solid #bfdbfe; }
+  ol.steps li.cur::before { background:var(--blau); color:#fff; }
+  .st-txt { flex:1; font-size:.92rem; line-height:1.35; }
+  .st-txt b { display:block; font-size:.98rem; }
+  .st-txt small { color:#475569; }
+  .st-act { display:flex; flex-direction:column; gap:4px; }
+  .st-act button { padding:5px 10px; font-size:.85rem; white-space:nowrap; }
+  .viewer { position:sticky; top:12px; }
+  .vbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+  select { font:inherit; padding:6px 8px; border-radius:8px; border:1px solid #cbd5e1; }
+  .phone { width:390px; max-width:100%; height:780px; border:10px solid #0f172a; border-radius:28px; overflow:hidden; background:#000; margin:0 auto; }
+  .phone iframe { width:100%; height:100%; border:0; display:block; }
+  table { border-collapse:collapse; width:100%; font-size:.82rem; }
+  th, td { text-align:left; padding:4px 6px; border-bottom:1px solid #e2e8f0; white-space:nowrap; }
+  th { background:#f8fafc; position:sticky; top:0; }
+  .scroll { max-height:360px; overflow:auto; }
+  .hint { color:#475569; font-size:.88rem; }
+  .ok { color:var(--gruen); font-weight:600; }
+  .bad { color:var(--rot); font-weight:600; }
+  #log { font-size:.8rem; color:#334155; max-height:140px; overflow:auto; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧪 Probelauf – kompletter Ablauf mit 16 Test-Spielern</h1>
+  <span class="tag" id="statusTag">aus</span>
+</header>
+<div id="app"></div>
+
+<script type="module">
+  // Sicherheitsregel: Diese Seite liest die echte Datenbank nur (Texte, Videos, Orga, Waffen) und schreibt
+  // ausschließlich in die Test-Datenbank dieses Browsers. Spielfunktionen (draft.js) werden erst geladen,
+  // wenn der Probelauf aktiv ist – dann zeigen sie automatisch auf die Test-Datenbank.
+  const FLAG = 'hg-probelauf', DBKEY = 'hg-probelauf-db', MAIN = 'sim01';
+  const app = document.getElementById('app');
+  const aktiv = (() => { try { return localStorage.getItem(FLAG) === '1'; } catch (e) { return false; } })();
+  document.getElementById('statusTag').textContent = aktiv ? 'AKTIV – Testdaten' : 'aus';
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  // ---------------- Start (Probelauf noch aus) ----------------
+  if (!aktiv) {
+    app.innerHTML = `<main style="grid-template-columns:1fr;max-width:760px;margin:0 auto"><div class="card">
+      <h2>So funktioniert der Probelauf</h2>
+      <p class="hint">Der Probelauf spielt den ganzen Ablauf mit <b>16 Test-Spielern</b> durch – nur hier in diesem Browser.
+      Die echte Datenbank und die echten Spieler bleiben unberührt. Übernommen werden (nur gelesen): deine Dialog-Texte und Videos,
+      die beiden Orga-Zugänge mit Gesicht, die Waffen und – falls schon angelegt – Namen und Bilder der echten Spieler.</p>
+      <p class="hint">Du schaust durch ein Handy-Fenster als Test-Spieler 1 zu und schaltest links Schritt für Schritt weiter.
+      Für Teamwahl und Kapitänswahl kannst du jederzeit in einen anderen Spieler „hineinschlüpfen“.
+      Solange der Probelauf an ist, zeigen auch Spiel- und Admin-Seite in <b>diesem</b> Browser oben ein rotes „🧪 PROBELAUF“.</p>
+      <label style="display:block;margin:10px 0"><input type="checkbox" id="echteSpieler" checked> Namen und Bilder der echten Spieler verwenden (falls vorhanden)</label>
+      <button id="start">🧪 Probelauf starten</button> <span id="startMsg" class="hint"></span>
+    </div></main>`;
+    document.getElementById('start').onclick = async () => {
+      const msg = document.getElementById('startMsg'); msg.textContent = 'Lese Einstellungen …';
+      let real = { people: [], orga: [], state: {}, dialoge: null };
+      try {
+        const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
+        const { getFirestore, collection, getDocs, getDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const { firebaseConfig } = await import('./firebase-config.js');
+        const db = getFirestore(initializeApp(firebaseConfig, 'probelauf-lesen'));
+        (await getDocs(collection(db, 'participants'))).forEach(d => {
+          const p = { token: d.id, ...d.data() };
+          if (p.role === 'orga') real.orga.push(p); else if (p.role !== 'admin') real.people.push(p);
+        });
+        const st = await getDoc(doc(db, 'state', 'current')); real.state = st.exists() ? st.data() : {};
+        const dl = await getDoc(doc(db, 'state', 'dialoge')); real.dialoge = dl.exists() ? dl.data() : null;
+      } catch (e) { msg.textContent = '⚠️ Echte Einstellungen nicht lesbar (' + e.message + ') – starte mit Standardwerten.'; }
+      seed(real, document.getElementById('echteSpieler').checked);
+      localStorage.setItem(FLAG, '1');
+      location.reload();
+    };
+  } else {
+    run();
+  }
+
+  // Test-Datenbank befüllen
+  function seed(real, echte) {
+    const FLAGS = ['de', 'it', 'fr', 'es', 'se', 'nl', 'at', 'ch'];
+    const FARBEN = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+    const avatar = (n, c, agent) => 'data:image/svg+xml;utf8,' + encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300" viewBox="0 0 200 300">
+        <circle cx="100" cy="80" r="60" fill="${agent ? '#1f2937' : c}"/><rect x="30" y="150" width="140" height="150" rx="40" fill="${agent ? '#111827' : c}"/>
+        ${agent ? '<rect x="55" y="62" width="90" height="22" rx="8" fill="#000"/>' : ''}
+        <text x="100" y="98" font-size="46" text-anchor="middle" fill="#fff" font-family="sans-serif" font-weight="700">${n}</text></svg>`);
+    const now = Date.now(), P = {};
+    const echt = echte ? real.people.filter(p => p.name) : [];
+    for (let i = 0; i < 16; i++) {
+      const t = 'sim' + String(i + 1).padStart(2, '0'), r = i ? echt[i - 1] : null;
+      const c = FARBEN[Math.floor(i / 2)];
+      P[t] = { name: i === 0 ? 'Du (Test)' : (r?.name || 'Spieler ' + (i + 1)), role: 'player', flag: FLAGS[Math.floor(i / 2)],
+        photoUrl: r?.photoUrl || avatar(i + 1, c, false), agentUrl: r?.agentUrl || avatar(i + 1, c, true),
+        hair: r?.hair || 'kurz', arrivedAt: now - (16 - i) * 60000, dialogsSeen: [] };
+    }
+    const orga = real.orga.length ? real.orga : [
+      { name: 'Spielleiter 1', suit: 1, photoUrl: 'faces/face1.png' }, { name: 'Spielleiter 2', suit: 2, photoUrl: 'faces/face2.png' }];
+    orga.slice(0, 2).forEach((o, i) => { P['simorga' + (i + 1)] = { name: o.name, role: 'orga', suit: o.suit || i + 1, photoUrl: o.photoUrl || `faces/face${i + 1}.png`, hair: o.hair || 'kurz' }; });
+    const st = { ...real.state, phase: 'setup', auto: false, orgaShow: false, benchSeats: Math.max(16, real.state.benchSeats || 0) };
+    delete st.revealed;
+    const db = { participants: P, state: { current: st }, teams: {}, finals: {}, chat: {} };
+    if (real.dialoge) db.state.dialoge = real.dialoge;
+    localStorage.setItem(DBKEY, JSON.stringify(db));
+    localStorage.setItem('hg-probelauf-log', '');
+  }
+
+  // ---------------- Probelauf aktiv ----------------
+  async function run() {
+    const fb = await import('./fb.js?v=20261118b');
+    const D = await import('./draft.js?v=20261118b');
+    const { SZENEN } = await import('./dialog.js?v=20261118b');
+    const { doc, getDoc, setDoc, updateDoc, writeBatch, collection, onSnapshot, getFirestore, initializeApp } = fb;
+    if (!fb.PROBELAUF) { app.innerHTML = '<p class="card bad">Sicherheitsstopp: Test-Datenbank nicht aktiv.</p>'; return; }
+    const db = getFirestore(initializeApp({}));
+    let S = { people: [], orga: [], teams: [], finals: {}, state: {} };
+    let viewer = localStorage.getItem('hg-probelauf-viewer') || MAIN;
+    const log = m => { const l = (localStorage.getItem('hg-probelauf-log') || '') + new Date().toLocaleTimeString('de-DE') + '  ' + m + '\n'; localStorage.setItem('hg-probelauf-log', l); renderLog(); };
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    const setPhase = async ph => { await setDoc(doc(db, 'state', 'current'), { ...S.state, phase: ph, auto: false }); log('Phase → ' + ph); };
+    const upd = async (list) => { const b = writeBatch(db); list.forEach(([t, v]) => b.update(doc(db, 'participants', t), v)); await b.commit(); };
+    const others = () => S.people.filter(p => p.token !== MAIN);
+    const draft = () => D.draftState(S.teams, S.people);
+    const allScenes = SZENEN.map(s => s.id);
+
+    // Schritte
+    const STEPS = [
+      { t: 'Alle 16 sitzen in der Halle', d: 'Ankunfts-Video läuft, danach laufen die beiden Spielleiter im Skianzug durchs Tor.', ph: 'setup',
+        go: async () => { await setPhase('setup'); } },
+      { t: 'Snake beginnt', d: 'Snake-Dialog + Snake-Video. Du kannst im Handy-Fenster selbst spielen.', ph: 'snake', go: () => setPhase('snake'),
+        extra: [['Snake-Ergebnisse simulieren', async () => {
+          await upd(S.people.filter(p => p.token !== MAIN || !p.minigamePlayed).map((p, i) => [p.token, { minigamePlayed: true, minigameScore: Math.round(rnd(4, 42)), minigameAt: Date.now() + i, snakeTries: 1 + Math.floor(rnd(0, 4)) }]));
+          log('Snake-Ergebnisse für alle simuliert');
+        }]] },
+      { t: 'Wählen (Nationalität raten)', d: 'Du tippst selbst; die anderen raten auf Knopfdruck (ca. 60 % richtig).', ph: 'guess', go: () => setPhase('guess'),
+        extra: [['Alle anderen raten lassen', async () => {
+          const list = others().filter(p => !p.guess).map(p => {
+            const partner = S.people.find(x => x.flag === p.flag && x.token !== p.token);
+            const wrong = S.people.filter(x => x.token !== p.token && x.flag !== p.flag);
+            const g = Math.random() < 0.6 ? partner : wrong[Math.floor(Math.random() * wrong.length)];
+            return [p.token, { guess: g.token, guessAt: Date.now() }];
+          });
+          await upd(list); log(list.length + ' Spieler haben geraten');
+        }]] },
+      { t: 'Paare bilden', d: 'Gleiche Flagge = ein Paar. Die Paare setzen sich nebeneinander.', ph: 'pairs',
+        go: async () => { await setPhase('pairs'); await D.revealTeams(db, S.people, { ...S.state, phase: 'pairs' }, { keepPhase: true }); log('8 Paare gebildet'); } },
+      { t: 'Biathlon beginnt', d: 'Biathlon-Dialog + Videos (inkl. #t-Ausschnitt). Du kannst selbst fahren.', ph: 'biathlon', go: () => setPhase('biathlon'),
+        extra: [['Biathlon-Ergebnisse simulieren', async () => {
+          await upd(S.people.filter(p => p.token !== MAIN || !p.biathlon?.played).map(p => [p.token, { biathlon: { played: true, finished: true, timeMs: Math.round(rnd(55, 140) * 1000), route: 'hin', score: 10, target: 10 }, biathlonTries: 1 }]));
+          log('Biathlon-Zeiten simuliert');
+        }]] },
+      { t: 'Teamwahl (die besten 4 Paare wählen reihum)', d: 'Grün = wählbar, rot = vergeben. Schlüpf in den aktuellen Wähler oder lass automatisch wählen.', ph: 'done', go: () => setPhase('done'),
+        extra: [['👉 Als aktueller Wähler öffnen', () => { const d = draft(); if (d.picker) setViewer(d.picker.token); }],
+                ['Eine Wahl automatisch', () => autoPick(1)], ['Alle restlichen Wahlen automatisch', () => autoPick(99)]] },
+      { t: 'Kapitänswahl', d: 'Jedes Team wählt; Kapitän wird, wer die meisten Stimmen hat. Du stimmst selbst ab, die anderen per Knopf.', ph: 'done',
+        go: async () => {}, extra: [['Alle anderen abstimmen lassen', async () => {
+          const d = draft(); const list = [];
+          for (const L of D.FINAL_TEAMS) { const mem = d.members[L] || []; mem.forEach((p, i) => { if (p.token !== MAIN && !p.captainVote) list.push([p.token, { captainVote: mem[Math.floor(Math.random() * Math.min(2, mem.length))].token, captainVoteAt: Date.now() + i }]); }); }
+          await upd(list); log(list.length + ' Stimmen abgegeben');
+        }]] },
+      { t: 'Finale', d: 'Finale-Dialog + die Finale-Videos. Die Teams sitzen zusammen; du kannst selbst ins Finale.', ph: 'final', go: () => setPhase('final'),
+        extra: [['Finale für die anderen Teams simulieren', () => simFinal(false)], ['Finale für alle 4 Teams simulieren', () => simFinal(true)]] },
+      { t: 'Siegerehrung', d: 'End-Video + Siegerehrung.', ph: 'ende', go: () => setPhase('ende') },
+    ];
+
+    async function autoPick(n) {
+      for (let k = 0; k < n; k++) {
+        const d = draft(); if (!d.picker || d.complete || !d.freeUnits.length) break;
+        const unit = d.freeUnits[Math.floor(Math.random() * d.freeUnits.length)].members;
+        const toks = [...d.members[d.turn].map(p => p.token), ...unit.map(p => p.token)];
+        await upd(toks.map(t => [t, { finalTeam: d.turn }])); log(`Team ${d.turn} wählt ${unit.map(p => p.name).join(' & ')}`);
+        await new Promise(r => setTimeout(r, 150));
+      }
+    }
+    async function simFinal(alle) {
+      const myL = draft().letterOf(S.people.find(p => p.token === MAIN));
+      const t0 = Date.now() - 40 * 60000;
+      for (const L of D.FINAL_TEAMS) {
+        if (!alle && L === myL) continue;
+        const a = t0 + rnd(0, 3) * 60000, r1 = rnd(4, 12) * 60000, r2 = rnd(5, 14) * 60000, r3 = rnd(3, 9) * 60000;
+        await setDoc(doc(db, 'finals', L), { startedAt: a, solved1At: a + r1, start2At: a + r1 + 20000, solved2At: a + r1 + 20000 + r2,
+          start3At: a + r1 + 40000 + r2, solved3At: a + r1 + 40000 + r2 + r3, penalty: Math.round(rnd(0, 60)), wrong: [] });
+      }
+      log('Finale simuliert' + (alle ? ' (alle Teams)' : ' (ohne dein Team ' + (myL || '–') + ')'));
+    }
+    async function setViewer(t) {
+      viewer = t; localStorage.setItem('hg-probelauf-viewer', t);
+      // andere Spieler: Dialoge als gesehen markieren, damit nur „Du (Test)“ alle Szenen sieht
+      const p = [...S.people, ...S.orga].find(x => x.token === t);
+      if (p && t !== MAIN && p.role !== 'orga') await updateDoc(doc(db, 'participants', t), { dialogsSeen: allScenes });
+      document.getElementById('frame').src = 'index.html?t=' + t;
+      renderViewerSel();
+    }
+
+    // Layout
+    app.innerHTML = `<main>
+      <div>
+        <div class="card"><h2>Ablauf</h2>
+          <p class="hint" style="margin-top:0">„▶ Starten“ schaltet die Phase um. Die Zusatzknöpfe simulieren die anderen Spieler. Du kannst jeden Schritt wiederholen.</p>
+          <ol class="steps" id="steps"></ol></div>
+        <div class="card"><h2>📋 Kontrolle (live)</h2><div id="check"></div></div>
+        <div class="card"><h2>Protokoll</h2><div id="log"></div></div>
+        <div class="card"><h2>Werkzeuge</h2>
+          <button class="sec" id="allSeen">Dialoge bei „Du (Test)“ zurücksetzen</button>
+          <a href="admin.html" target="_blank"><button class="sec">Admin (Testdaten) öffnen</button></a>
+          <button class="sec" id="neu">Von vorn (neu befüllen)</button>
+          <button class="rot" id="ende">Probelauf beenden</button>
+          <p class="hint">„Probelauf beenden“ löscht die Testdaten in diesem Browser. Die echte Datenbank war nie betroffen.</p></div>
+      </div>
+      <div class="viewer card">
+        <div class="vbar"><b>Ansicht als</b> <select id="vsel"></select>
+          <a id="vtab" target="_blank"><button class="sec">↗ im Tab</button></a>
+          <button class="sec" id="reload">↻</button></div>
+        <div class="phone"><iframe id="frame" allow="autoplay; fullscreen"></iframe></div>
+        <p class="hint">Tipp: Videos starten im Fenster evtl. erst nach einem Tipp (Browser-Regel für Ton).</p>
+      </div></main>`;
+    document.getElementById('frame').src = 'index.html?t=' + viewer;
+    document.getElementById('vsel').onchange = e => setViewer(e.target.value);
+    document.getElementById('reload').onclick = () => { document.getElementById('frame').src = 'index.html?t=' + viewer; };
+    document.getElementById('ende').onclick = () => { if (!confirm('Probelauf beenden und Testdaten löschen?')) return; ['hg-probelauf', 'hg-probelauf-db', 'hg-probelauf-viewer', 'hg-probelauf-log', 'hg-probelauf-step'].forEach(k => localStorage.removeItem(k)); location.reload(); };
+    document.getElementById('neu').onclick = () => { if (!confirm('Alles zurücksetzen und neu befüllen?')) return; localStorage.removeItem('hg-probelauf'); localStorage.removeItem('hg-probelauf-step'); location.reload(); };
+    document.getElementById('allSeen').onclick = async () => { await updateDoc(doc(db, 'participants', MAIN), { dialogsSeen: [] }); log('Dialoge von „Du (Test)“ zurückgesetzt'); document.getElementById('reload').click(); };
+
+    let step = +(localStorage.getItem('hg-probelauf-step') || 0);
+    function renderSteps() {
+      const ol = document.getElementById('steps');
+      ol.innerHTML = STEPS.map((s, i) => `<li class="${i < step ? 'done' : i === step ? 'cur' : ''}">
+        <div class="st-txt"><b>${esc(s.t)}</b><small>${esc(s.d)}</small></div>
+        <div class="st-act"><button data-go="${i}">▶ ${i === step ? 'Starten' : 'Nochmal'}</button>
+        ${(s.extra || []).map((x, k) => `<button class="sec" data-x="${i}:${k}">${esc(x[0])}</button>`).join('')}</div></li>`).join('');
+      ol.querySelectorAll('[data-go]').forEach(b => b.onclick = async () => {
+        const i = +b.dataset.go; b.disabled = true;
+        try { await STEPS[i].go(); step = Math.max(step, i + 1); localStorage.setItem('hg-probelauf-step', step); }
+        catch (e) { log('⚠️ ' + e.message); }
+        renderSteps();
+      });
+      ol.querySelectorAll('[data-x]').forEach(b => b.onclick = async () => {
+        const [i, k] = b.dataset.x.split(':').map(Number); b.disabled = true;
+        try { await STEPS[i].extra[k][1](); } catch (e) { log('⚠️ ' + e.message); }
+        b.disabled = false;
+      });
+    }
+    function renderLog() { const el = document.getElementById('log'); if (el) { el.textContent = localStorage.getItem('hg-probelauf-log') || '–'; el.scrollTop = 1e9; } }
+    function renderViewerSel() {
+      const sel = document.getElementById('vsel'), d = S.teams.length ? draft() : null;
+      sel.innerHTML = [...S.people, ...S.orga].map(p => {
+        const L = d?.letterOf(p); const pick = d?.picker?.token === p.token ? ' 👉 wählt gerade' : '';
+        return `<option value="${p.token}" ${p.token === viewer ? 'selected' : ''}>${esc(p.name)}${p.role === 'orga' ? ' (Spielleiter)' : ''}${L ? ' · Team ' + L : ''}${pick}</option>`;
+      }).join('');
+      document.getElementById('vtab').href = 'index.html?t=' + viewer;
+    }
+    function renderCheck() {
+      const d = S.teams.length ? draft() : null;
+      const cap = L => D.finalCaptain(L, S.people)?.name || '–';
+      const nameOf = t => S.people.find(p => p.token === t)?.name || '–';
+      const rows = S.people.map(p => {
+        const partner = S.people.find(x => x.flag === p.flag && x.token !== p.token);
+        const g = p.guess ? (p.guess === partner?.token ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>') : '';
+        const b = p.biathlon?.played ? (p.biathlon.timeMs / 1000).toFixed(1) + ' s' : '';
+        return `<tr><td>${esc(p.name)}</td><td>${(D.country(p.flag)?.emoji || p.flag)}</td><td>${g}</td><td>${p.minigamePlayed ? p.minigameScore : ''}</td><td>${b}</td>
+          <td>${d?.letterOf(p) || ''}</td><td>${p.captainVote ? esc(nameOf(p.captainVote)) : ''}</td></tr>`;
+      }).join('');
+      const fin = D.FINAL_TEAMS.map(L => {
+        const f = S.finals[L]; if (!f) return `<tr><td>Team ${L}</td><td colspan="3">noch nicht gestartet</td></tr>`;
+        const bonus = D.finalBonus(L, S.people, S.state), sc = D.finalScoreMs(f, bonus);
+        const mm = ms => ms == null ? '–' : (ms < 0 ? '−' : '') + Math.floor(Math.abs(ms) / 60000) + ':' + String(Math.floor(Math.abs(ms) / 1000) % 60).padStart(2, '0');
+        return `<tr><td>Team ${L} (👑 ${cap(L) === '–' ? 'Wahl offen' : esc(cap(L))})</td><td>${D.finalStage(f) >= 4 ? 'fertig' : 'Raum ' + Math.floor(D.finalStage(f))}</td><td>Bonus ${bonus} s · Strafe ${f.penalty || 0} s</td><td><b>${f.solved3At ? mm(sc) : 'läuft'}</b></td></tr>`;
+      }).join('');
+      const draftTxt = !d ? 'Paare noch nicht gebildet.' : d.complete ? '✅ Alle Teams komplett.' : d.picker ? `Am Zug: Team ${d.turn} – es wählt <b>${esc(d.picker.name)}</b>.` : 'Wartet auf Biathlon-Ergebnisse.';
+      document.getElementById('check').innerHTML = `<p class="hint" style="margin-top:0">Phase: <b>${esc(S.state.phase)}</b> · Teamwahl: ${draftTxt}</p>
+        <div class="scroll"><table><tr><th>Spieler</th><th>Land</th><th>Tipp</th><th>Snake</th><th>Biathlon</th><th>Team</th><th>Stimme für</th></tr>${rows}</table></div>
+        <h2 style="margin-top:12px">Finale</h2><table>${fin}</table>
+        <p class="hint">Gleiche Werte siehst du im Handy-Fenster unter 🏆 Leaderboard – so kannst du die Anzeige gegenprüfen.</p>`;
+    }
+    const rerender = () => { renderCheck(); renderViewerSel(); };
+    onSnapshot(collection(db, 'participants'), snap => {
+      const all = snap.docs.map(d => ({ token: d.id, ...d.data() }));
+      S.people = all.filter(p => p.role !== 'orga' && p.role !== 'admin').sort((a, b) => a.token.localeCompare(b.token));
+      S.orga = all.filter(p => p.role === 'orga'); rerender();
+    });
+    onSnapshot(collection(db, 'teams'), snap => { S.teams = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)); rerender(); });
+    onSnapshot(collection(db, 'finals'), snap => { S.finals = {}; snap.docs.forEach(d => { S.finals[d.id] = { id: d.id, ...d.data() }; }); rerender(); });
+    onSnapshot(doc(db, 'state', 'current'), snap => { S.state = snap.data() || {}; rerender(); });
+    renderSteps(); renderLog();
+    window.__p = { STEPS, draft: () => draft(), S: () => S, setViewer };
+  }
+</script>
+</body>
+</html>

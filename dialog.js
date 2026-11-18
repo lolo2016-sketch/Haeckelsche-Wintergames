@@ -73,7 +73,7 @@ export const STANDARD = {
       { s: 'ich', wahl: ['Ich verrate nichts. 🤫', 'Welche Flagge habe ich nochmal?'] },
       { s: 'a', t: 'Tippe rechts auf 🏳️: Dort siehst du deine Flagge, kannst dich 5 Minuten enttarnen – oder einmal heimlich jemanden ausspionieren. Die Auflösung kommt {naechstesEvent}.' }
     ] },
-    biathlon: { bilder: 'eins', bildBeide: 'dialog/beide4.png', bildA: 'dialog/beide4_links.png', bildB: 'dialog/beide4_rechts.png', wann: 'biathlon', videoNach: 'videos/biathlon.mp4, videos/biathlon2.mp4', zeilen: [
+    biathlon: { bilder: 'eins', bildBeide: 'dialog/beide4.png', bildA: 'dialog/beide4_links.png', bildB: 'dialog/beide4_rechts.png', wann: 'biathlon', videoNach: 'videos/biathlon.mp4#t=0,10, videos/biathlon2.mp4', zeilen: [
       { s: 'a', t: 'Die Auflösung ist da! Dein Partner ist {partner}.' },
       { s: 'b', t: 'Runde 2: Biathlon! Ihr spielt als Paar. Im Tab 🎮 Minispiel fährst du mit ◀ ▶, springst mit ▲ und legst dich mit ▼ hin.' },
       { s: 'a', t: 'Hindernisse lassen dich stürzen – 2 Sekunden zum Aufstehen. Trainieren kannst du so oft du willst.' },
@@ -153,6 +153,11 @@ const CSS = `
 .dlg-duo.stack .dlg-p.b{position:absolute;inset:0;width:100%;height:100%;margin:0}
 .dlg-duo.stack .dlg-p.aktiv{transform:none}
 .dlg-p.beide{left:-2%;width:54%;max-height:80%}
+.dlg-paar{position:absolute;left:-2%;bottom:0;height:80%;max-width:58%;pointer-events:none}
+.dlg-paar img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:bottom}
+.dlg-paar-base{filter:brightness(.5) saturate(.75)}
+.dlg-paar-hi{opacity:0;transition:opacity .35s,transform .35s;filter:drop-shadow(0 0 2px #e9c46a) drop-shadow(0 0 9px rgba(233,196,106,.65))}
+.dlg-paar-hi.aktiv{opacity:1;transform:scale(1.025)}
 .dlg-p.ich{right:-1%;width:36%}
 .dlg-box{position:absolute;left:0;right:0;bottom:0;padding:26px 6% calc(22px + env(safe-area-inset-bottom));
   background:linear-gradient(rgba(5,8,14,0),rgba(5,8,14,.86) 30%,rgba(5,8,14,.96));min-height:28%}
@@ -173,6 +178,7 @@ const CSS = `
   /* Hochformat (Handy): Figuren stehen über der Textbox */
   .dlg-p{max-height:52%;bottom:24%}
   .dlg-duo{height:48%;bottom:24%;max-width:74%;left:-3%}
+  .dlg-paar{height:52%;bottom:24%;max-width:78%;left:-4%}
   .dlg-p.ich{width:48%;right:-4%}
   .dlg-p.beide{width:70%;left:-6%;max-height:56%}
   .dlg-pokal{height:58%;bottom:28%}
@@ -193,6 +199,21 @@ function img(cls, src, fallback, onFail) {
   };
   el.src = src || fallback || ''; return el;
 }
+// Spalte (in %) zwischen den zwei Personen: die mit der wenigsten Deckkraft im mittleren Bereich
+function teilungsSpalte(im) {
+  try {
+    const w = 200, h = Math.round(200 * im.naturalHeight / im.naturalWidth);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const g = c.getContext('2d'); g.drawImage(im, 0, 0, w, h);
+    const d = g.getImageData(0, 0, w, h).data;
+    let best = 50, min = Infinity;
+    for (let x = Math.round(w * 0.3); x < w * 0.7; x++) {
+      let s = 0; for (let y = 0; y < h; y++) s += d[(y * w + x) * 4 + 3];
+      if (s < min) { min = s; best = x / w * 100; }
+    }
+    return best;
+  } catch (e) { return 50; }
+}
 export const fillText = (t, vars) => String(t ?? '').replace(/\{(\w+)\}/g, (m, k) => vars[k] ?? m);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -209,7 +230,8 @@ export async function playDialog(id, opts = {}) {
 
 // Mehrere Videos hintereinander: im Admin mit Komma trennen, z. B. „videos/finale1.mp4, videos/finale2.mp4“
 async function playVideos(list, opt) {
-  for (const url of String(list || '').split(/[,\n]+/).map(x => x.trim()).filter(Boolean)) await playVideo(url, opt);
+  // Komma trennt Videos – aber nicht das Komma in „#t=0,10“ (danach folgt eine Ziffer)
+  for (const url of String(list || '').split(/\s*[;\n]\s*|\s*,\s*(?!\d)/).map(x => x.trim()).filter(Boolean)) await playVideo(url, opt);
 }
 
 // Vollbild-Video. Fehlt die Datei (noch nicht hochgeladen), wird es einfach übersprungen.
@@ -231,6 +253,9 @@ export async function playVideo(url, { skip = false } = {}) {
     const showSkip = () => { skipBtn.hidden = false; };
     if (skip) showSkip();
     v.src = url;
+    // Ausschnitt möglich: „videos/x.mp4#t=0,10“ spielt nur Sekunde 0 bis 10
+    const frag = /#t=([\d.]*),([\d.]+)/.exec(url), stopAt = frag ? parseFloat(frag[2]) : null;
+    if (stopAt) v.addEventListener('timeupdate', () => { if (v.currentTime >= stopAt - 0.05) end(); });
     v.addEventListener('ended', end);
     v.addEventListener('error', end);
     skipBtn.onclick = end;
@@ -277,7 +302,24 @@ function playLines(id, { cfg = mergeConfig(null), name = '', agentUrl = 'agents/
   // Gastgeber: zwei Einzelbilder oder ein gemeinsames Bild (fehlt es, doch die zwei Einzelbilder)
   const P = { ich: img('ich', agentUrl, 'agents/agent1.png') };
   // zwei Einzelbilder nebeneinander in gleicher Höhe (gleicher Maßstab), das zweite leicht überlappend
-  const zwei = () => {
+  // Bevorzugt: das gemeinsame Bild – dann stehen beide lückenlos nebeneinander. Hervorgehoben wird nur die Hälfte
+  // des Sprechers (gleiches Bild, an der freiesten Spalte zwischen beiden geteilt, darübergelegt, hell + goldener Rand).
+  const paar = () => {
+    const wrap = document.createElement('div'); wrap.className = 'dlg-paar';
+    const base = document.createElement('img'); base.className = 'dlg-paar-base'; base.alt = '';
+    base.onerror = () => { wrap.remove(); zweiEinzeln(); speaker(cur); };
+    base.onload = () => {
+      wrap.style.aspectRatio = base.naturalWidth + ' / ' + base.naturalHeight;
+      const x = teilungsSpalte(base);
+      P.a = base.cloneNode(); P.a.className = 'dlg-paar-hi a'; P.a.style.clipPath = `inset(0 ${100 - x}% 0 0)`; P.a.style.transformOrigin = `${x / 2}% 100%`;
+      P.b = base.cloneNode(); P.b.className = 'dlg-paar-hi b'; P.b.style.clipPath = `inset(0 0 0 ${x}%)`; P.b.style.transformOrigin = `${(100 + x) / 2}% 100%`;
+      wrap.append(P.a, P.b); speaker(cur);
+    };
+    wrap.appendChild(base); ov.insertBefore(wrap, P.ich);
+    base.src = sz.bildBeide;
+  };
+  const zwei = () => sz.bildBeide ? paar() : zweiEinzeln();
+  const zweiEinzeln = () => {
     P.a = img('a', sz.bildA, ERSATZ.a); P.b = img('b', sz.bildB, ERSATZ.b);
     const duo = document.createElement('div'); duo.className = 'dlg-duo'; duo.append(P.a, P.b);
     ov.insertBefore(duo, P.ich);
