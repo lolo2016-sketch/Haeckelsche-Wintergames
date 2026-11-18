@@ -503,7 +503,8 @@ window.APP_VERSION = '20261118b';
     // Orga (die beiden Veranstalter): stehen am Eingang des Kreises, sobald alle Spieler angekommen sind
     // (oder sofort, wenn im Admin „Orga immer zeigen“ an ist). Anzug 1/2 wie auf dem Pokal-Bild.
     const amOrga = () => isOrga(S?.me);
-    const allArrived = () => S.people.length > 0 && S.people.every(p => p.arrivedAt);
+    // „Alle da“: alle angelegten Spieler sind angekommen – oder so viele, wie Plätze auf der runden Bank eingestellt sind
+    const allArrived = () => { const n = S.people.filter(p => p.arrivedAt).length; return S.people.length > 0 && (n === S.people.length || (S.state.benchSeats > 0 && n >= S.state.benchSeats)); };
     const orgaTime = () => !!S.state.orgaShow || allArrived();   // im Admin vorziehbar
     function shownOrga() {
       if (!S?.orga?.length || !orgaTime()) return [];
