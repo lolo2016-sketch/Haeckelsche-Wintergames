@@ -622,3 +622,8 @@ Dann wechselt die Phase auf allen Handys von selbst (Prüfung alle 15 s):
 - Startwerte: Szene 0 „Ankunft“ = `videos/ankunft.mp4, videos/ankunft2.mp4` (Schattenwolf, dann Eisdrache);
   „Finale eröffnet“ danach = `videos/finale1.mp4, videos/finale2.mp4, videos/finale3.mp4, videos/finale4.mp4` (der ~1-Minuten-Kampf).
 - Hast du die Szenen im Admin schon einmal gespeichert, stehen dort deine Werte – dann die Felder bitte selbst so eintragen.
+
+## Update 20261118a – Ankunfts-Video direkt im Admin
+- Admin → Karte „🎬 Orga in der Halle“ → Feld **Ankunfts-Video**. Es spielt bei jedem Spieler, sobald *alle* Spieler
+  angekommen sind (Zähler „x von y da“ steht daneben). Danach laufen die beiden Orgas im Skianzug durchs Tor an den Kreis.
+- Startwerte der Videos: Ankunft = intro1–3, Biathlon danach = biathlon + biathlon2, Finale danach = finale1–5.
