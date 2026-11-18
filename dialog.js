@@ -106,6 +106,15 @@ export const STANDARD = {
   }
 };
 // Standardwerte für die Bilder einer Szene
+// gemeinsames Bild für die lückenlose Darstellung: eingetragenes Bild, sonst aus den Einzelbildern abgeleitet (beide2_links.png → beide2.png)
+function paarBilder(sz) {
+  const out = [];
+  const add = u => { u = String(u || '').trim(); if (u && u !== 'dialog/beide.png' && !out.includes(u)) out.push(u); };
+  add(sz.bildBeide);
+  for (const u of [sz.bildA, sz.bildB]) { const m = /^(.*)_(links|rechts)(\.\w+)$/.exec(String(u || '').trim()); if (m) add(m[1] + m[3]); }
+  if (!out.length && sz.bildBeide) out.push(sz.bildBeide);
+  return out;
+}
 const BILD_STANDARD = { bilder: 'zwei', bildA: 'dialog/sprecher1.png', bildB: 'dialog/sprecher2.png', bildBeide: 'dialog/beide.png', hintergrund: '', videoVor: '', videoNach: '' };
 const ERSATZ = { a: 'faces/face1.png', b: 'faces/face2.png', hintergrund: 'agents/welt/eispokal_vorne.png' };
 
@@ -249,7 +258,7 @@ export async function playVideo(url, { skip = false } = {}) {
     document.body.appendChild(ov);
     const v = ov.querySelector('video'), playBtn = ov.querySelector('.dlg-vid-play'), skipBtn = ov.querySelector('.dlg-vid-skip');
     let done = false, lastT = -1, stuck = 0;
-    const end = () => { if (done) return; done = true; clearInterval(watch); v.pause(); ov.classList.remove('on'); setTimeout(() => ov.remove(), 400); resolve(); };
+    const end = () => { if (done) return; done = true; clearInterval(watch); document.removeEventListener('visibilitychange', onVis); v.pause(); ov.classList.remove('on'); setTimeout(() => ov.remove(), 400); resolve(); };
     const showSkip = () => { skipBtn.hidden = false; };
     if (skip) showSkip();
     v.src = url;
@@ -263,11 +272,14 @@ export async function playVideo(url, { skip = false } = {}) {
     playBtn.onclick = () => { v.muted = false; tryPlay(); };
     // hängt das Video 10 s ohne Fortschritt, darf man überspringen
     const watch = setInterval(() => {
-      if (v.paused && !playBtn.hidden) return;
+      if (document.hidden || (v.paused && !playBtn.hidden)) return;
       if (v.currentTime === lastT) { if (++stuck >= 10) showSkip(); } else { stuck = 0; lastT = v.currentTime; }
     }, 1000);
+    // Handy gesperrt / Tab im Hintergrund: Video pausiert und läuft weiter, sobald man wieder draufschaut
+    const onVis = () => { if (document.hidden) v.pause(); else if (!done) tryPlay(); };
+    document.addEventListener('visibilitychange', onVis);
     requestAnimationFrame(() => ov.classList.add('on'));
-    tryPlay();
+    if (!document.hidden) tryPlay();
   });
 }
 
@@ -307,7 +319,6 @@ function playLines(id, { cfg = mergeConfig(null), name = '', agentUrl = 'agents/
   const paar = () => {
     const wrap = document.createElement('div'); wrap.className = 'dlg-paar';
     const base = document.createElement('img'); base.className = 'dlg-paar-base'; base.alt = '';
-    base.onerror = () => { wrap.remove(); zweiEinzeln(); speaker(cur); };
     base.onload = () => {
       wrap.style.aspectRatio = base.naturalWidth + ' / ' + base.naturalHeight;
       const x = teilungsSpalte(base);
@@ -316,9 +327,11 @@ function playLines(id, { cfg = mergeConfig(null), name = '', agentUrl = 'agents/
       wrap.append(P.a, P.b); speaker(cur);
     };
     wrap.appendChild(base); ov.insertBefore(wrap, P.ich);
-    base.src = sz.bildBeide;
+    const quellen = paarBilder(sz);
+    base.onerror = () => { if (quellen.length) base.src = quellen.shift(); else { wrap.remove(); zweiEinzeln(); speaker(cur); } };
+    base.src = quellen.shift();
   };
-  const zwei = () => sz.bildBeide ? paar() : zweiEinzeln();
+  const zwei = () => paarBilder(sz).length ? paar() : zweiEinzeln();
   const zweiEinzeln = () => {
     P.a = img('a', sz.bildA, ERSATZ.a); P.b = img('b', sz.bildB, ERSATZ.b);
     const duo = document.createElement('div'); duo.className = 'dlg-duo'; duo.append(P.a, P.b);
@@ -327,10 +340,8 @@ function playLines(id, { cfg = mergeConfig(null), name = '', agentUrl = 'agents/
     P.a.addEventListener('load', same); P.b.addEventListener('load', same);
   };
   ov.appendChild(P.ich);
-  if (sz.bilder === 'eins') {
-    P.beide = img('beide', sz.bildBeide, null, () => { P.beide.remove(); delete P.beide; zwei(); speaker(cur); });
-    ov.insertBefore(P.beide, P.ich);
-  } else zwei();
+  // immer lückenlos nebeneinander (gemeinsames Bild, nur der Sprecher hervorgehoben); ohne gemeinsames Bild die zwei Einzelbilder
+  zwei();
   const box = document.createElement('div'); box.className = 'dlg-box'; ov.appendChild(box);
   const weiter = document.createElement('div'); weiter.className = 'dlg-weiter'; weiter.textContent = 'Tippen = weiter ▸'; ov.appendChild(weiter);
   const skip = document.createElement('button'); skip.className = 'dlg-skip'; skip.textContent = 'Überspringen ⏭'; ov.appendChild(skip);

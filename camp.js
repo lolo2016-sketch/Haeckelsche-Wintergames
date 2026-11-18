@@ -3,7 +3,7 @@
 // Pfeile am Boden antippen = einen Schritt gehen, wischen = umschauen. Von der Mitte gehen 5 Wege ab, je 4 Schritte.
 // Am Ende eines Weges: die Figur "Hilf unserem Papa" und links daneben der Waffenschrank.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js';
-import { WEAPONS } from './draft.js?v=20261118b';
+import { WEAPONS } from './draft.js?v=20261118c';
 
 const STEP = 6.5;            // Abstand der Wegpunkte (m)
 const STEPS = 4;             // Schritte pro Weg
@@ -474,7 +474,7 @@ export function createCamp(container, { onWeapon, onLeave, onDoor2, weapons: wea
 
   // Waffenschrank
   const cab = new THREE.Group();
-  const CW = 3.1, CH = 2.6, COLS = 6, ROWS = 4;
+  const CW = 3.1, CH = 2.6, COLS = weaponCfg.length <= 8 ? 4 : 6, ROWS = Math.max(2, Math.ceil(weaponCfg.length / COLS));   // 8 Waffen: 4 × 2 (je ein Regalbrett)
   const back = new THREE.Mesh(new THREE.BoxGeometry(CW, CH, 0.12), lam(0x3a2414)); back.position.set(0, CH / 2 + 0.3, -0.2); cab.add(back);
   const frameM = lam(0x6b4423);
   for (const x of [-CW / 2, CW / 2]) { const sd = new THREE.Mesh(new THREE.BoxGeometry(0.12, CH + 0.1, 0.5), frameM); sd.position.set(x, CH / 2 + 0.3, 0); cab.add(sd); }
@@ -505,7 +505,7 @@ export function createCamp(container, { onWeapon, onLeave, onDoor2, weapons: wea
     // unsichtbare Trefferfläche zum Antippen
     const hit = new THREE.Mesh(new THREE.PlaneGeometry(slotW * 0.95, slotH * 0.95), new THREE.MeshBasicMaterial({ visible: false }));
     hit.position.z = 0.1; hit.userData.weapon = w.id; slot.add(hit);
-    const label = textSprite(w.name, { size: 58, scale: 0.5, w: 640, h: 120 }); label.position.set(0, -slotH / 2 + 0.08, 0.15); slot.add(label);
+    const label = textSprite(w.name, { size: 58, scale: COLS <= 4 ? 0.72 : 0.5, w: 640, h: 120 }); label.position.set(0, -slotH / 2 + 0.08, 0.15); slot.add(label);
     cab.add(slot);
     const mats = []; mesh.traverse(o => { if (o.material) mats.push(o.material); });
     weapons[w.id] = { slot, mesh, hit, mats, wrong: false, phase: i * 0.7 };

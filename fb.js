@@ -2,7 +2,7 @@
 // Test-Datenbank nur in diesem Browser (localStorage) – die echten Daten werden dabei nie verändert.
 const SIM = (() => { try { return localStorage.getItem('hg-probelauf') === '1'; } catch (e) { return false; } })();
 const FB = 'https://www.gstatic.com/firebasejs/10.12.2/';
-const A = SIM ? await import('./sim-firestore.js?v=20261118b') : await import(FB + 'firebase-app.js');
+const A = SIM ? await import('./sim-firestore.js?v=20261118c') : await import(FB + 'firebase-app.js');
 const F = SIM ? A : await import(FB + 'firebase-firestore.js');
 export const PROBELAUF = SIM;
 export const { initializeApp } = A;

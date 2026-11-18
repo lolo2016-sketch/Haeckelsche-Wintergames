@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <script>
 // Ladefehler sichtbar machen (z. B. fehlende oder veraltete Datei nach dem Hochladen)
-window.APP_VERSION = '20261118b';
+window.APP_VERSION = '20261118c';
 (function () {
   var shown = {};
   window.showLoadError = function (what) {
@@ -57,18 +57,18 @@ window.APP_VERSION = '20261118b';
   <div id="app">Lade…</div>
 
   <script type="module">
-    import { initializeApp } from "./fb.js?v=20261118b";
+    import { initializeApp } from "./fb.js?v=20261118c";
     import {
       getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc,
       collection, getDocs
-    } from "./fb.js?v=20261118b";
+    } from "./fb.js?v=20261118c";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261118b";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261118b";
+    import { playSnake, playReplay } from "./minigame.js?v=20261118c";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261118c";
     import { PHASES, PHASE_NAMES, phaseIndex, settings, DEFAULTS, COUNTRIES, country, isPerson, teamColor, snakeRanking,
       guessedRight, teamBonus, teamBiathlon, revealTeams, FINAL_TEAMS, finalMembers, finalBonus, finalScoreMs, fmtClock, WEAPONS, weaponName, weaponList,
-      SCHEDULE, effectivePhase, nextEvent, fmtWhen, draftState, finalCaptain } from "./draft.js?v=20261118b";
-    import { SZENEN, WANN, PLATZHALTER, mergeConfig, playDialog } from "./dialog.js?v=20261118b";
+      SCHEDULE, effectivePhase, nextEvent, fmtWhen, draftState, finalCaptain } from "./draft.js?v=20261118c";
+    import { SZENEN, WANN, PLATZHALTER, mergeConfig, playDialog } from "./dialog.js?v=20261118c";
     window.APP_READY = true;   // alle Dateien geladen
 
     const app = initializeApp(firebaseConfig);
@@ -519,12 +519,12 @@ window.APP_VERSION = '20261118b';
       }
       // Waffenschrank Raum 1: Namen und eigene Bilder der 24 Fächer
       html += `<div class="card"><details><summary style="cursor:pointer;font-weight:700;font-size:1.1rem">🗡️ Waffenschrank (Raum 1) – Namen und Bilder</summary>
-        <p style="font-size:.9rem;color:#555">24 Fächer (6 × 4, von links oben nach rechts unten). Name ändern und optional ein eigenes Bild:
+        <p style="font-size:.9rem;color:#555">8 Fächer (4 × 2, von links oben nach rechts unten). Name ändern und optional ein eigenes Bild:
           Bild in den Ordner <code>riddle/waffen/</code> im Repo laden (am besten PNG mit durchsichtigem Hintergrund), dann hier auswählen.
           Ohne Bild bleibt das eingebaute 3D-Modell. Die richtige Waffe wählst du unten in der Finale-Karte.</p>
         <div style="display:grid;grid-template-columns:auto 1fr 1fr;gap:4px 8px;align-items:center">
           ${weaponList(state).map((w, i) => `<span style="color:#888">${i + 1}.</span>
-            <input class="wName" data-id="${w.id}" value="${escA(w.name)}" placeholder="${escA(WEAPONS[i].name)}">
+            <input class="wName" data-id="${w.id}" value="${escA(w.name)}" placeholder="${escA(WEAPONS.find(x => x.id === w.id).name)}">
             <input class="wBild" data-id="${w.id}" list="waffenFiles" value="${escA(w.bild)}" placeholder="riddle/waffen/…png">`).join('')}
         </div>
         <button id="saveWaffen" style="margin-top:8px">💾 Waffen speichern</button></details></div>`;
@@ -721,9 +721,11 @@ window.APP_VERSION = '20261118b';
       };
       document.getElementById('toEnde').addEventListener('click', () => setPhase('ende'));
       document.getElementById('saveWaffen').addEventListener('click', async () => {
-        const waffen = {};
+        const waffen = { ...(state.waffen || {}) };
         WEAPONS.forEach(w => {
-          const name = document.querySelector(`.wName[data-id="${w.id}"]`).value.trim();
+          const nIn = document.querySelector(`.wName[data-id="${w.id}"]`); if (!nIn) return;   // nur die 8 angezeigten Fächer
+          delete waffen[w.id];
+          const name = nIn.value.trim();
           const bild = document.querySelector(`.wBild[data-id="${w.id}"]`).value.trim();
           if ((name && name !== w.name) || bild) waffen[w.id] = { ...(name && name !== w.name ? { name } : {}), ...(bild ? { bild } : {}) };
         });

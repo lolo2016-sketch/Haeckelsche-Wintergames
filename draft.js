@@ -4,8 +4,8 @@
 // Runde 2: Biathlon, jede Person hat ein paar echte Versuche; die Bestzeiten im Team werden addiert.
 // Bonussekunden fürs Finale: richtig geraten (pro Person) + Snake-Platz 1–3.
 // Rollen aus früheren Versionen ("captain"/"player") spielen keine Rolle, nur "admin" wird ausgelassen.
-import { doc, collection, getDocs, writeBatch } from "./fb.js?v=20261118b";
-import { biathlonRank } from "./biathlon.js?v=20261118b";
+import { doc, collection, getDocs, writeBatch } from "./fb.js?v=20261118c";
+import { biathlonRank } from "./biathlon.js?v=20261118c";
 
 // Phasen in Reihenfolge
 export const PHASES = ['setup', 'snake', 'guess', 'pairs', 'biathlon', 'done', 'final', 'ende'];
@@ -72,6 +72,8 @@ export const teamColor = i => TEAM_COLORS[((i % TEAM_COLORS.length) + TEAM_COLOR
 
 export const isPerson = p => p && p.role !== 'admin' && p.role !== 'orga';   // Orga (Veranstalter in der Halle) spielt nicht mit
 export const isOrga = p => !!p && p.role === 'orga';
+// Wer nicht in der Halle ist (Link nie geöffnet), zählt bei Paaren, Teamwahl und Kapitänswahl nicht mit
+export const anwesend = people => people.some(p => p.arrivedAt) ? people.filter(p => p.arrivedAt) : people;
 
 // ----- Snake: beste Leistung pro Person -----
 export const playedSnake = p => !!p.minigamePlayed;
@@ -127,7 +129,7 @@ export function planTeams(people) {
 // feste Team-IDs je Flagge: mehrfaches Ausführen (z. B. automatisch von mehreren Handys) ergibt dasselbe Ergebnis
 export async function revealTeams(db, people, state, { keepPhase = false } = {}) {
   const batch = writeBatch(db);
-  const plan = planTeams(people).map(t => ({ ...t, id: 'team_' + (t.flag || 'ohne') }));
+  const plan = planTeams(anwesend(people)).map(t => ({ ...t, id: 'team_' + (t.flag || 'ohne') }));
   const ids = new Set(plan.map(t => t.id));
   (await getDocs(collection(db, 'teams'))).forEach(d => { if (!ids.has(d.id)) batch.delete(d.ref); });
   plan.forEach(t => {
@@ -150,6 +152,7 @@ export function pairRanking(teams, people) {
     .sort((a, b) => (b.complete - a.complete) || (a.complete ? a.timeMs - b.timeMs : (b.done - a.done) || (a.timeMs - b.timeMs)) || (a.team.order ?? 0) - (b.team.order ?? 0));
 }
 export function draftState(teams, people) {
+  people = anwesend(people);
   const ranking = pairRanking(teams, people);
   const seeds = ranking.slice(0, FINAL_TEAMS.length).map((r, i) => ({ letter: FINAL_TEAMS[i], team: r.team, timeMs: r.timeMs, complete: r.complete }));
   const seedOf = new Map(); seeds.forEach(sd => people.filter(p => p.teamId === sd.team.id).forEach(p => seedOf.set(p.token, sd.letter)));
@@ -181,10 +184,10 @@ export const FINAL_TEAMS = ['A', 'B', 'C', 'D'];
 export const PENALTY_S = 2;   // Strafsekunden pro falscher Waffe
 export const finalMembers = (letter, people) => people.filter(p => p.finalTeam === letter);
 // Kapitän: vom Admin festgelegt, sonst gewählt – sobald alle im Team abgestimmt haben, gewinnt, wer die meisten Stimmen hat
-// (bei Gleichstand: wer diese Stimmenzahl zuerst erreicht hat)
+// (bei Gleichstand: per Los)
 export function finalCaptain(letter, people) {
-  const mem = finalMembers(letter, people);
-  const fixed = mem.find(p => p.finalCaptain); if (fixed) return fixed;
+  const mem = anwesend(finalMembers(letter, people));
+  const fixed = finalMembers(letter, people).find(p => p.finalCaptain); if (fixed) return fixed;
   const votes = mem.filter(p => p.captainVote && mem.some(m => m.token === p.captainVote));
   if (!mem.length || votes.length < mem.length) return null;          // noch nicht alle haben gewählt
   const count = {}, reached = {};
@@ -193,7 +196,9 @@ export function finalCaptain(letter, people) {
     reached[v.captainVote + ':' + count[v.captainVote]] ??= v.captainVoteAt || 0;
   }
   const max = Math.max(...Object.values(count));
-  const best = Object.keys(count).filter(t => count[t] === max).sort((a, b) => reached[a + ':' + max] - reached[b + ':' + max])[0];
+  // Gleichstand: Zufall – aber auf allen Handys derselbe (aus Team und Namen gemischt)
+  const los = t => { let h = 2166136261; for (const c of letter + ':' + t) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; };
+  const best = Object.keys(count).filter(t => count[t] === max).sort((a, b) => los(a) - los(b))[0];
   return mem.find(m => m.token === best) ?? null;
 }
 // Vorsprung fürs Finale: Summe der Boni aller Mitglieder (Raten + Snake)
@@ -266,5 +271,12 @@ export const WEAPONS = [
   ['derringer', 'Taschenpistole'], ['bogen', 'Pfeil und Bogen'], ['sturmgewehr', 'Sturmgewehr'], ['hellebarde', 'Hellebarde'], ['granate', 'Handgranate'], ['schlaeger', 'Baseballschläger']
 ].map(([id, name]) => ({ id, name }));
 // Namen/Bilder der Waffen kann man im Admin ändern (state.waffen = { id: { name, bild } }); die Fächer (ids) bleiben gleich
-export const weaponList = state => WEAPONS.map(w => ({ ...w, name: state?.waffen?.[w.id]?.name || w.name, bild: state?.waffen?.[w.id]?.bild || '' }));
+// Im Schrank stehen 8 Waffen: die richtige, alle im Admin bearbeiteten, aufgefüllt mit den eingebauten (in fester Reihenfolge)
+export const WEAPON_COUNT = 8;
+export const weaponList = state => {
+  const cfg = state?.waffen || {};
+  const ids = [...new Set([state?.riddle1Answer, ...WEAPONS.filter(w => cfg[w.id]?.name || cfg[w.id]?.bild).map(w => w.id), ...WEAPONS.map(w => w.id)])]
+    .filter(id => WEAPONS.some(w => w.id === id)).slice(0, WEAPON_COUNT);
+  return WEAPONS.filter(w => ids.includes(w.id)).map(w => ({ ...w, name: cfg[w.id]?.name || w.name, bild: cfg[w.id]?.bild || '' }));
+};
 export const weaponName = (id, state) => weaponList(state).find(w => w.id === id)?.name ?? id;
