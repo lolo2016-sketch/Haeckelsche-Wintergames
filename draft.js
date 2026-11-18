@@ -4,8 +4,8 @@
 // Runde 2: Biathlon, jede Person hat ein paar echte Versuche; die Bestzeiten im Team werden addiert.
 // Bonussekunden fürs Finale: richtig geraten (pro Person) + Snake-Platz 1–3.
 // Rollen aus früheren Versionen ("captain"/"player") spielen keine Rolle, nur "admin" wird ausgelassen.
-import { doc, collection, getDocs, writeBatch } from "./fb.js?v=20261118c";
-import { biathlonRank } from "./biathlon.js?v=20261118c";
+import { doc, collection, getDocs, writeBatch } from "./fb.js?v=20261118e";
+import { biathlonRank } from "./biathlon.js?v=20261118e";
 
 // Phasen in Reihenfolge
 export const PHASES = ['setup', 'snake', 'guess', 'pairs', 'biathlon', 'done', 'final', 'ende'];

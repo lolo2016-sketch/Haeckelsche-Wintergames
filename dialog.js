@@ -238,7 +238,7 @@ export async function playDialog(id, opts = {}) {
 }
 
 // Mehrere Videos hintereinander: im Admin mit Komma trennen, z. B. „videos/finale1.mp4, videos/finale2.mp4“
-async function playVideos(list, opt) {
+export async function playVideos(list, opt) {
   // Komma trennt Videos – aber nicht das Komma in „#t=0,10“ (danach folgt eine Ziffer)
   for (const url of String(list || '').split(/\s*[;\n]\s*|\s*,\s*(?!\d)/).map(x => x.trim()).filter(Boolean)) await playVideo(url, opt);
 }
