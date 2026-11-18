@@ -46,7 +46,7 @@ export const STANDARD = {
   szenen: {
     // nur das Video (Text optional): danach laufen die beiden durchs Tor und stellen sich an den Eingang des Kreises
     ankunft: { bilder: 'eins', bildBeide: 'dialog/beide4.png', bildA: 'dialog/beide4_links.png', bildB: 'dialog/beide4_rechts.png', wann: 'alleDa',
-      videoVor: 'videos/ankunft.mp4, videos/ankunft2.mp4', zeilen: [] },
+      videoVor: 'videos/intro1.mp4, videos/intro2.mp4, videos/intro3.mp4', zeilen: [] },
     intro: { bilder: 'eins', bildBeide: 'dialog/beide1.png', bildA: 'dialog/beide1_links.png', bildB: 'dialog/beide1_rechts.png', wann: 'einlauf', zeilen: [
       { s: 'a', t: 'Willkommen, {name}. Schön, dass du es zu den Haeckelschen Wintergames geschafft hast.' },
       { s: 'b', t: 'Wir haben dich nicht ohne Grund eingeladen. Irgendwo hier wartet der Pokal 2026.' },
@@ -73,7 +73,7 @@ export const STANDARD = {
       { s: 'ich', wahl: ['Ich verrate nichts. 🤫', 'Welche Flagge habe ich nochmal?'] },
       { s: 'a', t: 'Tippe rechts auf 🏳️: Dort siehst du deine Flagge, kannst dich 5 Minuten enttarnen – oder einmal heimlich jemanden ausspionieren. Die Auflösung kommt {naechstesEvent}.' }
     ] },
-    biathlon: { bilder: 'eins', bildBeide: 'dialog/beide4.png', bildA: 'dialog/beide4_links.png', bildB: 'dialog/beide4_rechts.png', wann: 'biathlon', videoNach: 'videos/biathlon.mp4', zeilen: [
+    biathlon: { bilder: 'eins', bildBeide: 'dialog/beide4.png', bildA: 'dialog/beide4_links.png', bildB: 'dialog/beide4_rechts.png', wann: 'biathlon', videoNach: 'videos/biathlon.mp4, videos/biathlon2.mp4', zeilen: [
       { s: 'a', t: 'Die Auflösung ist da! Dein Partner ist {partner}.' },
       { s: 'b', t: 'Runde 2: Biathlon! Ihr spielt als Paar. Im Tab 🎮 Minispiel fährst du mit ◀ ▶, springst mit ▲ und legst dich mit ▼ hin.' },
       { s: 'a', t: 'Hindernisse lassen dich stürzen – 2 Sekunden zum Aufstehen. Trainieren kannst du so oft du willst.' },
@@ -89,7 +89,7 @@ export const STANDARD = {
       { s: 'b', t: 'Steht euer Team, wählt ihr euren Kapitän: Wer die meisten Stimmen bekommt, führt euch ins Finale.' },
       { s: 'ich', wahl: ['Ich weiß schon, wen ich will.', 'Hauptsache, ich werde gewählt!'] }
     ] },
-    finale: { bilder: 'eins', bildBeide: 'dialog/beide2.png', bildA: 'dialog/beide2_links.png', bildB: 'dialog/beide2_rechts.png', wann: 'final', videoNach: 'videos/finale1.mp4, videos/finale2.mp4, videos/finale3.mp4, videos/finale4.mp4', zeilen: [
+    finale: { bilder: 'eins', bildBeide: 'dialog/beide2.png', bildA: 'dialog/beide2_links.png', bildB: 'dialog/beide2_rechts.png', wann: 'final', videoNach: 'videos/finale1.mp4, videos/finale2.mp4, videos/finale3.mp4, videos/finale4.mp4, videos/finale5.mp4', zeilen: [
       { s: 'b', t: 'Das Finale ist eröffnet! Du spielst in Team {finaleTeam} mit {mitspieler}, Kapitän ist {kapitaen}.' },
       { s: 'a', t: 'Ihr habt Zeit bis {naechstesEvent}. Macht euch einen Termin aus und spielt alle zusammen.' },
       { s: 'b', t: 'Drei Räume warten: Napoleons Lager, die Rätselkammer und der Schneeballwurf. Alle Vorsprung-Sekunden eures Teams werden abgezogen.' },

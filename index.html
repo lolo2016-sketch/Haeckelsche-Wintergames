@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <script>
 // Ladefehler sichtbar machen (z. B. fehlende oder veraltete Datei nach dem Hochladen)
-window.APP_VERSION = '20261117a';
+window.APP_VERSION = '20261118a';
 (function () {
   var shown = {};
   window.showLoadError = function (what) {
@@ -148,15 +148,15 @@ window.APP_VERSION = '20261117a';
       getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, addDoc, query, orderBy, limit, arrayUnion, increment, writeBatch
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261117a";
-    import { playDialog, SZENEN, mergeConfig } from "./dialog.js?v=20261117a";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261117a";
-    import { createHall } from "./hall.js?v=20261117a";
+    import { playSnake, playReplay } from "./minigame.js?v=20261118a";
+    import { playDialog, SZENEN, mergeConfig } from "./dialog.js?v=20261118a";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261118a";
+    import { createHall } from "./hall.js?v=20261118a";
     import { PHASES, PHASE_NAMES, phaseIndex, settings, country, teamColor, isPerson, isOrga, playedSnake, compareSnake, snakeRanking,
       playedBiathlon, teamBiathlon, bonusOf, teamBonus, guessedRight, planTeams,
       FINAL_TEAMS, PENALTY_S, finalMembers, finalCaptain, finalBonus, finalScoreMs, fmtClock, weaponName,
       finalStage, RIDDLES, WORD2, WORD2_TRIES, riddleRight, word2Shown, word2Tiles, normAnswer, WORD3, WORD3_LETTERS, CANS, weaponList,
-      effectivePhase, nextEvent, fmtWhen, revealTeams, draftState, pairRanking, TEAM_COLORS } from "./draft.js?v=20261117a";
+      effectivePhase, nextEvent, fmtWhen, revealTeams, draftState, pairRanking, TEAM_COLORS } from "./draft.js?v=20261118a";
     window.APP_READY = true;   // alle Dateien geladen
 
     const app = initializeApp(firebaseConfig);
@@ -589,7 +589,7 @@ window.APP_VERSION = '20261117a';
       // 3D, wenn möglich, sonst die einfache 2D-Halle
       let use3d = false;
       try {
-        hall3dMod ??= await import('./hall3d.js?v=20261117a');
+        hall3dMod ??= await import('./hall3d.js?v=20261118a');
         use3d = hall3dMod.webglAvailable();
       } catch (e) { use3d = false; console.error(e); window.showLoadError?.('3D-Halle: ' + (e?.message || e)); }
 
@@ -1169,15 +1169,15 @@ window.APP_VERSION = '20261117a';
       const hint = document.getElementById('finHint');
       try {
         if (n === 1) {
-          sceneMods.c ??= await import('./camp.js?v=20261117a');
+          sceneMods.c ??= await import('./camp.js?v=20261118a');
           scene3d = sceneMods.c.createCamp(box, { onWeapon: chooseWeapon, onDoor2: () => nextDoor(2), weapons: weaponList(S.state) });
           hint.textContent = '👆 Pfeile antippen = gehen · wischen = umschauen';
         } else if (n === 2) {
-          sceneMods.r2 ??= await import('./room2.js?v=20261117a');
+          sceneMods.r2 ??= await import('./room2.js?v=20261118a');
           scene3d = sceneMods.r2.createRiddleRoom(box, { onPlaque: openRiddle, onDoor: () => nextDoor(3) });
           hint.textContent = '👆 wischen = umschauen · Tafel antippen = Rätsel';
         } else {
-          sceneMods.r3 ??= await import('./room3.js?v=20261117a');
+          sceneMods.r3 ??= await import('./room3.js?v=20261118a');
           const mates = finalMembers(S.me.finalTeam, S.people).filter(p => p.token !== S.me.token).map(p => ({ token: p.token, name: p.name, photoUrl: p.photoUrl }));
           scene3d = sceneMods.r3.createSnowRange(box, { cans: CANS, hits: myFin()?.cans || [], mates, onHit: hitCan, canThrow: () => !myFin()?.solved3At, reload: 2 });
           hint.textContent = '👆 antippen = Schneeball werfen · wischen = zielen';

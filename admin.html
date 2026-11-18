@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <script>
 // Ladefehler sichtbar machen (z. B. fehlende oder veraltete Datei nach dem Hochladen)
-window.APP_VERSION = '20261117a';
+window.APP_VERSION = '20261118a';
 (function () {
   var shown = {};
   window.showLoadError = function (what) {
@@ -63,12 +63,12 @@ window.APP_VERSION = '20261117a';
       collection, getDocs
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
-    import { playSnake, playReplay } from "./minigame.js?v=20261117a";
-    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261117a";
+    import { playSnake, playReplay } from "./minigame.js?v=20261118a";
+    import { playBiathlon, playBiathlonReplay, formatBiathlon } from "./biathlon.js?v=20261118a";
     import { PHASES, PHASE_NAMES, phaseIndex, settings, DEFAULTS, COUNTRIES, country, isPerson, teamColor, snakeRanking,
       guessedRight, teamBonus, teamBiathlon, revealTeams, FINAL_TEAMS, finalMembers, finalBonus, finalScoreMs, fmtClock, WEAPONS, weaponName, weaponList,
-      SCHEDULE, effectivePhase, nextEvent, fmtWhen, draftState, finalCaptain } from "./draft.js?v=20261117a";
-    import { SZENEN, WANN, PLATZHALTER, mergeConfig, playDialog } from "./dialog.js?v=20261117a";
+      SCHEDULE, effectivePhase, nextEvent, fmtWhen, draftState, finalCaptain } from "./draft.js?v=20261118a";
+    import { SZENEN, WANN, PLATZHALTER, mergeConfig, playDialog } from "./dialog.js?v=20261118a";
     window.APP_READY = true;   // alle Dateien geladen
 
     const app = initializeApp(firebaseConfig);
@@ -464,6 +464,14 @@ window.APP_VERSION = '20261117a';
         <p style="font-size:0.9rem;color:#555;margin-top:0">Eure eigenen Spieler-Links für die Halle: Ihr steht im Skianzug mit Biathlon-Gewehr am Eingang des Kreises,
           sobald alle Teilnehmer angekommen sind, und könnt mit allen chatten. Ihr spielt nicht mit (kein Raten, keine Teams, kein Bonus).
           Anzug 1 = lila/gelb (links auf dem Pokal-Bild), Anzug 2 = petrol/grau (rechts).</p>
+        <div style="background:#eef6ff;border-radius:8px;padding:8px 10px;margin:8px 0">
+          <strong>🎬 Ankunfts-Video</strong> – spielt bei jedem Spieler, sobald <em>alle</em> Spieler angekommen sind
+          (gerade: ${participants.filter(p => p.role !== 'admin' && p.role !== 'orga' && p.arrivedAt).length} von ${participants.filter(p => p.role !== 'admin' && p.role !== 'orga').length} da).
+          Danach lauft ihr zwei im Skianzug durchs Tor und stellt euch an den Kreis.<br>
+          <input id="orgaVideo" list="videoFiles" style="width:min(100%,420px);margin-top:6px" placeholder="videos/intro1.mp4, videos/intro2.mp4, videos/intro3.mp4">
+          <button id="orgaVideoSave">Video speichern</button> <span id="orgaVideoMsg" style="font-size:.85rem;color:#555"></span>
+          <div style="font-size:.8rem;color:#555;margin-top:3px">Mehrere Videos nacheinander: mit Komma trennen. Video vorher in den Ordner <code>videos/</code> im Repo laden.</div>
+        </div>
         <label style="display:block;margin:6px 0"><input type="checkbox" id="orgaShow" ${state.orgaShow ? 'checked' : ''}> Orga jetzt erscheinen lassen – mit Ankunfts-Video –, auch wenn noch nicht alle da sind</label>
         ${orgas.map(o => { const l = `${introUrl}?t=${o.token}`; return `<div class="token-list" style="border-top:1px solid #eee;padding-top:8px;margin-top:8px">
           <strong>${escA(o.name)}</strong> · Anzug ${o.suit || 1} · Gesicht ${escA(o.photoUrl || '–')}
@@ -643,6 +651,22 @@ window.APP_VERSION = '20261117a';
         const photoUrl = document.getElementById('orgaPhoto').value.trim() || `faces/face${suit}.png`;
         await setDoc(doc(db, 'participants', genToken()), { name, role: 'orga', suit, photoUrl, hair: 'kurz' });
         loadAll();
+      });
+      // Ankunfts-Video = „Video davor“ der Dialog-Szene 0 (ankunft)
+      (async () => {
+        const inp = document.getElementById('orgaVideo'); if (!inp) return;
+        try { const snap = await getDoc(doc(db, 'state', 'dialoge')); inp.value = mergeConfig(snap.exists() ? snap.data() : null).szenen.ankunft?.videoVor || ''; } catch (e) {}
+      })();
+      document.getElementById('orgaVideoSave').addEventListener('click', async () => {
+        const msg = document.getElementById('orgaVideoMsg');
+        try {
+          const snap = await getDoc(doc(db, 'state', 'dialoge'));
+          const cfg = mergeConfig(snap.exists() ? snap.data() : null);
+          cfg.szenen.ankunft = { ...cfg.szenen.ankunft, videoVor: document.getElementById('orgaVideo').value.trim(), wann: 'alleDa' };
+          await setDoc(doc(db, 'state', 'dialoge'), JSON.parse(JSON.stringify(cfg)));
+          if (dlgCfg) dlgCfg.szenen.ankunft = cfg.szenen.ankunft;
+          msg.textContent = '✓ gespeichert';
+        } catch (e) { msg.textContent = '⚠️ ' + e.message; }
       });
       document.getElementById('orgaShow').addEventListener('change', async e => {
         await setDoc(doc(db, 'state', 'current'), { ...state, orgaShow: e.target.checked }); loadAll();
